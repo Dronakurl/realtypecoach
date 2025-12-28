@@ -10,8 +10,7 @@ watch:
 # Instance Management
 kill:
     echo "🛑 Stopping all RealTypeCoach instances..."
-    pkill -f "python3.*realtypecoach" 2>/dev/null || true
-    pkill -f "python3.*main.py" 2>/dev/null || true
+    pkill -f "python3.*realtypecoach.*main.py" 2>/dev/null || true
     rm -f ~/.local/share/realtypecoach/realtypecoach.pid
     sleep 2
     echo "  ✓ All instances stopped"
