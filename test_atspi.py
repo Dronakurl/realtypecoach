@@ -19,10 +19,17 @@ def on_keyboard_event(event):
     global keyboard_event_count
     keyboard_event_count += 1
 
-    if event.event_string == "press":
-        print(f"✓ KEY PRESS: code={event.event_code}, string='{event.event_string}'")
+    try:
+        key_code = event.hw_code
+        event_string = event.event_string
+    except AttributeError:
+        key_code = event.event_code if hasattr(event, 'event_code') else 'unknown'
+        event_string = 'unknown'
+    
+    if event.type == pyatspi.EventType.KEY_PRESSED:
+        print(f"✓ KEY PRESS: code={key_code}, string='{event_string}'")
     else:
-        print(f"  KEY RELEASE: code={event.event_code}, string='{event.event_string}'")
+        print(f"  KEY RELEASE: code={key_code}, string='{event_string}'")
 
     if keyboard_event_count >= 10:
         print("\n✓ Received 10 keyboard events - AT-SPI is working!")
@@ -33,17 +40,15 @@ def on_keyboard_event(event):
 
 try:
     print("Initializing AT-SPI...")
-    registry.init()
-
+    
     print("Registering keyboard event listener...")
-    registry.registerEventListener(on_keyboard_event, "keyboard")
-
+    registry.registerKeystrokeListener(on_keyboard_event)
+    
     print("✓ AT-SPI initialized and listener registered")
-    print
-    print("=" * 50)
+    print("="*50)
     print("Start typing to test keyboard event capture...")
     print("This script will exit after 10 key presses.")
-    print("=" * 50)
+    print("="*50)
     print
 
     while True:
@@ -51,13 +56,11 @@ try:
 
 except KeyboardInterrupt:
     print("\n\nTest interrupted by user.")
-    registry.deregisterEventListener(on_keyboard_event)
-    registry.stop()
+    registry.deregisterKeystrokeListener(on_keyboard_event)
     sys.exit(0)
 
 except Exception as e:
     print(f"\n✗ Error: {e}")
     import traceback
-
     traceback.print_exc()
     sys.exit(1)
