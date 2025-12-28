@@ -3,9 +3,22 @@
 
 import sys
 import os
+import time
 import signal
+import logging
 from pathlib import Path
 from queue import Queue
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/tmp/realtypecoach.log'),
+        logging.StreamHandler()
+    ]
+)
+log = logging.getLogger('realtypecoach')
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QTimer, QObject, pyqtSignal
@@ -202,12 +215,14 @@ class Application(QObject):
 
     def process_event_queue(self) -> None:
         """Process events from queue."""
-        while self.running:
-            try:
-                key_event = self.event_queue.get(timeout=1)
+        if not self.config.get_bool('password_exclusion', True):
+            return
 
-                if not self.config.get_bool('password_exclusion', True):
-                    continue
+        # Process all available events at once (non-blocking)
+        processed_count = 0
+        while processed_count < 100:
+            try:
+                key_event = self.event_queue.get_nowait()
 
                 if key_event.event_type == 'press':
                     self.burst_detector.process_key_event(
@@ -229,10 +244,15 @@ class Application(QObject):
                     if burst:
                         self.on_burst_complete(burst)
 
+                processed_count += 1
                 self.update_statistics()
 
             except:
-                pass  # Queue timeout or empty
+                break  # Queue empty
+
+        # Update stats display every ~60 seconds
+        if processed_count > 0 or (int(time.time() * 1000) % 60000 < 500):
+            pass
 
     def update_statistics(self) -> None:
         """Update statistics display."""
@@ -258,18 +278,25 @@ class Application(QObject):
 
     def start(self) -> None:
         """Start all components."""
-        print("Starting RealTypeCoach...")
+        log.info("Starting RealTypeCoach...")
 
         self.running = True
 
+        log.info("Starting event handler...")
         self.event_handler.start()
+
+        log.info("Starting layout monitor...")
         self.layout_monitor.start()
+
+        log.info("Starting analyzer...")
         self.analyzer.start()
+
+        log.info("Starting notification handler...")
         self.notification_handler.start()
 
         self.process_queue_timer = QTimer()
         self.process_queue_timer.timeout.connect(self.process_event_queue)
-        self.process_queue_timer.start(100)
+        self.process_queue_timer.start(500)  # Check every 500ms
 
         self.tray_icon.show()
 
@@ -279,22 +306,30 @@ class Application(QObject):
         )
 
         retention_days = self.config.get_int('data_retention_days', 90)
+        log.info(f"Deleting data older than {retention_days} days...")
         self.storage.delete_old_data(retention_days)
 
-        print("RealTypeCoach started successfully!")
+        log.info("RealTypeCoach started successfully!")
 
     def stop(self) -> None:
         """Stop all components."""
-        print("Stopping RealTypeCoach...")
+        log.info("Stopping RealTypeCoach...")
 
         self.running = False
 
+        log.info("Stopping event handler...")
         self.event_handler.stop()
+
+        log.info("Stopping layout monitor...")
         self.layout_monitor.stop()
+
+        log.info("Stopping analyzer...")
         self.analyzer.stop()
+
+        log.info("Stopping notification handler...")
         self.notification_handler.stop()
 
-        print("RealTypeCoach stopped.")
+        log.info("RealTypeCoach stopped.")
 
 
 def check_single_instance() -> bool:
@@ -321,13 +356,16 @@ def check_single_instance() -> bool:
 def main():
     """Main entry point."""
     # Check for single instance
+    log.info("Starting RealTypeCoach...")
     if not check_single_instance():
+        log.error("RealTypeCoach is already running. Exiting.")
         print("RealTypeCoach is already running. Exiting.")
         sys.exit(1)
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
+    log.info("Creating Application instance...")
     application = Application()
 
     signal.signal(signal.SIGINT, lambda s, f: app.quit())
@@ -348,13 +386,16 @@ def main():
 
     application.start()
 
+    log.info("Starting Qt event loop...")
     ret = app.exec_()
 
+    log.info(f"Qt event loop exited with code: {ret}")
     application.stop()
 
     # Clean up PID file
     cleanup_pid()
 
+    log.info("RealTypeCoach shutdown complete")
     sys.exit(ret)
 
 
