@@ -42,7 +42,21 @@ try:
     print("Initializing AT-SPI...")
     
     print("Registering keyboard event listener...")
-    registry.registerKeystrokeListener(on_keyboard_event)
+    # Try module-level function first
+    try:
+        pyatspi.registerKeystrokeListener(on_keyboard_event)
+        print("✓ Used module-level registerKeystrokeListener")
+    except AttributeError:
+        # Try registry object method
+        try:
+            registry = pyatspi.Registry()
+            registry.registerKeystrokeListener(on_keyboard_event)
+            print("✓ Used registry.registerKeystrokeListener")
+        except AttributeError:
+            # Try generic event listener
+            registry = pyatspi.Registry()
+            registry.registerEventListener(on_keyboard_event, 'keystroke')
+            print("✓ Used generic registerEventListener with 'keystroke'")
     
     print("✓ AT-SPI initialized and listener registered")
     print("="*50)
@@ -56,7 +70,10 @@ try:
 
 except KeyboardInterrupt:
     print("\n\nTest interrupted by user.")
-    registry.deregisterKeystrokeListener(on_keyboard_event)
+    try:
+        pyatspi.deregisterKeystrokeListener(on_keyboard_event)
+    except:
+        pass
     sys.exit(0)
 
 except Exception as e:

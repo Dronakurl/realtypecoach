@@ -45,6 +45,7 @@ class EventHandler:
         self.current_app_name: Optional[str] = None
         self.in_password_field = False
         self.thread: Optional[threading.Thread] = None
+        self.registry = None  # Store Registry instance
 
     def start(self) -> None:
         """Start listening for keyboard events in background thread."""
@@ -59,25 +60,13 @@ class EventHandler:
         """Stop listening for keyboard events."""
         self.running = False
         if self.thread:
-            registry.deregisterEventListener(
-                self._on_keyboard_event,
-                self._on_focus_event
-            )
-        registry.stop()
-
-    def _run_listener(self) -> None:
-        """Run AT-SPI listener."""
-        try:
-            registry.init()
-
-            registry.registerEventListener(self._on_keyboard_event, 'keyboard')
-            registry.registerEventListener(self._on_focus_event, 'focus')
-
-            print("AT-SPI event listener started")
-        except Exception as e:
-            print(f"Error starting AT-SPI listener: {e}")
-            self.running = False
-            return
+            # Use stored instance reference
+            if self.registry:
+                self.registry.deregisterKeystrokeListener(
+                    self._on_keyboard_event
+                )
+            self.registry.stop()
+            self.registry = None
 
     def _on_keyboard_event(self, event: Any) -> None:
         """Handle keyboard event from AT-SPI."""
