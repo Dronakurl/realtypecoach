@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+"""RealTypeCoach - KDE Wayland typing analysis application."""
+
+import sys
+import signal
+from pathlib import Path
+from queue import Queue
+
+from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import QTimer, QObject, pyqtSignal
+
+from core.storage import Storage
+from core.burst_detector import BurstDetector
+from core.event_handler import EventHandler
+from core.analyzer import Analyzer
+from core.notification_handler import NotificationHandler
+from utils.keyboard_detector import LayoutMonitor, get_current_layout
+from utils.config import Config
+from ui.stats_panel import StatsPanel
+from ui.tray_icon import TrayIcon
+
+
+class Application(QObject):
+    """Main application controller."""
+
+    signal_update_stats = pyqtSignal(float, float, float)
+    signal_update_slowest_keys = pyqtSignal(list)
+    signal_update_today_stats = pyqtSignal(int, int, int)
+    signal_settings_changed = pyqtSignal(dict)
+
+    def __init__(self):
+        """Initialize application."""
+        super().__init__()
+        self.event_queue = Queue(maxsize=1000)
+        self.running = False
+
+        self.init_data_directory()
+        self.init_components()
+        self.connect_signals()
+
+    def init_data_directory(self) -> None:
+        """Initialize data directory."""
+        data_dir = Path.home() / '.local' / 'share' / 'realtypecoach'
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        self.db_path = data_dir / 'typing_data.db'
+        self.icon_path = data_dir / 'icon.svg'
+        self.icon_paused_path = data_dir / 'icon_paused.svg'
+
+        from utils.icon_generator import save_icon
+        save_icon(self.icon_path, active=True)
+        save_icon(self.icon_paused_path, active=False)
+
+        print(f"Data directory: {data_dir}")
+        print(f"Database: {self.db_path}")
+
+    def init_components(self) -> None:
+        """Initialize all components."""
+        self.storage = Storage(self.db_path)
+        self.config = Config(self.db_path)
+
+        current_layout = get_current_layout()
+        print(f"Detected keyboard layout: {current_layout}")
+
+        self.burst_detector = BurstDetector(
+            burst_timeout_ms=self.config.get_int('burst_timeout_ms', 3000),
+            high_score_min_duration_ms=self.config.get_int(
+                'high_score_min_duration_ms', 10000
+            ),
+            on_burst_complete=self.on_burst_complete
+        )
+
+        self.event_handler = EventHandler(
+            event_queue=self.event_queue,
+            layout_getter=self.get_current_layout,
+            on_password_field=self.on_password_field
+        )
+
+        self.analyzer = Analyzer(self.storage)
+
+        self.notification_handler = NotificationHandler(
+            summary_getter=self.analyzer.get_daily_summary,
+            exceptional_threshold=self.config.get_float(
+                'exceptional_wpm_threshold', 120
+            )
+        )
+
+        self.layout_monitor = LayoutMonitor(
+            callback=self.on_layout_changed,
+            poll_interval=60
+        )
+
+        self.stats_panel = StatsPanel()
+        self.tray_icon = TrayIcon(self.stats_panel, self.icon_path, self.icon_paused_path)
+
+    def connect_signals(self) -> None:
+        """Connect all signals."""
+        self.signal_update_stats.connect(self.stats_panel.update_wpm)
+        self.signal_update_slowest_keys.connect(self.stats_panel.update_slowest_keys)
+        self.signal_update_today_stats.connect(self.stats_panel.update_today_stats)
+
+        self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
+        self.notification_handler.signal_exceptional_burst.connect(self.show_exceptional_notification)
+
+        self.tray_icon.settings_changed.connect(self.apply_settings)
+
+    def get_current_layout(self) -> str:
+        """Get current keyboard layout."""
+        layout = self.config.get('keyboard_layout', 'auto')
+        if layout == 'auto':
+            return get_current_layout()
+        return layout
+
+    def on_burst_complete(self, burst) -> None:
+        """Handle burst completion."""
+        self.analyzer.process_burst(burst)
+
+        if burst.qualifies_for_high_score:
+            wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
+            self.notification_handler.notify_exceptional_burst(
+                wpm, burst.key_count, burst.duration_ms / 1000.0
+            )
+
+    def on_password_field(self, is_password: bool) -> None:
+        """Handle password field detection."""
+        self.tray_icon.update_status(not is_password)
+        if is_password:
+            self.tray_icon.show_notification(
+                "Password Field Detected",
+                "Monitoring paused for privacy",
+                "warning"
+            )
+        else:
+            self.tray_icon.show_notification(
+                "Password Field Exited",
+                "Monitoring resumed",
+                "info"
+            )
+
+    def on_layout_changed(self, new_layout: str) -> None:
+        """Handle keyboard layout change."""
+        print(f"Keyboard layout changed to: {new_layout}")
+        self.tray_icon.show_notification(
+            "Keyboard Layout Changed",
+            f"New layout: {new_layout}",
+            "info"
+        )
+
+    def _calculate_wpm(self, key_count: int, duration_ms: int) -> float:
+        """Calculate words per minute."""
+        if duration_ms == 0:
+            return 0.0
+
+        words = key_count / 5.0
+        minutes = duration_ms / 60000.0
+        return words / minutes if minutes > 0 else 0.0
+
+    def show_daily_notification(self, date: str, title: str,
+                               message: str, slowest_key: str,
+                               personal_best: str, total_keystrokes: str) -> None:
+        """Show daily summary notification."""
+        self.tray_icon.show_notification(title, message, "info")
+
+    def show_exceptional_notification(self, wpm: float) -> None:
+        """Show exceptional burst notification."""
+        self.tray_icon.show_notification(
+            "🚀 Exceptional Typing Speed!",
+            f"{wpm:.1f} WPM - New personal best!",
+            "info"
+        )
+
+    def apply_settings(self, new_settings: dict) -> None:
+        """Apply new settings."""
+        for key, value in new_settings.items():
+            self.config.set(key, value)
+
+        if '__clear_database__' in new_settings:
+            self.storage.clear_database()
+            QMessageBox.information(
+                None, "Data Cleared",
+                "All typing data has been deleted."
+            )
+
+        if 'export_csv_path' in new_settings:
+            try:
+                from datetime import datetime
+                default_date = datetime.now().strftime('%Y-%m-%d')
+                count = self.storage.export_to_csv(
+                    Path(new_settings['export_csv_path']),
+                    start_date=default_date
+                )
+                QMessageBox.information(
+                    None, "Export Complete",
+                    f"Exported {count:,} events to CSV."
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    None, "Export Failed",
+                    f"Failed to export data: {e}"
+                )
+
+    def process_event_queue(self) -> None:
+        """Process events from queue."""
+        while self.running:
+            try:
+                key_event = self.event_queue.get(timeout=1)
+
+                if not self.config.get_bool('password_exclusion', True):
+                    continue
+
+                if key_event.event_type == 'press':
+                    self.burst_detector.process_key_event(
+                        key_event.timestamp_ms, True
+                    )
+                    burst = self.burst_detector.process_key_event(
+                        key_event.timestamp_ms, False
+                    )
+
+                    self.analyzer.process_key_event(
+                        key_event.keycode,
+                        key_event.key_name,
+                        key_event.timestamp_ms,
+                        key_event.event_type,
+                        key_event.app_name,
+                        key_event.is_password_field
+                    )
+
+                    if burst:
+                        self.on_burst_complete(burst)
+
+                self.update_statistics()
+
+            except:
+                pass  # Queue timeout or empty
+
+    def update_statistics(self) -> None:
+        """Update statistics display."""
+        stats = self.analyzer.get_statistics()
+
+        self.signal_update_stats.emit(
+            stats['avg_wpm'],
+            stats['burst_wpm'],
+            stats['personal_best_today'] or 0
+        )
+
+        slowest_keys = self.analyzer.get_slowest_keys(
+            limit=self.config.get_int('slowest_keys_count', 10),
+            layout=self.get_current_layout()
+        )
+        self.signal_update_slowest_keys.emit(slowest_keys)
+
+        self.signal_update_today_stats.emit(
+            stats['total_keystrokes'],
+            stats['total_bursts'],
+            stats['total_typing_sec']
+        )
+
+    def start(self) -> None:
+        """Start all components."""
+        print("Starting RealTypeCoach...")
+
+        self.running = True
+
+        self.event_handler.start()
+        self.layout_monitor.start()
+        self.analyzer.start()
+        self.notification_handler.start()
+
+        QTimer.singleShot(100, self.process_event_queue)
+
+        self.tray_icon.show()
+
+        self.notification_handler.set_notification_time(
+            hour=self.config.get_int('notification_time_hour', 18),
+            minute=self.config.get_int('notification_time_minute', 0)
+        )
+
+        retention_days = self.config.get_int('data_retention_days', 90)
+        self.storage.delete_old_data(retention_days)
+
+        print("RealTypeCoach started successfully!")
+
+    def stop(self) -> None:
+        """Stop all components."""
+        print("Stopping RealTypeCoach...")
+
+        self.running = False
+
+        self.event_handler.stop()
+        self.layout_monitor.stop()
+        self.analyzer.stop()
+        self.notification_handler.stop()
+
+        print("RealTypeCoach stopped.")
+
+
+def main():
+    """Main entry point."""
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
+
+    application = Application()
+
+    signal.signal(signal.SIGINT, lambda s, f: app.quit())
+    signal.signal(signal.SIGTERM, lambda s, f: app.quit())
+
+    application.start()
+
+    ret = app.exec_()
+
+    application.stop()
+    sys.exit(ret)
+
+
+if __name__ == '__main__':
+    main()
