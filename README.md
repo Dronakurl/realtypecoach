@@ -41,7 +41,7 @@ sudo usermod -aG input $USER
 ### 3. Clone or Download
 
 ```bash
-cd /home/konrad/gallery/realtypecoach
+cd ~/realtypecoach
 ```
 
 ### 4. Run

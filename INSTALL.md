@@ -20,7 +20,7 @@ sudo usermod -aG input $USER
 ### 3. Navigate to Application Directory
 
 ```bash
-cd /home/konrad/gallery/realtypecoach
+cd ~/realtypecoach
 ```
 
 ### 4. Run the Application
@@ -205,7 +205,7 @@ Check for error messages and report issues.
 
 ```bash
 # Remove application directory
-rm -rf /home/konrad/gallery/realtypecoach
+rm -rf ~/realtypecoach
 
 # Remove data (if desired)
 rm -rf ~/.local/share/realtypecoach

@@ -51,6 +51,8 @@ clean:
 reset:
     @just kill
     @rm -f ~/.local/share/realtypecoach/typing_data.db
+    @rm -f ~/.local/share/realtypecoach/typing_data.db-shm
+    @rm -f ~/.local/share/realtypecoach/typing_data.db-wal
     @echo "Database reset"
 
 # Testing

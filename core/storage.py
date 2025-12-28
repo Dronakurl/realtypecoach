@@ -1,5 +1,6 @@
 """Storage management for RealTypeCoach - SQLite database operations."""
 
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -19,9 +20,19 @@ class Storage:
         self.db_path = db_path
         self._init_database()
 
+    def _get_connection(self) -> sqlite3.Connection:
+        """Create a database connection with REGEXP function enabled."""
+        conn = sqlite3.connect(self.db_path)
+
+        def regexp(expr, item):
+            return re.search(expr, item) is not None if item else False
+
+        conn.create_function("REGEXP", 2, regexp)
+        return conn
+
     def _init_database(self) -> None:
         """Create all database tables if they don't exist."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             self._create_key_events_table(conn)
             self._create_bursts_table(conn)
             self._create_statistics_table(conn)
@@ -140,7 +151,7 @@ class Storage:
             app_name: Application name
             is_password_field: Whether typing in password field
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute('''
                 INSERT INTO key_events
                 (keycode, key_name, timestamp_ms, event_type, app_name, is_password_field)
@@ -162,7 +173,7 @@ class Storage:
             avg_wpm: Average WPM during burst
             qualifies_for_high_score: Whether burst meets minimum duration
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute('''
                 INSERT INTO bursts
                 (start_time, end_time, key_count, duration_ms, avg_wpm, qualifies_for_high_score)
@@ -184,7 +195,7 @@ class Storage:
             is_slowest: Whether this is new slowest time
             is_fastest: Whether this is new fastest time
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT avg_press_time, total_presses, slowest_ms, fastest_ms
@@ -236,7 +247,7 @@ class Storage:
             key_count: Number of keystrokes
         """
         timestamp_ms = int(time.time() * 1000)
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute('''
                 INSERT INTO high_scores
                 (date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp)
@@ -253,7 +264,7 @@ class Storage:
         Returns:
             WPM or None if no bursts today
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT MAX(fastest_burst_wpm) FROM high_scores WHERE date = ?
@@ -276,7 +287,7 @@ class Storage:
             slowest_key_name: Slowest key name today
             total_typing_sec: Total typing time today (seconds)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute('''
                 INSERT OR REPLACE INTO daily_summaries
                 (date, total_keystrokes, total_bursts, avg_wpm,
@@ -299,7 +310,7 @@ class Storage:
         Returns:
             List of (keycode, key_name, avg_press_time_ms) tuples
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             if layout:
                 cursor.execute('''
@@ -334,7 +345,7 @@ class Storage:
         Returns:
             List of (keycode, key_name, avg_press_time_ms) tuples
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             if layout:
                 cursor.execute('''
@@ -365,7 +376,7 @@ class Storage:
         Returns:
             Tuple with summary data or None if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT total_keystrokes, total_bursts, avg_wpm,
@@ -380,7 +391,7 @@ class Storage:
         Args:
             date: Date string (YYYY-MM-DD)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute('''
                 UPDATE daily_summaries SET summary_sent = 1 WHERE date = ?
             ''', (date,))
@@ -420,7 +431,7 @@ class Storage:
 
         query += ' ORDER BY timestamp_ms'
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
             rows = cursor.fetchall()
@@ -440,7 +451,7 @@ class Storage:
         """
         cutoff_ms = int((datetime.now() - timedelta(days=retention_days)).timestamp() * 1000)
         cutoff_date = (datetime.now() - timedelta(days=retention_days)).strftime('%Y-%m-%d')
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute('DELETE FROM key_events WHERE timestamp_ms < ?', (cutoff_ms,))
             conn.execute('DELETE FROM bursts WHERE start_time < ?', (cutoff_ms,))
             conn.execute('DELETE FROM daily_summaries WHERE date < ?', (cutoff_date,))
@@ -448,7 +459,7 @@ class Storage:
 
     def clear_database(self) -> None:
         """Clear all data from database."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute('DELETE FROM key_events')
             conn.execute('DELETE FROM bursts')
             conn.execute('DELETE FROM statistics')
@@ -494,7 +505,7 @@ class Storage:
         speed_per_letter = duration_ms / num_letters
         now_ms = int(time.time() * 1000)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT avg_speed_ms_per_letter, total_letters,
@@ -542,7 +553,7 @@ class Storage:
         Returns:
             Last processed event ID, or 0 if none
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             setting_key = f'last_processed_event_id_{layout}'
             cursor.execute('''
@@ -558,7 +569,7 @@ class Storage:
             layout: Keyboard layout identifier
             event_id: Event ID to save
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             setting_key = f'last_processed_event_id_{layout}'
             cursor.execute('''
@@ -580,7 +591,7 @@ class Storage:
         """
         last_processed_id = self._get_last_processed_event_id(layout)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
 
             cursor.execute('''
@@ -649,7 +660,7 @@ class Storage:
         Returns:
             List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             if layout:
                 cursor.execute('''
@@ -682,7 +693,7 @@ class Storage:
         Returns:
             List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             if layout:
                 cursor.execute('''

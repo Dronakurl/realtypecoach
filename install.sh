@@ -104,6 +104,20 @@ mkdir -p "$INSTALL_DIR"
 print_status "OK" "Data directory created: $INSTALL_DIR"
 
 echo ""
+echo "Step 4: Copying application files..."
+echo "------------------------------------"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Copy Python source files
+cp -r "$SCRIPT_DIR"/*.py "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR"/core "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR"/ui "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR"/utils "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR"/tests "$INSTALL_DIR/"
+print_status "OK" "Application files copied to: $INSTALL_DIR"
+
+echo ""
 echo "Step 5: Generating icons..."
 echo "---------------------------"
 
@@ -122,23 +136,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Create wrapper script
 mkdir -p "$BIN_DIR"
-cat > "$BIN_DIR/realtypecoach" << 'EOF'
+cat > "$BIN_DIR/realtypecoach" << EOF
 #!/usr/bin/env python3
 import sys
-import os
-
-# Add the RealTypeCoach directory to Python path
-RTC_DIR = os.path.dirname(os.path.abspath(__file__))
-if os.path.exists(os.path.join(RTC_DIR, 'main.py')):
-    sys.path.insert(0, RTC_DIR)
-else
-    # Try to find the installation directory
-    RTC_DIR = os.path.dirname(os.path.realpath(__file__))
-    while RTC_DIR != '/' and not os.path.exists(os.path.join(RTC_DIR, 'main.py')):
-        RTC_DIR = os.path.dirname(RTC_DIR)
-    if os.path.exists(os.path.join(RTC_DIR, 'main.py')):
-        sys.path.insert(0, RTC_DIR)
-
+sys.path.insert(0, '$INSTALL_DIR')
 from main import main
 if __name__ == '__main__':
     main()
