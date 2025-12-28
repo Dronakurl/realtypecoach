@@ -2,8 +2,7 @@
 
 # Running
 run:
-    @pkill -9 -f "python3.*realtypecoach" 2>/dev/null || true
-    python3 main.py
+    @python3 main.py
 
 watch:
     @just run 2>&1 | head -50
