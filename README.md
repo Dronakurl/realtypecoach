@@ -4,7 +4,7 @@ RealTypeCoach is a KDE Wayland typing analysis application that monitors keyboar
 
 ## Features
 
-- **Global keyboard monitoring** using AT-SPI (works on Wayland)
+- **Global keyboard monitoring** using evdev (/dev/input/eventX)
 - **Automatic keyboard layout detection** (supports US and German layouts)
 - **Per-key timing analysis** - identify your slowest keys
 - **Burst detection** - tracks continuous typing periods
@@ -17,25 +17,34 @@ RealTypeCoach is a KDE Wayland typing analysis application that monitors keyboar
 
 ## Requirements
 
-- KDE Plasma on Wayland
+- KDE Plasma on Wayland (or X11)
 - Python 3.10+
 - Ubuntu/Debian-based Linux
+- User must be in `input` group
 
 ## Installation
 
 ### 1. Install System Dependencies
 
 ```bash
-sudo apt install python3-pyatspi at-spi2-core python3-pyqt5
+sudo apt install python3-pyqt5
+pip install evdev --user
 ```
 
-### 2. Clone or Download
+### 2. Add User to Input Group
+
+```bash
+sudo usermod -aG input $USER
+# Log out and log back in for this to take effect
+```
+
+### 3. Clone or Download
 
 ```bash
 cd /home/konrad/gallery/realtypecoach
 ```
 
-### 3. Run
+### 4. Run
 
 ```bash
 python3 main.py
@@ -43,7 +52,7 @@ python3 main.py
 
 That's it! The application will start and appear in your system tray.
 
-### 4. Development Workflow (Optional)
+### 5. Development Workflow (Optional)
 
 For easier development, use the `justfile`:
 
@@ -166,21 +175,28 @@ Your layout is automatically detected and switches are tracked in real-time.
 
 ### Application Won't Start
 
-Ensure AT-SPI is running:
+Ensure evdev is installed:
 ```bash
-systemctl --user status at-spi-dbus-bus.service
-```
-
-If not running, start it:
-```bash
-systemctl --user start at-spi-dbus-bus.service
+python3 -c "import evdev; print('evdev OK')"
 ```
 
 ### No Keyboard Events Detected
 
-1. Ensure accessibility is enabled in KDE Settings
-2. Check that `python3-pyatspi` is installed
-3. Run with debug output: `python3 main.py --verbose`
+1. Ensure user is in `input` group:
+   ```bash
+   groups $USER | grep input
+   ```
+
+2. If not in input group, add user:
+   ```bash
+   sudo usermod -aG input $USER
+   # Log out and log back in
+   ```
+
+3. List available input devices:
+   ```bash
+   python3 -c "from evdev import list_devices; print(list_devices())"
+   ```
 
 ### Layout Not Detected
 

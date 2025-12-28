@@ -6,16 +6,24 @@
 
 ```bash
 sudo apt update
-sudo apt install python3-pyatspi at-spi2-core python3-pyqt5
+sudo apt install python3-pyqt5
+pip install evdev --user
 ```
 
-### 2. Navigate to Application Directory
+### 2. Add User to Input Group
+
+```bash
+sudo usermod -aG input $USER
+# Log out and log back in for this to take effect
+```
+
+### 3. Navigate to Application Directory
 
 ```bash
 cd /home/konrad/gallery/realtypecoach
 ```
 
-### 3. Run the Application
+### 4. Run the Application
 
 ```bash
 python3 main.py
@@ -31,36 +39,30 @@ The application will start and appear in your system tray (usually bottom-right 
 
 | Package | Purpose | Required |
 |---------|---------|----------|
-| `python3-pyatspi` | AT-SPI Python bindings for keyboard monitoring | ✅ Yes |
-| `at-spi2-core` | AT-SPI daemon (accessibility framework) | ✅ Yes |
 | `python3-pyqt5` | Qt5 GUI framework for system tray | ✅ Yes |
+| `evdev` | Python bindings for reading /dev/input/eventX | ✅ Yes |
 
 ### Verify Installation
 
 ```bash
-# Check AT-SPI is available
-python3 -c "import pyatspi; print('AT-SPI OK')"
-
 # Check PyQt5 is available
 python3 -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 OK')"
+
+# Check evdev is available
+python3 -c "import evdev; print('evdev OK')"
 
 # Check keyboard layout detection
 setxkbmap -query
 ```
 
-### Enable Accessibility Services
-
-KDE Wayland requires AT-SPI daemon to be running:
+### Check Input Device Access
 
 ```bash
-# Check if AT-SPI is running
-systemctl --user status at-spi-dbus-bus.service
+# List available input devices
+python3 -c "from evdev import list_devices; print(list_devices())"
 
-# If not running, start it
-systemctl --user start at-spi-dbus-bus.service
-
-# Enable auto-start on login
-systemctl --user enable at-spi-dbus-bus.service
+# Verify you can read keyboard events (requires input group)
+ls -l /dev/input/by-path/
 ```
 
 ---
@@ -102,23 +104,10 @@ Left-click the system tray icon to see real-time statistics:
 
 ## Manual Installation (If apt Fails)
 
-### From Source
+### Python evdev from pip
 
 ```bash
-# Clone AT-SPI (if package not available)
-git clone https://gitlab.gnome.org/GNOME/at-spi2-core.git
-cd at-spi2-core
-mkdir build && cd build
-meson ..
-ninja
-sudo ninja install
-```
-
-### Python AT-SPI Bindings
-
-```bash
-# If python3-pyatspi not available in your distro
-pip3 install python3-pyatspi
+pip3 install evdev --user
 ```
 
 ---
@@ -131,10 +120,10 @@ Run this test script:
 
 ```python
 #!/usr/bin/env python3
-import pyatspi
+import evdev
 from PyQt5.QtWidgets import QApplication
 
-print("✅ AT-SPI available")
+print("✅ evdev available")
 print("✅ PyQt5 available")
 
 app = QApplication([])
@@ -159,37 +148,34 @@ python3 -c "from utils.keyboard_detector import get_current_layout; print(get_cu
 
 ## Troubleshooting
 
-### Problem: "ModuleNotFoundError: No module named 'pyatspi'"
+### Problem: "ModuleNotFoundError: No module named 'evdev'"
 
-**Solution**: Install python3-pyatspi:
+**Solution**: Install evdev:
 ```bash
-sudo apt install python3-pyatspi
+pip install evdev --user
 ```
 
-### Problem: "AT-SPI connection failed"
+### Problem: "Permission denied: /dev/input/eventX"
 
-**Solution**: Start AT-SPI daemon:
+**Solution**: Add user to input group:
 ```bash
-systemctl --user start at-spi-dbus-bus.service
+sudo usermod -aG input $USER
+# Log out and log back in for this to take effect
 ```
 
 ### Problem: "No keyboard events detected"
 
 **Solutions**:
 
-1. Enable accessibility in KDE:
-   - System Settings → Accessibility → Enable assistive technologies
-
-2. Check permissions:
+1. Check permissions:
    ```bash
    # Ensure user is in input group
    groups $USER | grep input
    ```
 
-3. Verify AT-SPI is receiving events:
+2. List available input devices:
    ```bash
-   # Monitor AT-SPI events
-   dbus-monitor --session "type='signal',interface='org.a11y.atspi.Event'"
+   python3 -c "from evdev import list_devices; print(list_devices())"
    ```
 
 ### Problem: Icon not visible in system tray
@@ -229,7 +215,8 @@ rm -rf ~/.local/share/realtypecoach
 
 ```bash
 # Only remove if no other applications need them
-sudo apt remove python3-pyatspi python3-pyqt5
+sudo apt remove python3-pyqt5
+pip uninstall evdev
 ```
 
 ---

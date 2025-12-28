@@ -84,56 +84,19 @@ else
     exit 1
 fi
 
-# Check pyatspi
-if python_package_exists pyatspi; then
-    print_status "OK" "pyatspi is installed"
+# Check evdev
+if python_package_exists evdev; then
+    print_status "OK" "evdev is installed"
 else
-    print_status "FAIL" "pyatspi is not installed"
+    print_status "FAIL" "evdev is not installed"
     echo ""
-    echo "To install pyatspi, run:"
-    echo "  sudo apt install python3-pyatspi"
-    echo "  sudo dnf install python3-pyatspi"
-    echo "  sudo pacman -S python-pyatspi"
+    echo "To install evdev, run:"
+    echo "  pip install evdev --user"
     exit 1
 fi
 
 echo ""
-echo "Step 3: Checking AT-SPI service..."
-echo "----------------------------------"
-
-# Check if at-spi-dbus-bus.service exists
-if systemctl --user list-unit-files | grep -q "at-spi-dbus-bus.service"; then
-    print_status "OK" "AT-SPI service is available"
-
-    # Check if it's running
-    if systemctl --user is-active --quiet at-spi-dbus-bus.service; then
-        print_status "OK" "AT-SPI service is running"
-    else
-        print_status "WARN" "AT-SPI service is not running"
-        echo ""
-        echo "To enable AT-SPI, run:"
-        echo "  systemctl --user start at-spi-dbus-bus.service"
-        echo "  systemctl --user enable at-spi-dbus-bus.service"
-        echo ""
-        read -p "Start AT-SPI service now? [y/N]: " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            systemctl --user start at-spi-dbus-bus.service
-            systemctl --user enable at-spi-dbus-bus.service
-            print_status "OK" "AT-SPI service started"
-        fi
-    fi
-else
-    print_status "WARN" "AT-SPI service not found (may need to install at-spi2-core)"
-    echo ""
-    echo "To install AT-SPI, run:"
-    echo "  sudo apt install at-spi2-core"
-    echo "  sudo dnf install at-spi2-core"
-    echo "  sudo pacman -S at-spi2-core"
-fi
-
-echo ""
-echo "Step 4: Creating data directory..."
+echo "Step 3: Creating data directory..."
 echo "-----------------------------------"
 
 INSTALL_DIR="$HOME/.local/share/realtypecoach"

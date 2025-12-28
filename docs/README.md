@@ -50,13 +50,13 @@ RealTypeCoach requires **KDE Plasma on Wayland** with these dependencies:
 
 ```bash
 # Check if you have the required packages
-dpkg -l | grep -E "python3-pyatspi|at-spi2-core|python3-pyqt5"
+dpkg -l | grep "python3-pyqt5"
+python3 -c "import evdev; print('evdev OK')"
 ```
 
 **Required packages:**
-- `python3-pyatspi` - AT-SPI Python bindings
-- `at-spi2-core` - Accessibility framework
 - `python3-pyqt5` - Qt5 GUI framework
+- `evdev` - Python bindings for /dev/input/eventX
 
 ### Installation
 
@@ -64,20 +64,15 @@ dpkg -l | grep -E "python3-pyatspi|at-spi2-core|python3-pyqt5"
 
 ```bash
 sudo apt update
-sudo apt install python3-pyatspi at-spi2-core python3-pyqt5
+sudo apt install python3-pyqt5
+pip install evdev --user
 ```
 
-#### 2. Enable Accessibility Services
-
-RealTypeCoach needs AT-SPI to detect keyboard events:
+#### 2. Add User to Input Group
 
 ```bash
-# Check if AT-SPI is running
-systemctl --user status at-spi-dbus-bus.service
-
-# If not running, enable it
-systemctl --user start at-spi-dbus-bus.service
-systemctl --user enable at-spi-dbus-bus.service
+sudo usermod -aG input $USER
+# Log out and log back in for this to take effect
 ```
 
 #### 3. Run RealTypeCoach
@@ -207,10 +202,15 @@ Detailed explanations of how RealTypeCoach works:
 
 ### "No keyboard events detected"
 
-**Solution:** Enable AT-SPI service
+**Solution:** Check user is in input group
 ```bash
-systemctl --user start at-spi-dbus-bus.service
-systemctl --user enable at-spi-dbus-bus.service
+groups $USER | grep input
+```
+
+If not in input group:
+```bash
+sudo usermod -aG input $USER
+# Log out and log back in
 ```
 
 ### "Icon not visible in system tray"
@@ -254,7 +254,6 @@ python3 -m pytest tests/test_analyzer.py -v
 just run       # Run the application
 just kill      # Stop the application
 just check     # Syntax check
-just test-atspi # Test AT-SPI connectivity
 ```
 
 ## 📊 Typing Speed Benchmarks
@@ -293,7 +292,7 @@ MIT License - See LICENSE file for details
 
 ## 🙏 Acknowledgments
 
-- **AT-SPI** - Assistive Technology Service Provider Interface
+- **evdev** - Python bindings for reading /dev/input/eventX
 - **PyQt5** - Python Qt bindings
 - **SQLite** - Embedded database engine
 

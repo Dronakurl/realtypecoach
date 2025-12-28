@@ -40,6 +40,8 @@ class Application(QObject):
     signal_update_stats = pyqtSignal(float, float, float)
     signal_update_slowest_keys = pyqtSignal(list)
     signal_update_fastest_keys = pyqtSignal(list)
+    signal_update_hardest_words = pyqtSignal(list)
+    signal_update_fastest_words_stats = pyqtSignal(list)
     signal_update_today_stats = pyqtSignal(int, int, int)
     signal_settings_changed = pyqtSignal(dict)
 
@@ -114,6 +116,8 @@ class Application(QObject):
         self.signal_update_stats.connect(self.stats_panel.update_wpm)
         self.signal_update_slowest_keys.connect(self.stats_panel.update_slowest_keys)
         self.signal_update_fastest_keys.connect(self.stats_panel.update_fastest_keys)
+        self.signal_update_hardest_words.connect(self.stats_panel.update_hardest_words)
+        self.signal_update_fastest_words_stats.connect(self.stats_panel.update_fastest_words)
         self.signal_update_today_stats.connect(self.stats_panel.update_today_stats)
 
         self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
@@ -286,6 +290,18 @@ class Application(QObject):
             layout=self.get_current_layout()
         )
         self.signal_update_fastest_keys.emit(fastest_keys)
+
+        hardest_words = self.analyzer.get_slowest_words(
+            limit=10,
+            layout=self.get_current_layout()
+        )
+        self.signal_update_hardest_words.emit(hardest_words)
+
+        fastest_words = self.analyzer.get_fastest_words(
+            limit=10,
+            layout=self.get_current_layout()
+        )
+        self.signal_update_fastest_words_stats.emit(fastest_words)
 
         self.signal_update_today_stats.emit(
             stats['total_keystrokes'],

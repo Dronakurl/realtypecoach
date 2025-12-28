@@ -1,7 +1,7 @@
 """Analyzer for typing statistics and high scores."""
 
 import time
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List, Any
 from collections import defaultdict
 from datetime import datetime, timedelta
 import threading
@@ -24,7 +24,7 @@ class Analyzer:
         self.thread: Optional[threading.Thread] = None
 
         self.today_date = datetime.now().strftime('%Y-%m-%d')
-        self.today_stats: Dict[str, any] = {
+        self.today_stats: Dict[str, Any] = {
             'total_keystrokes': 0,
             'total_bursts': 0,
             'total_typing_ms': 0,
@@ -378,6 +378,36 @@ class Analyzer:
             List of (keycode, key_name, avg_time_ms) tuples
         """
         return self.storage.get_fastest_keys(limit, layout)
+
+    def get_slowest_words(self, limit: int = 10,
+                          layout: Optional[str] = None) -> list:
+        """Get slowest words from database.
+
+        Args:
+            limit: Maximum number to return
+            layout: Filter by layout
+
+        Returns:
+            List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
+        """
+        current_layout = layout if layout else 'us'
+        self.storage._process_new_key_events(layout=current_layout)
+        return self.storage.get_slowest_words(limit, layout)
+
+    def get_fastest_words(self, limit: int = 10,
+                          layout: Optional[str] = None) -> list:
+        """Get fastest words from database.
+
+        Args:
+            limit: Maximum number to return
+            layout: Filter by layout
+
+        Returns:
+            List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
+        """
+        current_layout = layout if layout else 'us'
+        self.storage._process_new_key_events(layout=current_layout)
+        return self.storage.get_fastest_words(limit, layout)
 
     def get_daily_summary(self, date: str) -> Optional[Tuple]:
         """Get daily summary for a date.
