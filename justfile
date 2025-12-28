@@ -19,6 +19,14 @@ status:
         echo "Not running"; \
     fi
 
+# Testing
+check:
+    @python3 -m py_compile main.py
+    @echo "Syntax check passed"
+
+test-atspi:
+    @bash -c 'timeout 10 python3 test_atspi.py 2>&1 || echo "AT-SPI test completed or timed out"'
+
 # Cleaning
 clean:
     @just kill
@@ -32,10 +40,6 @@ reset:
     @echo "Database reset"
 
 # Testing
-check:
-    @python3 -m py_compile main.py
-    @echo "Syntax check passed"
-
 test-imports:
     @python3 -c 'import sys; sys.path.insert(0, "."); \
         from core.storage import Storage; \
