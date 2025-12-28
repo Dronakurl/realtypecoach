@@ -40,7 +40,7 @@ class StatsPanel(QWidget):
 
         self.add_separator(layout)
 
-        self.slowest_title = QLabel("🐌 Slowest Keys (Top 10)")
+        self.slowest_title = QLabel("🐌 Slowest Letter Keys (Top 10)")
         self.slowest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(self.slowest_title)
 
@@ -55,7 +55,7 @@ class StatsPanel(QWidget):
 
         self.add_separator(layout)
 
-        self.fastest_title = QLabel("⚡ Fastest Keys (Top 10)")
+        self.fastest_title = QLabel("⚡ Fastest Letter Keys (Top 10)")
         self.fastest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(self.fastest_title)
 
@@ -67,6 +67,36 @@ class StatsPanel(QWidget):
             self.fastest_key_labels.append(label)
             self.fastest_keys_layout.addWidget(label)
         layout.addLayout(self.fastest_keys_layout)
+
+        self.add_separator(layout)
+
+        self.hardest_words_title = QLabel("🐢 Hardest Words (All Time)")
+        self.hardest_words_title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(self.hardest_words_title)
+
+        self.hardest_words_layout = QVBoxLayout()
+        self.hardest_word_labels: List[QLabel] = []
+        for i in range(10):
+            label = QLabel(f"{i+1}. --")
+            label.setStyleSheet("font-family: monospace; font-size: 12px;")
+            self.hardest_word_labels.append(label)
+            self.hardest_words_layout.addWidget(label)
+        layout.addLayout(self.hardest_words_layout)
+
+        self.add_separator(layout)
+
+        self.fastest_words_title = QLabel("⚡ Fastest Words (All Time)")
+        self.fastest_words_title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(self.fastest_words_title)
+
+        self.fastest_words_layout = QVBoxLayout()
+        self.fastest_word_labels: List[QLabel] = []
+        for i in range(10):
+            label = QLabel(f"{i+1}. --")
+            label.setStyleSheet("font-family: monospace; font-size: 12px;")
+            self.fastest_word_labels.append(label)
+            self.fastest_words_layout.addWidget(label)
+        layout.addLayout(self.fastest_words_layout)
 
         self.add_separator(layout)
 
@@ -163,3 +193,29 @@ class StatsPanel(QWidget):
             time_str = f"{seconds}s"
 
         self.typing_time_label.setText(f"Typing time: {time_str}")
+
+    def update_hardest_words(self, words: List[Tuple[str, float, int, int]]) -> None:
+        """Update hardest words display.
+
+        Args:
+            words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
+        """
+        for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(words):
+            label = self.hardest_word_labels[i]
+            label.setText(f"{i+1}. '{word}' - {speed_ms_per_letter:.1f} ms/letter ({duration_ms} ms, {num_letters} letters)")
+
+        for i in range(len(words), len(self.hardest_word_labels)):
+            self.hardest_word_labels[i].setText(f"{i+1}. --")
+
+    def update_fastest_words(self, words: List[Tuple[str, float, int, int]]) -> None:
+        """Update fastest words display.
+
+        Args:
+            words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
+        """
+        for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(words):
+            label = self.fastest_word_labels[i]
+            label.setText(f"{i+1}. '{word}' - {speed_ms_per_letter:.1f} ms/letter ({duration_ms} ms, {num_letters} letters)")
+
+        for i in range(len(words), len(self.fastest_word_labels)):
+            self.fastest_word_labels[i].setText(f"{i+1}. --")

@@ -90,3 +90,21 @@ def get_key_name(keycode: int, layout: str = 'us') -> str:
 def is_supported_layout(layout: str) -> bool:
     """Check if layout has keycode mapping."""
     return layout in LAYOUT_KEYCODE_MAPPINGS
+
+
+def is_letter_key(key_name: str) -> bool:
+    """Check if a key name is a letter key (a-z, ä, ö, ü).
+
+    Args:
+        key_name: The key name to check
+
+    Returns:
+        True if the key is a letter, False otherwise
+    """
+    # Single letter a-z
+    if len(key_name) == 1 and key_name.isalpha():
+        return True
+    # German umlauts
+    if key_name in ('ä', 'ö', 'ü', 'ß'):
+        return True
+    return False
