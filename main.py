@@ -2,6 +2,7 @@
 """RealTypeCoach - KDE Wayland typing analysis application."""
 
 import sys
+import os
 import signal
 from pathlib import Path
 from queue import Queue
@@ -266,7 +267,9 @@ class Application(QObject):
         self.analyzer.start()
         self.notification_handler.start()
 
-        QTimer.singleShot(100, self.process_event_queue)
+        self.process_queue_timer = QTimer()
+        self.process_queue_timer.timeout.connect(self.process_event_queue)
+        self.process_queue_timer.start(100)
 
         self.tray_icon.show()
 
@@ -294,8 +297,34 @@ class Application(QObject):
         print("RealTypeCoach stopped.")
 
 
+def check_single_instance() -> bool:
+    """Check if another instance is already running."""
+    pid_file = Path.home() / '.local' / 'share' / 'realtypecoach' / 'realtypecoach.pid'
+
+    if pid_file.exists():
+        try:
+            with open(pid_file, 'r') as f:
+                pid = int(f.read().strip())
+            try:
+                os.kill(pid, 0)  # Check if process is alive
+                print(f"Instance already running with PID {pid}")
+                return False
+            except ProcessLookupError:
+                print("Stale PID file found, cleaning up...")
+                pid_file.unlink()
+        except (ValueError, IOError):
+            pass
+
+    return True
+
+
 def main():
     """Main entry point."""
+    # Check for single instance
+    if not check_single_instance():
+        print("RealTypeCoach is already running. Exiting.")
+        sys.exit(1)
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
@@ -304,11 +333,28 @@ def main():
     signal.signal(signal.SIGINT, lambda s, f: app.quit())
     signal.signal(signal.SIGTERM, lambda s, f: app.quit())
 
+    # Create PID file
+    pid_file = Path.home() / '.local' / 'share' / 'realtypecoach' / 'realtypecoach.pid'
+    with open(pid_file, 'w') as f:
+        f.write(str(os.getpid()))
+
+    # Ensure PID file is cleaned up on exit
+    import atexit
+    def cleanup_pid():
+        if pid_file.exists():
+            pid_file.unlink()
+
+    atexit.register(cleanup_pid)
+
     application.start()
 
     ret = app.exec_()
 
     application.stop()
+
+    # Clean up PID file
+    cleanup_pid()
+
     sys.exit(ret)
 
 

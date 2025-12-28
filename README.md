@@ -43,6 +43,35 @@ python3 main.py
 
 That's it! The application will start and appear in your system tray.
 
+### 4. Development Workflow (Optional)
+
+For easier development, use the `justfile`:
+
+```bash
+# List all available commands
+just
+
+# Run the application
+just run
+
+# Stop all instances
+just kill
+
+# Check running status
+just status
+
+# Clean and rebuild
+just rebuild
+
+# Full reset (kill, clean, reset db, run)
+just full
+
+# Test imports
+just test-imports
+```
+
+Install `just` from: https://just.systems/
+
 ## Usage
 
 ### System Tray Controls
