@@ -9,8 +9,12 @@ watch:
 
 # Instance Management
 kill:
-    @pkill -9 -f "python3.*realtypecoach" 2>/dev/null || true
-    @echo "Killed all instances"
+    echo "🛑 Stopping all RealTypeCoach instances..."
+    pkill -f "python3.*realtypecoach" 2>/dev/null || true
+    pkill -f "python3.*main.py" 2>/dev/null || true
+    rm -f ~/.local/share/realtypecoach/realtypecoach.pid
+    sleep 2
+    echo "  ✓ All instances stopped"
 
 status:
     @if pgrep -f "python3.*realtypecoach" > /dev/null; then \
