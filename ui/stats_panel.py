@@ -1,54 +1,8 @@
 """Statistics panel for RealTypeCoach."""
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel,
-                             QGroupBox)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTabWidget)
 from PyQt5.QtCore import Qt
 from typing import List, Tuple
-
-
-class CollapsibleBox(QWidget):
-    """A collapsible group box widget."""
-
-    def __init__(self, title: str = "", expanded: bool = True, parent=None):
-        """Initialize collapsible box.
-
-        Args:
-            title: Title for the group box
-            expanded: Whether the box is expanded by default
-            parent: Parent widget
-        """
-        super().__init__(parent)
-
-        # Main layout
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
-
-        # Create group box with checkbox for toggle
-        self.group_box = QGroupBox(title)
-        self.group_box.setCheckable(True)
-        self.group_box.setChecked(expanded)
-        self.group_box.toggled.connect(self._on_toggled)
-
-        # Content container
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(8, 8, 8, 8)
-
-        # Set initial visibility
-        self.content_widget.setVisible(expanded)
-
-        # Add to layout
-        self.main_layout.addWidget(self.group_box)
-        self.main_layout.addWidget(self.content_widget)
-
-    def _on_toggled(self, checked: bool) -> None:
-        """Handle checkbox toggle."""
-        self.content_widget.setVisible(checked)
-
-    def content(self) -> QVBoxLayout:
-        """Get the content layout for adding widgets."""
-        return self.content_layout
 
 
 class StatsPanel(QWidget):
@@ -68,31 +22,49 @@ class StatsPanel(QWidget):
         self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(self.title_label)
 
-        # WPM Summary section (expanded by default)
-        wpm_section = CollapsibleBox("⚡ WPM Summary", expanded=True)
-        wpm_content = wpm_section.content()
+        # Create tab widget
+        tab_widget = QTabWidget()
+
+        # Tab 1: Overview (WPM + Today's Stats)
+        overview_tab = QWidget()
+        overview_layout = QVBoxLayout(overview_tab)
 
         self.wpm_label = QLabel("Current WPM: --")
         self.wpm_label.setStyleSheet("font-size: 24px; color: #3daee9; font-weight: bold;")
-        wpm_content.addWidget(self.wpm_label)
+        overview_layout.addWidget(self.wpm_label)
 
         self.burst_wpm_label = QLabel("Burst WPM: --")
         self.burst_wpm_label.setStyleSheet("font-size: 16px;")
-        wpm_content.addWidget(self.burst_wpm_label)
+        overview_layout.addWidget(self.burst_wpm_label)
 
         self.personal_best_label = QLabel("Personal Best Today: --")
         self.personal_best_label.setStyleSheet("font-size: 16px; color: #ff6b6b;")
-        wpm_content.addWidget(self.personal_best_label)
+        overview_layout.addWidget(self.personal_best_label)
 
-        layout.addWidget(wpm_section)
+        overview_layout.addSpacing(20)
 
-        # Key Statistics section (collapsed by default)
-        key_section = CollapsibleBox("🔑 Key Statistics", expanded=False)
-        key_content = key_section.content()
+        self.keystrokes_label = QLabel("Keystrokes: 0")
+        self.keystrokes_label.setStyleSheet("font-size: 12px;")
+        overview_layout.addWidget(self.keystrokes_label)
+
+        self.bursts_label = QLabel("Bursts: 0")
+        self.bursts_label.setStyleSheet("font-size: 12px;")
+        overview_layout.addWidget(self.bursts_label)
+
+        self.typing_time_label = QLabel("Typing time: 0m 0s")
+        self.typing_time_label.setStyleSheet("font-size: 12px;")
+        overview_layout.addWidget(self.typing_time_label)
+
+        overview_layout.addStretch()
+        tab_widget.addTab(overview_tab, "⚡ Overview")
+
+        # Tab 2: Keys
+        keys_tab = QWidget()
+        keys_layout = QVBoxLayout(keys_tab)
 
         self.slowest_title = QLabel("🐌 Slowest Letter Keys (Top 10)")
         self.slowest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        key_content.addWidget(self.slowest_title)
+        keys_layout.addWidget(self.slowest_title)
 
         self.slowest_keys_layout = QVBoxLayout()
         self.slowest_key_labels: List[QLabel] = []
@@ -101,11 +73,13 @@ class StatsPanel(QWidget):
             label.setStyleSheet("font-family: monospace; font-size: 12px;")
             self.slowest_key_labels.append(label)
             self.slowest_keys_layout.addWidget(label)
-        key_content.addLayout(self.slowest_keys_layout)
+        keys_layout.addLayout(self.slowest_keys_layout)
+
+        keys_layout.addSpacing(10)
 
         self.fastest_title = QLabel("⚡ Fastest Letter Keys (Top 10)")
         self.fastest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        key_content.addWidget(self.fastest_title)
+        keys_layout.addWidget(self.fastest_title)
 
         self.fastest_keys_layout = QVBoxLayout()
         self.fastest_key_labels: List[QLabel] = []
@@ -114,17 +88,18 @@ class StatsPanel(QWidget):
             label.setStyleSheet("font-family: monospace; font-size: 12px;")
             self.fastest_key_labels.append(label)
             self.fastest_keys_layout.addWidget(label)
-        key_content.addLayout(self.fastest_keys_layout)
+        keys_layout.addLayout(self.fastest_keys_layout)
 
-        layout.addWidget(key_section)
+        keys_layout.addStretch()
+        tab_widget.addTab(keys_tab, "🔑 Keys")
 
-        # Word Statistics section (collapsed by default)
-        word_section = CollapsibleBox("📝 Word Statistics", expanded=False)
-        word_content = word_section.content()
+        # Tab 3: Words
+        words_tab = QWidget()
+        words_layout = QVBoxLayout(words_tab)
 
         self.hardest_words_title = QLabel("🐢 Hardest Words (All Time)")
         self.hardest_words_title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        word_content.addWidget(self.hardest_words_title)
+        words_layout.addWidget(self.hardest_words_title)
 
         self.hardest_words_layout = QVBoxLayout()
         self.hardest_word_labels: List[QLabel] = []
@@ -133,11 +108,13 @@ class StatsPanel(QWidget):
             label.setStyleSheet("font-family: monospace; font-size: 12px;")
             self.hardest_word_labels.append(label)
             self.hardest_words_layout.addWidget(label)
-        word_content.addLayout(self.hardest_words_layout)
+        words_layout.addLayout(self.hardest_words_layout)
+
+        words_layout.addSpacing(10)
 
         self.fastest_words_title = QLabel("⚡ Fastest Words (All Time)")
         self.fastest_words_title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        word_content.addWidget(self.fastest_words_title)
+        words_layout.addWidget(self.fastest_words_title)
 
         self.fastest_words_layout = QVBoxLayout()
         self.fastest_word_labels: List[QLabel] = []
@@ -146,29 +123,12 @@ class StatsPanel(QWidget):
             label.setStyleSheet("font-family: monospace; font-size: 12px;")
             self.fastest_word_labels.append(label)
             self.fastest_words_layout.addWidget(label)
-        word_content.addLayout(self.fastest_words_layout)
+        words_layout.addLayout(self.fastest_words_layout)
 
-        layout.addWidget(word_section)
+        words_layout.addStretch()
+        tab_widget.addTab(words_tab, "📝 Words")
 
-        # Today's Stats section (expanded by default)
-        today_section = CollapsibleBox("📊 Today's Stats", expanded=True)
-        today_content = today_section.content()
-
-        self.keystrokes_label = QLabel("Keystrokes: 0")
-        self.keystrokes_label.setStyleSheet("font-size: 12px;")
-        today_content.addWidget(self.keystrokes_label)
-
-        self.bursts_label = QLabel("Bursts: 0")
-        self.bursts_label.setStyleSheet("font-size: 12px;")
-        today_content.addWidget(self.bursts_label)
-
-        self.typing_time_label = QLabel("Typing time: 0m 0s")
-        self.typing_time_label.setStyleSheet("font-size: 12px;")
-        today_content.addWidget(self.typing_time_label)
-
-        layout.addWidget(today_section)
-
-        layout.addStretch()
+        layout.addWidget(tab_widget)
         self.setLayout(layout)
 
     def update_wpm(self, current_wpm: float, burst_wpm: float,
