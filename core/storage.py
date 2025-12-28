@@ -272,7 +272,7 @@ class Storage:
 
     def get_slowest_keys(self, limit: int = 10,
                          layout: Optional[str] = None) -> List[Tuple[int, str, float]]:
-        """Get slowest keys.
+        """Get slowest keys (highest average press time).
 
         Args:
             limit: Maximum number of keys to return
@@ -287,7 +287,7 @@ class Storage:
                 cursor.execute('''
                     SELECT keycode, key_name, avg_press_time
                     FROM statistics
-                    WHERE layout = ?
+                    WHERE layout = ? AND total_presses >= 2
                     ORDER BY avg_press_time DESC
                     LIMIT ?
                 ''', (layout, limit))
@@ -295,7 +295,39 @@ class Storage:
                 cursor.execute('''
                     SELECT keycode, key_name, avg_press_time
                     FROM statistics
+                    WHERE total_presses >= 2
                     ORDER BY avg_press_time DESC
+                    LIMIT ?
+                ''', (limit,))
+            return cursor.fetchall()
+
+    def get_fastest_keys(self, limit: int = 10,
+                         layout: Optional[str] = None) -> List[Tuple[int, str, float]]:
+        """Get fastest keys (lowest average press time).
+
+        Args:
+            limit: Maximum number of keys to return
+            layout: Filter by layout (None for all layouts)
+
+        Returns:
+            List of (keycode, key_name, avg_press_time_ms) tuples
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            if layout:
+                cursor.execute('''
+                    SELECT keycode, key_name, avg_press_time
+                    FROM statistics
+                    WHERE layout = ? AND total_presses >= 2
+                    ORDER BY avg_press_time ASC
+                    LIMIT ?
+                ''', (layout, limit))
+            else:
+                cursor.execute('''
+                    SELECT keycode, key_name, avg_press_time
+                    FROM statistics
+                    WHERE total_presses >= 2
+                    ORDER BY avg_press_time ASC
                     LIMIT ?
                 ''', (limit,))
             return cursor.fetchall()

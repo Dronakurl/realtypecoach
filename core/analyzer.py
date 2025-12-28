@@ -31,12 +31,16 @@ class Analyzer:
             'slowest_keycode': None,
             'slowest_key_name': None,
             'slowest_ms': 0.0,
-            'keypress_times': defaultdict(list),
+            'keypress_times': defaultdict(list),  # List of intervals for each key
+            'last_press_time': {},  # Last press timestamp for each key
         }
 
         self.current_wpm: float = 0.0
         self.current_burst_wpm: float = 0.0
         self.personal_best_today: Optional[float] = None
+
+        # Load today's existing data from database
+        self._load_today_data()
 
     def start(self) -> None:
         """Start analyzer background thread."""
@@ -53,9 +57,52 @@ class Analyzer:
         if self.thread:
             self.thread.join(timeout=5)
 
+    def _load_today_data(self) -> None:
+        """Load today's existing data from database."""
+        # Load daily summary if exists
+        summary = self.storage.get_daily_summary(self.today_date)
+        if summary:
+            total_keystrokes, total_bursts, avg_wpm, slowest_keycode, slowest_key_name, total_typing_sec, _ = summary
+            self.today_stats['total_keystrokes'] = total_keystrokes
+            self.today_stats['total_bursts'] = total_bursts
+            # Don't load total_typing_ms - calculate fresh from database to avoid double-counting
+            if slowest_keycode and slowest_key_name:
+                self.today_stats['slowest_keycode'] = slowest_keycode
+                self.today_stats['slowest_key_name'] = slowest_key_name
+        else:
+            # No daily summary yet, calculate from raw data
+            import sqlite3
+            with sqlite3.connect(self.storage.db_path) as conn:
+                cursor = conn.cursor()
+
+                # Count today's keystrokes
+                startOfDay = int(datetime.strptime(self.today_date, '%Y-%m-%d').timestamp() * 1000)
+                endOfDay = startOfDay + 86400000
+
+                cursor.execute('''
+                    SELECT COUNT(*) FROM key_events
+                    WHERE timestamp_ms >= ? AND timestamp_ms < ?
+                ''', (startOfDay, endOfDay))
+                self.today_stats['total_keystrokes'] = cursor.fetchone()[0]
+
+                # Count today's bursts
+                cursor.execute('''
+                    SELECT COUNT(*) FROM bursts
+                    WHERE start_time >= ? AND start_time < ?
+                ''', (startOfDay, endOfDay))
+                self.today_stats['total_bursts'] = cursor.fetchone()[0]
+
+                # Don't load total_typing_ms from database to avoid double-counting
+                # It will be accumulated as bursts are processed, and calculated fresh from DB in get_statistics
+                self.today_stats['total_typing_ms'] = 0
+
+        # Load personal best for today
+        self.personal_best_today = self.storage.get_today_high_score(self.today_date)
+
     def process_key_event(self, keycode: int, key_name: str,
                           timestamp_ms: int, event_type: str,
-                          app_name: str, is_password_field: bool) -> None:
+                          app_name: str, is_password_field: bool,
+                          layout: str = 'us') -> None:
         """Process a single key event.
 
         Args:
@@ -65,6 +112,7 @@ class Analyzer:
             event_type: 'press' or 'release'
             app_name: Application name
             is_password_field: Whether typing in password field
+            layout: Keyboard layout
         """
         if is_password_field or event_type != 'press':
             return
@@ -77,8 +125,11 @@ class Analyzer:
 
         self.today_stats['total_keystrokes'] += 1
 
+        # Store key event to database
+        self.storage.store_key_event(keycode, key_name, timestamp_ms, event_type, app_name, is_password_field)
+
         press_time_ms = timestamp_ms
-        last_press = self.today_stats['keypress_times'].get(keycode)
+        last_press = self.today_stats['last_press_time'].get(keycode)
 
         if last_press:
             time_between = press_time_ms - last_press
@@ -89,7 +140,10 @@ class Analyzer:
                 self.today_stats['slowest_keycode'] = keycode
                 self.today_stats['slowest_key_name'] = key_name
 
-            self._update_key_statistics(keycode, key_name, time_between)
+            self._update_key_statistics(keycode, key_name, time_between, layout)
+
+        # Store current press time for next comparison
+        self.today_stats['last_press_time'][keycode] = press_time_ms
 
     def process_burst(self, burst: Burst) -> None:
         """Process a completed burst.
@@ -193,7 +247,8 @@ class Analyzer:
             'slowest_keycode': None,
             'slowest_key_name': None,
             'slowest_ms': 0.0,
-            'keypress_times': defaultdict(list),
+            'keypress_times': defaultdict(list),  # List of intervals for each key
+            'last_press_time': {},  # Last press timestamp for each key
         }
 
     def _finalize_day(self) -> None:
@@ -201,9 +256,22 @@ class Analyzer:
         if self.today_stats['total_keystrokes'] == 0:
             return
 
+        # Calculate total typing time from database
+        startOfDay = int(datetime.strptime(self.today_date, '%Y-%m-%d').timestamp() * 1000)
+        endOfDay = startOfDay + 86400000
+
+        import sqlite3
+        with sqlite3.connect(self.storage.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
+                WHERE start_time >= ? AND start_time < ?
+            ''', (startOfDay, endOfDay))
+            total_typing_ms = cursor.fetchone()[0]
+
         avg_wpm = self._calculate_wpm(
             self.today_stats['total_keystrokes'],
-            self.today_stats['total_typing_ms']
+            total_typing_ms
         )
 
         self.storage.update_daily_summary(
@@ -213,7 +281,7 @@ class Analyzer:
             avg_wpm,
             self.today_stats['slowest_keycode'] or 0,
             self.today_stats['slowest_key_name'] or 'unknown',
-            self.today_stats['total_typing_ms'] // 1000
+            total_typing_ms // 1000
         )
 
     def _run(self) -> None:
@@ -228,14 +296,27 @@ class Analyzer:
             self.current_wpm = 0.0
             return
 
-        total_time_sec = self.today_stats['total_typing_ms'] / 1000.0
+        # Calculate total typing time from database
+        startOfDay = int(datetime.strptime(self.today_date, '%Y-%m-%d').timestamp() * 1000)
+        endOfDay = startOfDay + 86400000
+
+        import sqlite3
+        with sqlite3.connect(self.storage.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
+                WHERE start_time >= ? AND start_time < ?
+            ''', (startOfDay, endOfDay))
+            total_typing_ms = cursor.fetchone()[0]
+
+        total_time_sec = total_typing_ms / 1000.0
         if total_time_sec == 0:
             self.current_wpm = 0.0
             return
 
         self.current_wpm = self._calculate_wpm(
             self.today_stats['total_keystrokes'],
-            self.today_stats['total_typing_ms']
+            total_typing_ms
         )
 
     def get_statistics(self) -> Dict:
@@ -244,7 +325,20 @@ class Analyzer:
         Returns:
             Dictionary with statistics
         """
-        total_time_sec = self.today_stats['total_typing_ms'] / 1000.0
+        # Calculate total typing time from database to avoid double-counting
+        startOfDay = int(datetime.strptime(self.today_date, '%Y-%m-%d').timestamp() * 1000)
+        endOfDay = startOfDay + 86400000
+
+        import sqlite3
+        with sqlite3.connect(self.storage.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
+                WHERE start_time >= ? AND start_time < ?
+            ''', (startOfDay, endOfDay))
+            total_typing_ms = cursor.fetchone()[0]
+
+        total_time_sec = total_typing_ms / 1000.0
 
         return {
             'date': self.today_date,
@@ -271,6 +365,19 @@ class Analyzer:
             List of (keycode, key_name, avg_time_ms) tuples
         """
         return self.storage.get_slowest_keys(limit, layout)
+
+    def get_fastest_keys(self, limit: int = 10,
+                         layout: Optional[str] = None) -> list:
+        """Get fastest keys from database.
+
+        Args:
+            limit: Maximum number to return
+            layout: Filter by layout
+
+        Returns:
+            List of (keycode, key_name, avg_time_ms) tuples
+        """
+        return self.storage.get_fastest_keys(limit, layout)
 
     def get_daily_summary(self, date: str) -> Optional[Tuple]:
         """Get daily summary for a date.

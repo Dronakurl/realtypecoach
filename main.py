@@ -25,7 +25,7 @@ from PyQt5.QtCore import QTimer, QObject, pyqtSignal
 
 from core.storage import Storage
 from core.burst_detector import BurstDetector
-from core.event_handler import EventHandler
+from core.evdev_handler import EvdevHandler
 from core.analyzer import Analyzer
 from core.notification_handler import NotificationHandler
 from utils.keyboard_detector import LayoutMonitor, get_current_layout
@@ -39,6 +39,7 @@ class Application(QObject):
 
     signal_update_stats = pyqtSignal(float, float, float)
     signal_update_slowest_keys = pyqtSignal(list)
+    signal_update_fastest_keys = pyqtSignal(list)
     signal_update_today_stats = pyqtSignal(int, int, int)
     signal_settings_changed = pyqtSignal(dict)
 
@@ -60,10 +61,12 @@ class Application(QObject):
         self.db_path = data_dir / 'typing_data.db'
         self.icon_path = data_dir / 'icon.svg'
         self.icon_paused_path = data_dir / 'icon_paused.svg'
+        self.icon_stopping_path = data_dir / 'icon_stopping.svg'
 
         from utils.icon_generator import save_icon
         save_icon(self.icon_path, active=True)
         save_icon(self.icon_paused_path, active=False)
+        save_icon(self.icon_stopping_path, stopping=True)
 
         print(f"Data directory: {data_dir}")
         print(f"Database: {self.db_path}")
@@ -84,7 +87,7 @@ class Application(QObject):
             on_burst_complete=self.on_burst_complete
         )
 
-        self.event_handler = EventHandler(
+        self.event_handler = EvdevHandler(
             event_queue=self.event_queue,
             layout_getter=self.get_current_layout,
             on_password_field=self.on_password_field
@@ -94,9 +97,8 @@ class Application(QObject):
 
         self.notification_handler = NotificationHandler(
             summary_getter=self.analyzer.get_daily_summary,
-            exceptional_threshold=self.config.get_float(
-                'exceptional_wpm_threshold', 120
-            )
+            storage=self.storage,
+            update_interval_sec=self.config.get_int('threshold_update_interval_sec', 300)
         )
 
         self.layout_monitor = LayoutMonitor(
@@ -105,18 +107,20 @@ class Application(QObject):
         )
 
         self.stats_panel = StatsPanel()
-        self.tray_icon = TrayIcon(self.stats_panel, self.icon_path, self.icon_paused_path)
+        self.tray_icon = TrayIcon(self.stats_panel, self.icon_path, self.icon_paused_path, self.icon_stopping_path)
 
     def connect_signals(self) -> None:
         """Connect all signals."""
         self.signal_update_stats.connect(self.stats_panel.update_wpm)
         self.signal_update_slowest_keys.connect(self.stats_panel.update_slowest_keys)
+        self.signal_update_fastest_keys.connect(self.stats_panel.update_fastest_keys)
         self.signal_update_today_stats.connect(self.stats_panel.update_today_stats)
 
         self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
         self.notification_handler.signal_exceptional_burst.connect(self.show_exceptional_notification)
 
         self.tray_icon.settings_changed.connect(self.apply_settings)
+        self.tray_icon.stats_requested.connect(self.update_statistics)
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
@@ -220,9 +224,15 @@ class Application(QObject):
 
         # Process all available events at once (non-blocking)
         processed_count = 0
+        logged = False
         while processed_count < 100:
             try:
                 key_event = self.event_queue.get_nowait()
+
+                # Log first few processed events for debugging
+                if not logged and processed_count < 3:
+                    log.info(f"Processing key event: {key_event.key_name}")
+                    logged = True
 
                 if key_event.event_type == 'press':
                     self.burst_detector.process_key_event(
@@ -238,7 +248,8 @@ class Application(QObject):
                         key_event.timestamp_ms,
                         key_event.event_type,
                         key_event.app_name,
-                        key_event.is_password_field
+                        key_event.is_password_field,
+                        self.get_current_layout()
                     )
 
                     if burst:
@@ -270,6 +281,12 @@ class Application(QObject):
         )
         self.signal_update_slowest_keys.emit(slowest_keys)
 
+        fastest_keys = self.analyzer.get_fastest_keys(
+            limit=self.config.get_int('fastest_keys_count', 10),
+            layout=self.get_current_layout()
+        )
+        self.signal_update_fastest_keys.emit(fastest_keys)
+
         self.signal_update_today_stats.emit(
             stats['total_keystrokes'],
             stats['total_bursts'],
@@ -290,6 +307,9 @@ class Application(QObject):
 
         log.info("Starting analyzer...")
         self.analyzer.start()
+
+        # Load and display existing statistics
+        self.update_statistics()
 
         log.info("Starting notification handler...")
         self.notification_handler.start()

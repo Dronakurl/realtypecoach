@@ -2,6 +2,7 @@
 
 # Running
 run:
+    @bash ./kill.sh 2>/dev/null || true
     @python3 main.py
 
 watch:
@@ -10,6 +11,13 @@ watch:
 # Instance Management
 kill:
     bash ./kill.sh
+
+# Installation
+install:
+    bash ./install.sh
+
+uninstall:
+    bash ./uninstall.sh
 
 status:
     @if pgrep -f "python3.*realtypecoach" > /dev/null; then \

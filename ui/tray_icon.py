@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import (QSystemTrayIcon, QMenu, QAction,
                              QApplication, QMessageBox, QDialog)
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt, pyqtSignal, QObject
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QTimer
 from pathlib import Path
 import sys
 sys.path.insert(0, '.')
@@ -16,9 +16,10 @@ class TrayIcon(QSystemTrayIcon):
     """System tray icon for RealTypeCoach."""
 
     settings_changed = pyqtSignal(dict)
+    stats_requested = pyqtSignal()  # Emitted when stats panel is requested
 
     def __init__(self, stats_panel: StatsPanel,
-                 icon_path: Path, icon_paused_path: Path,
+                 icon_path: Path, icon_paused_path: Path, icon_stopping_path: Path,
                  parent=None):
         """Initialize tray icon.
 
@@ -26,12 +27,14 @@ class TrayIcon(QSystemTrayIcon):
             stats_panel: Statistics panel widget
             icon_path: Path to active icon file
             icon_paused_path: Path to paused icon file
+            icon_stopping_path: Path to stopping icon file
             parent: Parent widget
         """
         super().__init__(parent)
         self.stats_panel = stats_panel
         self.icon_path = icon_path
         self.icon_paused_path = icon_paused_path
+        self.icon_stopping_path = icon_stopping_path
         self.monitoring_active = True
 
         self.setIcon(QIcon(str(icon_path)))
@@ -75,6 +78,7 @@ class TrayIcon(QSystemTrayIcon):
 
     def show_stats(self) -> None:
         """Show statistics panel."""
+        self.stats_requested.emit()  # Request fresh statistics
         self.stats_panel.show()
         self.stats_panel.raise_()
         self.stats_panel.activateWindow()
@@ -106,6 +110,18 @@ class TrayIcon(QSystemTrayIcon):
 
     def _quit_app(self) -> None:
         """Quit the application."""
+        # Show stopping icon
+        self.setIcon(QIcon(str(self.icon_stopping_path)))
+        self.setToolTip("RealTypeCoach - Stopping...")
+
+        # Process events to ensure icon updates
+        QApplication.processEvents()
+
+        # Delay quit slightly so the stopping icon is visible
+        QTimer.singleShot(100, self._do_quit)
+
+    def _do_quit(self) -> None:
+        """Actually quit the application after delay."""
         if QApplication.instance():
             QApplication.instance().quit()
         else:

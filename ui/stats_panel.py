@@ -55,6 +55,21 @@ class StatsPanel(QWidget):
 
         self.add_separator(layout)
 
+        self.fastest_title = QLabel("⚡ Fastest Keys (Top 10)")
+        self.fastest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(self.fastest_title)
+
+        self.fastest_keys_layout = QVBoxLayout()
+        self.fastest_key_labels: List[QLabel] = []
+        for i in range(10):
+            label = QLabel(f"{i+1}. --")
+            label.setStyleSheet("font-family: monospace; font-size: 12px;")
+            self.fastest_key_labels.append(label)
+            self.fastest_keys_layout.addWidget(label)
+        layout.addLayout(self.fastest_keys_layout)
+
+        self.add_separator(layout)
+
         self.today_stats_label = QLabel("Today's Stats:")
         self.today_stats_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(self.today_stats_label)
@@ -110,6 +125,19 @@ class StatsPanel(QWidget):
 
         for i in range(len(slowest_keys), len(self.slowest_key_labels)):
             self.slowest_key_labels[i].setText(f"{i+1}. --")
+
+    def update_fastest_keys(self, fastest_keys: List[Tuple[int, str, float]]) -> None:
+        """Update fastest keys display.
+
+        Args:
+            fastest_keys: List of (keycode, key_name, avg_time_ms) tuples
+        """
+        for i, (keycode, key_name, avg_time) in enumerate(fastest_keys):
+            label = self.fastest_key_labels[i]
+            label.setText(f"{i+1}. '{key_name}' - {avg_time:.1f}ms")
+
+        for i in range(len(fastest_keys), len(self.fastest_key_labels)):
+            self.fastest_key_labels[i].setText(f"{i+1}. --")
 
     def update_today_stats(self, keystrokes: int, bursts: int,
                          typing_sec: int) -> None:
