@@ -6,7 +6,10 @@ from typing import Any, Optional
 
 
 DEFAULT_SETTINGS = {
-    'burst_timeout_ms': '3000',
+    'burst_timeout_ms': '1000',
+    'word_boundary_timeout_ms': '1000',
+    'burst_duration_calculation': 'total_time',
+    'active_time_threshold_ms': '500',
     'high_score_min_duration_ms': '10000',
     'exceptional_wpm_threshold': '120',
     'password_exclusion': 'True',

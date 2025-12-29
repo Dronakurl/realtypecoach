@@ -1,5 +1,6 @@
 """Keyboard layout detection for RealTypeCoach."""
 
+import os
 import subprocess
 import time
 import threading
@@ -7,7 +8,49 @@ from typing import Callable, Optional
 
 
 def get_current_layout() -> str:
-    """Detect current keyboard layout using setxkbmap."""
+    """Detect current keyboard layout using multiple methods with Wayland support.
+
+    Detection priority:
+    1. XKB_DEFAULT_LAYOUT environment variable (Wayland session)
+    2. localectl status (system configuration)
+    3. /etc/default/keyboard (Debian-based systems)
+    4. setxkbmap -query (X11/Xwayland fallback)
+    """
+    # Method 1: Check XKB_DEFAULT_LAYOUT (Wayland)
+    xkb_layout = os.environ.get('XKB_DEFAULT_LAYOUT')
+    if xkb_layout:
+        # Handle multiple layouts (e.g., "de,us")
+        return xkb_layout.split(',')[0].strip().lower()
+
+    # Method 2: Check localectl status
+    try:
+        result = subprocess.run(
+            ['localectl', 'status'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        for line in result.stdout.split('\n'):
+            if 'X11 Layout' in line:
+                layout = line.split(':')[1].strip()
+                if layout:
+                    return layout.lower()
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, IndexError):
+        pass
+
+    # Method 3: Read /etc/default/keyboard
+    try:
+        with open('/etc/default/keyboard', 'r') as f:
+            for line in f:
+                if line.startswith('XKBLAYOUT='):
+                    # Handle both XKBLAYOUT="de" and XKBLAYOUT=de
+                    layout = line.split('=')[1].strip().strip('"\'')
+                    if layout:
+                        return layout.split(',')[0].lower()
+    except (FileNotFoundError, IOError, IndexError):
+        pass
+
+    # Method 4: Use setxkbmap (X11/Xwayland fallback)
     try:
         result = subprocess.run(
             ['setxkbmap', '-query'],
@@ -18,14 +61,52 @@ def get_current_layout() -> str:
         for line in result.stdout.split('\n'):
             if line.startswith('layout:'):
                 layout = line.split(':')[1].strip()
-                return layout.lower()
-    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+                if layout:
+                    return layout.lower()
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, IndexError):
         pass
-    return 'us'
+
+    return 'us'  # Ultimate fallback
 
 
 def get_available_layouts() -> list[str]:
-    """Get list of available keyboard layouts."""
+    """Get list of available keyboard layouts.
+
+    Checks for multiple layouts configured (e.g., "de,us").
+    """
+    # Method 1: XKB_DEFAULT_LAYOUT
+    xkb_layout = os.environ.get('XKB_DEFAULT_LAYOUT')
+    if xkb_layout:
+        return [l.strip().lower() for l in xkb_layout.split(',')]
+
+    # Method 2: localectl status
+    try:
+        result = subprocess.run(
+            ['localectl', 'status'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        for line in result.stdout.split('\n'):
+            if 'X11 Layout' in line and line.count(':') >= 1:
+                layout_part = line.split(':', 1)[1].strip()
+                if layout_part:
+                    return [l.strip().lower() for l in layout_part.split(',')]
+    except Exception:
+        pass
+
+    # Method 3: /etc/default/keyboard
+    try:
+        with open('/etc/default/keyboard', 'r') as f:
+            for line in f:
+                if line.startswith('XKBLAYOUT='):
+                    layout = line.split('=')[1].strip().strip('"\'')
+                    if layout:
+                        return [l.strip().lower() for l in layout.split(',')]
+    except Exception:
+        pass
+
+    # Method 4: setxkbmap
     try:
         result = subprocess.run(
             ['setxkbmap', '-query'],
@@ -33,14 +114,15 @@ def get_available_layouts() -> list[str]:
             text=True,
             timeout=5
         )
-        layouts = []
         for line in result.stdout.split('\n'):
             if line.startswith('layout:'):
                 layout = line.split(':')[1].strip()
-                layouts.append(layout.lower())
-        return list(set(layouts))
-    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
-        return ['us']
+                if layout:
+                    return [layout.lower()]
+    except Exception:
+        pass
+
+    return ['us']
 
 
 class LayoutMonitor:
@@ -72,7 +154,7 @@ class LayoutMonitor:
         """Stop monitoring."""
         self.running = False
         if self.thread:
-            self.thread.join(timeout=5)
+            self.thread.join(timeout=1)
             self.thread = None
 
     def _monitor(self) -> None:
