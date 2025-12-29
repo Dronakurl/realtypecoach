@@ -9,19 +9,25 @@ import logging
 from pathlib import Path
 from queue import Queue
 
-# Setup logging
+# Setup logging with XDG state directory
+xdg_state_home = os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local' / 'state'))
+log_dir = Path(xdg_state_home) / 'realtypecoach'
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / 'realtypecoach.log'
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/tmp/realtypecoach.log'),
+        logging.FileHandler(log_file),
         logging.StreamHandler()
     ]
 )
 log = logging.getLogger('realtypecoach')
 
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog
 from PyQt5.QtCore import QTimer, QObject, pyqtSignal
+from PyQt5.QtGui import QFont
 
 from core.storage import Storage
 from core.burst_detector import BurstDetector
@@ -32,6 +38,7 @@ from utils.keyboard_detector import LayoutMonitor, get_current_layout
 from utils.config import Config
 from ui.stats_panel import StatsPanel
 from ui.tray_icon import TrayIcon
+from ui.settings_dialog import SettingsDialog
 
 
 class Application(QObject):
@@ -43,6 +50,7 @@ class Application(QObject):
     signal_update_hardest_words = pyqtSignal(list)
     signal_update_fastest_words_stats = pyqtSignal(list)
     signal_update_today_stats = pyqtSignal(int, int, int)
+    signal_update_trend_data = pyqtSignal(list)
     signal_settings_changed = pyqtSignal(dict)
 
     def __init__(self):
@@ -75,24 +83,30 @@ class Application(QObject):
 
     def init_components(self) -> None:
         """Initialize all components."""
-        self.storage = Storage(self.db_path)
         self.config = Config(self.db_path)
+        self.storage = Storage(
+            self.db_path,
+            word_boundary_timeout_ms=self.config.get_int('word_boundary_timeout_ms', 1000),
+            english_dict_path=self.config.get('english_dict_path', '/usr/share/dict/words'),
+            german_dict_path=self.config.get('german_dict_path', '/usr/share/dict/ngerman')
+        )
 
         current_layout = get_current_layout()
         print(f"Detected keyboard layout: {current_layout}")
 
         self.burst_detector = BurstDetector(
-            burst_timeout_ms=self.config.get_int('burst_timeout_ms', 3000),
+            burst_timeout_ms=self.config.get_int('burst_timeout_ms', 1000),
             high_score_min_duration_ms=self.config.get_int(
                 'high_score_min_duration_ms', 10000
             ),
+            duration_calculation_method=self.config.get('burst_duration_calculation', 'total_time'),
+            active_time_threshold_ms=self.config.get_int('active_time_threshold_ms', 500),
             on_burst_complete=self.on_burst_complete
         )
 
         self.event_handler = EvdevHandler(
             event_queue=self.event_queue,
-            layout_getter=self.get_current_layout,
-            on_password_field=self.on_password_field
+            layout_getter=self.get_current_layout
         )
 
         self.analyzer = Analyzer(self.storage)
@@ -119,12 +133,16 @@ class Application(QObject):
         self.signal_update_hardest_words.connect(self.stats_panel.update_hardest_words)
         self.signal_update_fastest_words_stats.connect(self.stats_panel.update_fastest_words)
         self.signal_update_today_stats.connect(self.stats_panel.update_today_stats)
+        self.signal_update_trend_data.connect(self.stats_panel.update_trend_graph)
 
         self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
         self.notification_handler.signal_exceptional_burst.connect(self.show_exceptional_notification)
 
         self.tray_icon.settings_changed.connect(self.apply_settings)
         self.tray_icon.stats_requested.connect(self.update_statistics)
+        self.stats_panel.settings_requested.connect(self.show_settings_dialog)
+
+        self.stats_panel.set_trend_data_callback(self.provide_trend_data)
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
@@ -141,22 +159,6 @@ class Application(QObject):
             wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
             self.notification_handler.notify_exceptional_burst(
                 wpm, burst.key_count, burst.duration_ms / 1000.0
-            )
-
-    def on_password_field(self, is_password: bool) -> None:
-        """Handle password field detection."""
-        self.tray_icon.update_status(not is_password)
-        if is_password:
-            self.tray_icon.show_notification(
-                "Password Field Detected",
-                "Monitoring paused for privacy",
-                "warning"
-            )
-        else:
-            self.tray_icon.show_notification(
-                "Password Field Exited",
-                "Monitoring resumed",
-                "info"
             )
 
     def on_layout_changed(self, new_layout: str) -> None:
@@ -221,15 +223,31 @@ class Application(QObject):
                     f"Failed to export data: {e}"
                 )
 
+    def provide_trend_data(self, window_size: int) -> None:
+        """Provide trend data to stats panel.
+
+        Args:
+            window_size: Number of bursts to aggregate (1-50)
+        """
+        import threading
+
+        def fetch_data():
+            try:
+                data = self.analyzer.get_wpm_burst_sequence(window_size=window_size)
+                self.signal_update_trend_data.emit(data)
+            except Exception as e:
+                log.error(f"Error fetching trend data: {e}")
+
+        # Fetch in background thread to avoid blocking UI
+        thread = threading.Thread(target=fetch_data, daemon=True)
+        thread.start()
+
     def process_event_queue(self) -> None:
         """Process events from queue."""
-        if not self.config.get_bool('password_exclusion', True):
-            return
-
         # Process all available events at once (non-blocking)
         processed_count = 0
         logged = False
-        while processed_count < 100:
+        while processed_count < 1000:  # Increased limit to handle fast typing
             try:
                 key_event = self.event_queue.get_nowait()
 
@@ -242,9 +260,6 @@ class Application(QObject):
                     self.burst_detector.process_key_event(
                         key_event.timestamp_ms, True
                     )
-                    burst = self.burst_detector.process_key_event(
-                        key_event.timestamp_ms, False
-                    )
 
                     self.analyzer.process_key_event(
                         key_event.keycode,
@@ -252,22 +267,22 @@ class Application(QObject):
                         key_event.timestamp_ms,
                         key_event.event_type,
                         key_event.app_name,
-                        key_event.is_password_field,
                         self.get_current_layout()
                     )
 
-                    if burst:
-                        self.on_burst_complete(burst)
-
                 processed_count += 1
-                self.update_statistics()
 
             except:
                 break  # Queue empty
 
-        # Update stats display every ~60 seconds
-        if processed_count > 0 or (int(time.time() * 1000) % 60000 < 500):
-            pass
+        # Update stats display periodically (every 10 seconds if processing events)
+        current_time = int(time.time())
+        if processed_count > 0:
+            if not hasattr(self, '_last_stats_update'):
+                self._last_stats_update = 0
+            if current_time - self._last_stats_update >= 10:
+                self.update_statistics()
+                self._last_stats_update = current_time
 
     def update_statistics(self) -> None:
         """Update statistics display."""
@@ -309,6 +324,27 @@ class Application(QObject):
             stats['total_typing_sec']
         )
 
+    def show_settings_dialog(self) -> None:
+        """Show settings dialog."""
+        current_settings = {
+            'burst_timeout_ms': self.config.get_int('burst_timeout_ms', 1000),
+            'burst_duration_calculation': self.config.get('burst_duration_calculation', 'total_time'),
+            'active_time_threshold_ms': self.config.get_int('active_time_threshold_ms', 500),
+            'high_score_min_duration_ms': self.config.get_int('high_score_min_duration_ms', 10000),
+            'keyboard_layout': self.config.get('keyboard_layout', 'auto'),
+            'notifications_enabled': self.config.get_bool('notifications_enabled', True),
+            'exceptional_wpm_threshold': self.config.get_int('exceptional_wpm_threshold', 120),
+            'notification_time_hour': self.config.get_int('notification_time_hour', 18),
+            'slowest_keys_count': self.config.get_int('slowest_keys_count', 10),
+            'data_retention_days': self.config.get_int('data_retention_days', 90),
+            'english_dict_path': self.config.get('english_dict_path', '/usr/share/dict/words'),
+            'german_dict_path': self.config.get('german_dict_path', '/usr/share/dict/ngerman'),
+        }
+        dialog = SettingsDialog(current_settings)
+        if dialog.exec_() == QDialog.Accepted:
+            new_settings = dialog.get_settings()
+            self.apply_settings(new_settings)
+
     def start(self) -> None:
         """Start all components."""
         log.info("Starting RealTypeCoach...")
@@ -342,8 +378,11 @@ class Application(QObject):
         )
 
         retention_days = self.config.get_int('data_retention_days', 90)
-        log.info(f"Deleting data older than {retention_days} days...")
-        self.storage.delete_old_data(retention_days)
+        if retention_days >= 0:
+            log.info(f"Deleting data older than {retention_days} days...")
+            self.storage.delete_old_data(retention_days)
+        else:
+            log.info("Data retention disabled (keep forever)")
 
         log.info("RealTypeCoach started successfully!")
 
@@ -400,6 +439,11 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+
+    # Set default font to avoid malformed KDE font descriptions
+    font = QFont()
+    font.setFamily("Sans Serif")
+    app.setFont(font)
 
     log.info("Creating Application instance...")
     application = Application()
