@@ -63,9 +63,9 @@ class NotificationHandler(QObject):
         """Stop notification scheduler."""
         self.running = False
         if self.scheduler_thread:
-            self.scheduler_thread.join(timeout=5)
+            self.scheduler_thread.join(timeout=1)
         if self.threshold_thread:
-            self.threshold_thread.join(timeout=5)
+            self.threshold_thread.join(timeout=1)
 
     def notify_exceptional_burst(self, wpm: float, key_count: int,
                                     duration_sec: float) -> None:
