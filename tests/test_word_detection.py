@@ -51,16 +51,39 @@ class TestWordDetector:
     def test_backspace_handling(self):
         """Test backspace removes letters."""
         detector = WordDetector(word_boundary_timeout_ms=1000)
-        
+
         detector.process_keystroke('t', 1000, 'us', is_letter=True)
         detector.process_keystroke('e', 1100, 'us', is_letter=True)
         detector.process_keystroke('s', 1200, 'us', is_letter=True)
         detector.process_keystroke('t', 1300, 'us', is_letter=True)
-        
+
         result = detector.process_keystroke('BACKSPACE', 1400, 'us', is_letter=False)
         assert result is None
         assert detector.current_state.word == 'tes'
         assert detector.current_state.backspace_count == 1
+
+    def test_shoes_backspace_scenario(self):
+        """Test S H O E S <BACKSPACE> S sequence."""
+        detector = WordDetector(word_boundary_timeout_ms=1000, min_word_length=3)
+
+        # S H O E S <BACKSPACE> S
+        detector.process_keystroke('s', 1000, 'us', is_letter=True)
+        detector.process_keystroke('h', 1100, 'us', is_letter=True)
+        detector.process_keystroke('o', 1200, 'us', is_letter=True)
+        detector.process_keystroke('e', 1300, 'us', is_letter=True)
+        detector.process_keystroke('s', 1400, 'us', is_letter=True)
+        detector.process_keystroke('BACKSPACE', 1500, 'us', is_letter=False)
+        detector.process_keystroke('s', 1600, 'us', is_letter=True)
+
+        # Finalize with space
+        result = detector.process_keystroke('SPACE', 1700, 'us', is_letter=False)
+
+        assert result is not None
+        assert result['word'] == 'shoes'
+        assert result['num_letters'] == 5
+        assert result['backspace_count'] == 1
+        assert result['editing_time_ms'] == 100  # Time between 's' (1400) and backspace (1500)
+        assert result['total_duration_ms'] == 700  # From first 's' (1000) to space (1700)
 
     def test_short_words_ignored(self):
         """Test that words < 3 letters are ignored."""
