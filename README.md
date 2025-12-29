@@ -15,7 +15,8 @@
 - 🔤 **Word analysis** - Discover which words slow you down
 - 🎯 **Personalized insights** - Identifies your slowest keys to help you improve
 
-> ⚠️ **Warning:** The database at `~/.local/share/realtypecoach/typing_data.db` contains all your keystrokes. Do not share it with anyone.
+> [!WARNING]
+> The database at `~/.local/share/realtypecoach/typing_data.db` contains all your keystrokes. Do not share it with anyone.
 
 ## Requirements
 
@@ -41,6 +42,9 @@ sudo usermod -aG input $USER
 ```
 
 The install script creates a launcher icon and installs RealTypeCoach to `~/.local/share/realtypecoach/`.
+
+> [!NOTE]
+> After installation, the source checkout folder can be safely removed. The uninstall script can be copied from the source before removal, or re-downloaded later if needed.
 
 ### Quick test (run without installing)
 ```bash
