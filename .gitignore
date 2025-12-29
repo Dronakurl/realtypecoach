@@ -153,3 +153,9 @@ Thumbs.db
 *.7z
 *.iso
 *.dmg
+*.deb
+*.rpm
+
+# Build artifacts
+*.pyc
+*.pyo

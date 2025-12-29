@@ -10,28 +10,30 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Queue, Empty
 
+# Path constants (must be defined before logging setup)
+DATA_DIR = Path.home() / ".local" / "share" / "realtypecoach"
+XDG_STATE_HOME = Path(
+    os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
+)
+LOG_DIR = XDG_STATE_HOME / "realtypecoach"
+
 # Setup logging with XDG state directory
-xdg_state_home = os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local' / 'state'))
-log_dir = Path(xdg_state_home) / 'realtypecoach'
-log_dir.mkdir(parents=True, exist_ok=True)
-log_file = log_dir / 'realtypecoach.log'
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+log_file = LOG_DIR / "realtypecoach.log"
 
 # Configure rotating file handler (5MB max, keep 5 backups)
 file_handler = RotatingFileHandler(
     log_file,
-    maxBytes=5*1024*1024,  # 5MB
-    backupCount=5
+    maxBytes=5 * 1024 * 1024,  # 5MB
+    backupCount=5,
 )
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        file_handler,
-        logging.StreamHandler()
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[file_handler, logging.StreamHandler()],
 )
-log = logging.getLogger('realtypecoach')
+log = logging.getLogger("realtypecoach")
 
 from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog  # noqa: E402
 from PyQt5.QtCore import QTimer, QObject, pyqtSignal  # noqa: E402
@@ -40,6 +42,7 @@ from PyQt5.QtGui import QFont  # noqa: E402
 from core.storage import Storage  # noqa: E402
 from core.dictionary_config import DictionaryConfig  # noqa: E402
 from core.burst_detector import BurstDetector  # noqa: E402
+from core.burst_config import BurstDetectorConfig  # noqa: E402
 from core.evdev_handler import EvdevHandler  # noqa: E402
 from core.analyzer import Analyzer  # noqa: E402
 from core.notification_handler import NotificationHandler  # noqa: E402
@@ -62,7 +65,7 @@ class Application(QObject):
     signal_update_trend_data = pyqtSignal(list)
     signal_settings_changed = pyqtSignal(dict)
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize application."""
         super().__init__()
         self.event_queue = Queue(maxsize=1000)
@@ -75,20 +78,36 @@ class Application(QObject):
 
     def init_data_directory(self) -> None:
         """Initialize data directory."""
-        data_dir = Path.home() / '.local' / 'share' / 'realtypecoach'
-        data_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error(f"Failed to create data directory: {e}")
+            QMessageBox.critical(
+                None, "Initialization Failed", f"Cannot create data directory:\n{e}"
+            )
+            sys.exit(1)
 
-        self.db_path = data_dir / 'typing_data.db'
-        self.icon_path = data_dir / 'icon.svg'
-        self.icon_paused_path = data_dir / 'icon_paused.svg'
-        self.icon_stopping_path = data_dir / 'icon_stopping.svg'
+        self.db_path = DATA_DIR / "typing_data.db"
+        self.icon_path = DATA_DIR / "icon.svg"
+        self.icon_paused_path = DATA_DIR / "icon_paused.svg"
+        self.icon_stopping_path = DATA_DIR / "icon_stopping.svg"
 
-        from utils.icon_generator import save_icon
-        save_icon(self.icon_path, active=True)
-        save_icon(self.icon_paused_path, active=False)
-        save_icon(self.icon_stopping_path, stopping=True)
+        try:
+            from utils.icon_generator import save_icon
 
-        print(f"Data directory: {data_dir}")
+            save_icon(self.icon_path, active=True)
+            save_icon(self.icon_paused_path, active=False)
+            save_icon(self.icon_stopping_path, stopping=True)
+        except Exception as e:
+            log.error(f"Failed to generate icons: {e}")
+            QMessageBox.critical(
+                None,
+                "Initialization Failed",
+                f"Cannot generate application icons:\n{e}",
+            )
+            sys.exit(1)
+
+        print(f"Data directory: {DATA_DIR}")
         print(f"Database: {self.db_path}")
 
     def init_components(self) -> None:
@@ -96,39 +115,47 @@ class Application(QObject):
         self.config = Config(self.db_path)
 
         # Build dictionary configuration
-        enabled_languages = self.config.get_list('enabled_languages')
-        accept_all_mode = self.config.get('dictionary_mode') == 'accept_all'
+        enabled_languages = self.config.get_list("enabled_languages")
+        accept_all_mode = self.config.get("dictionary_mode") == "accept_all"
 
         dictionary_config = DictionaryConfig(
-            enabled_languages=enabled_languages,
-            accept_all_mode=accept_all_mode
+            enabled_languages=enabled_languages, accept_all_mode=accept_all_mode
         )
 
         self.storage = Storage(
             self.db_path,
-            word_boundary_timeout_ms=self.config.get_int('word_boundary_timeout_ms', 1000),
+            word_boundary_timeout_ms=self.config.get_int(
+                "word_boundary_timeout_ms", 1000
+            ),
             dictionary_config=dictionary_config,
-            config=self.config
+            config=self.config,
         )
 
         current_layout = get_current_layout()
         print(f"Detected keyboard layout: {current_layout}")
 
-        self.burst_detector = BurstDetector(
-            burst_timeout_ms=self.config.get_int('burst_timeout_ms', 1000),
+        burst_config = BurstDetectorConfig(
+            burst_timeout_ms=self.config.get_int("burst_timeout_ms", 1000),
             high_score_min_duration_ms=self.config.get_int(
-                'high_score_min_duration_ms', 10000
+                "high_score_min_duration_ms", 10000
             ),
-            duration_calculation_method=self.config.get('burst_duration_calculation', 'total_time'),
-            active_time_threshold_ms=self.config.get_int('active_time_threshold_ms', 500),
-            min_key_count=self.config.get_int('min_burst_key_count', 10),
-            min_duration_ms=self.config.get_int('min_burst_duration_ms', 5000),
-            on_burst_complete=self.on_burst_complete
+            duration_calculation_method=self.config.get(
+                "burst_duration_calculation", "total_time"
+            ),
+            active_time_threshold_ms=self.config.get_int(
+                "active_time_threshold_ms", 500
+            ),
+            min_key_count=self.config.get_int("min_burst_key_count", 10),
+            min_duration_ms=self.config.get_int("min_burst_duration_ms", 5000),
+        )
+
+        self.burst_detector = BurstDetector(
+            config=burst_config,
+            on_burst_complete=self.on_burst_complete,
         )
 
         self.event_handler = EvdevHandler(
-            event_queue=self.event_queue,
-            layout_getter=self.get_current_layout
+            event_queue=self.event_queue, layout_getter=self.get_current_layout
         )
 
         self.analyzer = Analyzer(self.storage)
@@ -136,18 +163,24 @@ class Application(QObject):
         self.notification_handler = NotificationHandler(
             summary_getter=self.analyzer.get_daily_summary,
             storage=self.storage,
-            min_burst_ms=self.config.get_int('notification_min_burst_ms', 10000),
-            threshold_days=self.config.get_int('notification_threshold_days', 30),
-            threshold_update_sec=self.config.get_int('notification_threshold_update_sec', 300)
+            min_burst_ms=self.config.get_int("notification_min_burst_ms", 10000),
+            threshold_days=self.config.get_int("notification_threshold_days", 30),
+            threshold_update_sec=self.config.get_int(
+                "notification_threshold_update_sec", 300
+            ),
         )
 
         self.layout_monitor = LayoutMonitor(
-            callback=self.on_layout_changed,
-            poll_interval=60
+            callback=self.on_layout_changed, poll_interval=60
         )
 
         self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
-        self.tray_icon = TrayIcon(self.stats_panel, self.icon_path, self.icon_paused_path, self.icon_stopping_path)
+        self.tray_icon = TrayIcon(
+            self.stats_panel,
+            self.icon_path,
+            self.icon_paused_path,
+            self.icon_stopping_path,
+        )
 
     def connect_signals(self) -> None:
         """Connect all signals."""
@@ -155,12 +188,18 @@ class Application(QObject):
         self.signal_update_slowest_keys.connect(self.stats_panel.update_slowest_keys)
         self.signal_update_fastest_keys.connect(self.stats_panel.update_fastest_keys)
         self.signal_update_hardest_words.connect(self.stats_panel.update_hardest_words)
-        self.signal_update_fastest_words_stats.connect(self.stats_panel.update_fastest_words)
+        self.signal_update_fastest_words_stats.connect(
+            self.stats_panel.update_fastest_words
+        )
         self.signal_update_today_stats.connect(self.stats_panel.update_today_stats)
         self.signal_update_trend_data.connect(self.stats_panel.update_trend_graph)
 
-        self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
-        self.notification_handler.signal_exceptional_burst.connect(self.show_exceptional_notification)
+        self.notification_handler.signal_daily_summary.connect(
+            self.show_daily_notification
+        )
+        self.notification_handler.signal_exceptional_burst.connect(
+            self.show_exceptional_notification
+        )
 
         self.tray_icon.settings_changed.connect(self.apply_settings)
         self.tray_icon.stats_requested.connect(self.update_statistics)
@@ -170,8 +209,8 @@ class Application(QObject):
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
-        layout = self.config.get('keyboard_layout', 'auto')
-        if layout == 'auto':
+        layout = self.config.get("keyboard_layout", "auto")
+        if layout == "auto":
             return get_current_layout()
         return layout
 
@@ -189,9 +228,7 @@ class Application(QObject):
         """Handle keyboard layout change."""
         print(f"Keyboard layout changed to: {new_layout}")
         self.tray_icon.show_notification(
-            "Keyboard Layout Changed",
-            f"New layout: {new_layout}",
-            "info"
+            "Keyboard Layout Changed", f"New layout: {new_layout}", "info"
         )
 
     def _calculate_wpm(self, key_count: int, duration_ms: int) -> float:
@@ -216,49 +253,40 @@ class Application(QObject):
         self.tray_icon.show_notification(
             "🚀 Exceptional Typing Speed!",
             f"{wpm:.1f} WPM - New personal best!",
-            "info"
+            "info",
         )
 
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
-        # Migrate legacy settings if present
-        if 'english_dict_path' in new_settings or 'german_dict_path' in new_settings:
-            log.info("Migrating from legacy dictionary settings to new format")
-            # Remove legacy keys from new_settings
-            new_settings.pop('english_dict_path', None)
-            new_settings.pop('german_dict_path', None)
-            # The new settings will be detected automatically via DictionaryDetector
-
         for key, value in new_settings.items():
             self.config.set(key, value)
 
         # Reload dictionary configuration if language settings changed
-        if 'dictionary_mode' in new_settings or 'enabled_languages' in new_settings:
-            log.info("Dictionary configuration changed, storage will reload on next restart")
-
-        if '__clear_database__' in new_settings:
-            self.storage.clear_database()
-            QMessageBox.information(
-                None, "Data Cleared",
-                "All typing data has been deleted."
+        if "dictionary_mode" in new_settings or "enabled_languages" in new_settings:
+            log.info(
+                "Dictionary configuration changed, storage will reload on next restart"
             )
 
-        if 'export_csv_path' in new_settings:
+        if "__clear_database__" in new_settings:
+            self.storage.clear_database()
+            QMessageBox.information(
+                None, "Data Cleared", "All typing data has been deleted."
+            )
+
+        if "export_csv_path" in new_settings:
             try:
                 from datetime import datetime
-                default_date = datetime.now().strftime('%Y-%m-%d')
+
+                default_date = datetime.now().strftime("%Y-%m-%d")
                 count = self.storage.export_to_csv(
-                    Path(new_settings['export_csv_path']),
-                    start_date=default_date
+                    Path(new_settings["export_csv_path"]), start_date=default_date
                 )
                 QMessageBox.information(
-                    None, "Export Complete",
-                    f"Exported {count:,} events to CSV."
+                    None, "Export Complete", f"Exported {count:,} events to CSV."
                 )
             except Exception as e:
                 QMessageBox.critical(
-                    None, "Export Failed",
-                    f"Failed to export data: {e}"
+                    None, "Export Failed", f"Failed to export data: {e}"
                 )
 
     def provide_trend_data(self, window_size: int) -> None:
@@ -294,15 +322,13 @@ class Application(QObject):
                     log.info(f"Processing key event: {key_event.key_name}")
                     logged = True
 
-                self.burst_detector.process_key_event(
-                    key_event.timestamp_ms, True
-                )
+                self.burst_detector.process_key_event(key_event.timestamp_ms, True)
 
                 self.analyzer.process_key_event(
                     key_event.keycode,
                     key_event.key_name,
                     key_event.timestamp_ms,
-                    self.get_current_layout()
+                    self.get_current_layout(),
                 )
 
                 processed_count += 1
@@ -322,57 +348,61 @@ class Application(QObject):
         stats = self.analyzer.get_statistics()
 
         self.signal_update_stats.emit(
-            stats['avg_wpm'],
-            stats['burst_wpm'],
-            stats['personal_best_today'] or 0
+            stats["avg_wpm"], stats["burst_wpm"], stats["personal_best_today"] or 0
         )
 
         slowest_keys = self.analyzer.get_slowest_keys(
-            limit=self.config.get_int('slowest_keys_count', 10),
-            layout=self.get_current_layout()
+            limit=self.config.get_int("slowest_keys_count", 10),
+            layout=self.get_current_layout(),
         )
         self.signal_update_slowest_keys.emit(slowest_keys)
 
         fastest_keys = self.analyzer.get_fastest_keys(
-            limit=self.config.get_int('fastest_keys_count', 10),
-            layout=self.get_current_layout()
+            limit=self.config.get_int("fastest_keys_count", 10),
+            layout=self.get_current_layout(),
         )
         self.signal_update_fastest_keys.emit(fastest_keys)
 
         hardest_words = self.analyzer.get_slowest_words(
-            limit=10,
-            layout=self.get_current_layout()
+            limit=10, layout=self.get_current_layout()
         )
         self.signal_update_hardest_words.emit(hardest_words)
 
         fastest_words = self.analyzer.get_fastest_words(
-            limit=10,
-            layout=self.get_current_layout()
+            limit=10, layout=self.get_current_layout()
         )
         self.signal_update_fastest_words_stats.emit(fastest_words)
 
         self.signal_update_today_stats.emit(
-            stats['total_keystrokes'],
-            stats['total_bursts'],
-            stats['total_typing_sec']
+            stats["total_keystrokes"], stats["total_bursts"], stats["total_typing_sec"]
         )
 
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""
         current_settings = {
-            'burst_timeout_ms': self.config.get_int('burst_timeout_ms', 1000),
-            'burst_duration_calculation': self.config.get('burst_duration_calculation', 'total_time'),
-            'active_time_threshold_ms': self.config.get_int('active_time_threshold_ms', 500),
-            'high_score_min_duration_ms': self.config.get_int('high_score_min_duration_ms', 10000),
-            'keyboard_layout': self.config.get('keyboard_layout', 'auto'),
-            'notifications_enabled': self.config.get_bool('notifications_enabled', True),
-            'exceptional_wpm_threshold': self.config.get_int('exceptional_wpm_threshold', 120),
-            'notification_time_hour': self.config.get_int('notification_time_hour', 18),
-            'slowest_keys_count': self.config.get_int('slowest_keys_count', 10),
-            'data_retention_days': self.config.get_int('data_retention_days', -1),
-            'dictionary_mode': self.config.get('dictionary_mode', 'validate'),
-            'enabled_languages': self.config.get('enabled_languages', 'en,de'),
-            'custom_dict_paths': self.config.get('custom_dict_paths', ''),
+            "burst_timeout_ms": self.config.get_int("burst_timeout_ms", 1000),
+            "burst_duration_calculation": self.config.get(
+                "burst_duration_calculation", "total_time"
+            ),
+            "active_time_threshold_ms": self.config.get_int(
+                "active_time_threshold_ms", 500
+            ),
+            "high_score_min_duration_ms": self.config.get_int(
+                "high_score_min_duration_ms", 10000
+            ),
+            "keyboard_layout": self.config.get("keyboard_layout", "auto"),
+            "notifications_enabled": self.config.get_bool(
+                "notifications_enabled", True
+            ),
+            "exceptional_wpm_threshold": self.config.get_int(
+                "exceptional_wpm_threshold", 120
+            ),
+            "notification_time_hour": self.config.get_int("notification_time_hour", 18),
+            "slowest_keys_count": self.config.get_int("slowest_keys_count", 10),
+            "data_retention_days": self.config.get_int("data_retention_days", -1),
+            "dictionary_mode": self.config.get("dictionary_mode", "validate"),
+            "enabled_languages": self.config.get("enabled_languages", "en,de"),
+            "custom_dict_paths": self.config.get("custom_dict_paths", ""),
         }
         dialog = SettingsDialog(current_settings)
         if dialog.exec_() == QDialog.Accepted:
@@ -407,11 +437,11 @@ class Application(QObject):
         self.tray_icon.show()
 
         self.notification_handler.set_notification_time(
-            hour=self.config.get_int('notification_time_hour', 18),
-            minute=self.config.get_int('notification_time_minute', 0)
+            hour=self.config.get_int("notification_time_hour", 18),
+            minute=self.config.get_int("notification_time_minute", 0),
         )
 
-        retention_days = self.config.get_int('data_retention_days', -1)
+        retention_days = self.config.get_int("data_retention_days", -1)
         if retention_days >= 0:
             log.info(f"Deleting data older than {retention_days} days...")
             self.storage.delete_old_data(retention_days)
@@ -442,17 +472,38 @@ class Application(QObject):
 
 
 def check_single_instance() -> bool:
-    """Check if another instance is already running."""
-    pid_file = Path.home() / '.local' / 'share' / 'realtypecoach' / 'realtypecoach.pid'
+    """Check if another instance is already running and terminate it."""
+    pid_file = DATA_DIR / "realtypecoach.pid"
 
     if pid_file.exists():
         try:
-            with open(pid_file, 'r') as f:
+            with open(pid_file, "r") as f:
                 pid = int(f.read().strip())
             try:
                 os.kill(pid, 0)  # Check if process is alive
-                print(f"Instance already running with PID {pid}")
-                return False
+                print(f"Instance already running with PID {pid}, terminating...")
+
+                # Send SIGTERM for graceful shutdown
+                os.kill(pid, signal.SIGTERM)
+
+                # Wait for process to terminate (max 5 seconds)
+                for _ in range(50):
+                    try:
+                        os.kill(pid, 0)
+                        time.sleep(0.1)
+                    except ProcessLookupError:
+                        print(f"Instance {pid} terminated successfully")
+                        break
+                else:
+                    # Process didn't terminate gracefully, force kill
+                    print(f"Instance {pid} did not terminate gracefully, forcing...")
+                    os.kill(pid, signal.SIGKILL)
+                    time.sleep(0.5)
+
+                # Clean up stale PID file
+                if pid_file.exists():
+                    pid_file.unlink()
+
             except ProcessLookupError:
                 print("Stale PID file found, cleaning up...")
                 pid_file.unlink()
@@ -464,12 +515,8 @@ def check_single_instance() -> bool:
 
 def main():
     """Main entry point."""
-    # Check for single instance
     log.info("Starting RealTypeCoach...")
-    if not check_single_instance():
-        log.error("RealTypeCoach is already running. Exiting.")
-        print("RealTypeCoach is already running. Exiting.")
-        sys.exit(1)
+    check_single_instance()
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -486,12 +533,13 @@ def main():
     signal.signal(signal.SIGTERM, lambda s, f: app.quit())
 
     # Create PID file
-    pid_file = Path.home() / '.local' / 'share' / 'realtypecoach' / 'realtypecoach.pid'
-    with open(pid_file, 'w') as f:
+    pid_file = DATA_DIR / "realtypecoach.pid"
+    with open(pid_file, "w") as f:
         f.write(str(os.getpid()))
 
     # Ensure PID file is cleaned up on exit
     import atexit
+
     def cleanup_pid():
         if pid_file.exists():
             pid_file.unlink()
@@ -513,5 +561,5 @@ def main():
     sys.exit(ret)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
