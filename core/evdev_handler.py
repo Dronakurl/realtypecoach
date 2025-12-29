@@ -27,31 +27,26 @@ class KeyEvent:
     timestamp_ms: int
     event_type: str  # 'press' or 'release'
     app_name: str
-    is_password_field: bool
 
 
 class EvdevHandler:
     """Handles keyboard events using evdev (works on Wayland)."""
 
     def __init__(self, event_queue: Queue[KeyEvent],
-                 layout_getter: Callable[[], str],
-                 on_password_field: Optional[Callable[[bool], None]] = None):
+                 layout_getter: Callable[[], str]):
         """Initialize evdev event handler.
 
         Args:
             event_queue: Queue to send events to
             layout_getter: Function to get current keyboard layout
-            on_password_field: Callback when entering/leaving password field
         """
         if not EVDEV_AVAILABLE:
             raise ImportError("evdev module is not installed. Install it with: sudo apt install python3-evdev")
 
         self.event_queue = event_queue
         self.layout_getter = layout_getter
-        self.on_password_field = on_password_field
         self.running = False
         self.current_app_name: Optional[str] = 'unknown'
-        self.in_password_field = False
         self.thread: Optional[threading.Thread] = None
         self.devices: List[InputDevice] = []
         self.device_paths: List[str] = []
@@ -183,21 +178,19 @@ class EvdevHandler:
             key_name=key_name,
             timestamp_ms=timestamp_ms,
             event_type=event_type,
-            app_name=self.current_app_name or 'unknown',
-            is_password_field=self.in_password_field
+            app_name=self.current_app_name or 'unknown'
         )
-
-        # Log first few queued events for debugging
-        if not hasattr(self, '_queue_count'):
-            self._queue_count = 0
-        if self._queue_count < 5:
-            self._queue_count += 1
-            log.info(f"Queued key event: {key_name} (queue size: {self.event_queue.qsize()})")
 
         try:
             self.event_queue.put(key_event, block=False)
         except:
-            pass  # Queue full, skip this event
+            # Queue full - log this so user knows events are being dropped
+            if not hasattr(self, '_drop_count'):
+                self._drop_count = 0
+            self._drop_count += 1
+            # Log every 100th dropped event to avoid spam
+            if self._drop_count % 100 == 1:
+                log.warning(f"Queue full! Dropped {self._drop_count} events. Queue size: {self.event_queue.qsize()}")
 
     def get_state(self) -> dict:
         """Get current handler state.
@@ -208,7 +201,6 @@ class EvdevHandler:
         return {
             'running': self.running,
             'current_app': self.current_app_name,
-            'in_password_field': self.in_password_field,
             'queue_size': self.event_queue.qsize(),
             'devices': len(self.devices),
             'handler_type': 'evdev',
