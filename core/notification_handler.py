@@ -2,16 +2,22 @@
 
 import time
 import threading
-from typing import Callable, Optional, List
+import logging
+from typing import Callable, Optional
 from datetime import datetime, timedelta
 
 from PyQt5.QtCore import QObject, pyqtSignal
+
+from core.models import DailySummary
+
+
+log = logging.getLogger('realtypecoach.notification')
 
 
 class NotificationHandler(QObject):
     """Handles notifications for bursts and daily summaries."""
 
-    signal_daily_summary = pyqtSignal(str, str, str, str, str, str, str)
+    signal_daily_summary = pyqtSignal(object)  # DailySummary object
     signal_exceptional_burst = pyqtSignal(float)
 
     def __init__(self, summary_getter: Callable[[str], Optional[tuple]],
@@ -82,7 +88,7 @@ class NotificationHandler(QObject):
 
         # Check if this burst is exceptional (above 95th percentile threshold)
         if wpm >= self.percentile_95_threshold:
-            message = f"🚀 Exceptional typing speed!\n"
+            message = "🚀 Exceptional typing speed!\n"
             message += f"{wpm:.1f} WPM ({key_count} keys in {duration_sec:.1f}s)"
             message += f"\nThreshold: {self.percentile_95_threshold:.1f} WPM (95th percentile)"
             self.signal_exceptional_burst.emit(wpm)
@@ -123,7 +129,7 @@ class NotificationHandler(QObject):
                 self.last_threshold_update = time.time()
 
         except Exception as e:
-            print(f"Error updating threshold: {e}")
+            log.error(f"Error updating threshold: {e}")
 
     def _run_threshold_updater(self) -> None:
         """Background thread to update threshold every 5 minutes."""
@@ -135,7 +141,6 @@ class NotificationHandler(QObject):
         """Background scheduler for daily notifications."""
         while self.running:
             now = datetime.now()
-            current_time = now.time()
 
             if now.hour == self.notification_hour and now.minute == self.notification_minute:
                 self._send_daily_summary(now.strftime('%Y-%m-%d'))
@@ -178,9 +183,16 @@ Slowest key: '{slowest_key_name}' (avg)
 ━━━━━━━━━━━━━━━━━━━━
         """
 
-        self.signal_daily_summary.emit(date, title, message,
-                                       slowest_key_name, str(int(avg_wpm)),
-                                       f"{total_keystrokes:,} keystrokes")
+        summary_obj = DailySummary(
+            date=date,
+            title=title,
+            message=message,
+            slowest_key=slowest_key_name,
+            avg_wpm=str(int(avg_wpm)),
+            keystrokes=f"{total_keystrokes:,} keystrokes"
+        )
+
+        self.signal_daily_summary.emit(summary_obj)
 
         self.last_notification_date = date
 
