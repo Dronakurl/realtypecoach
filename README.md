@@ -107,14 +107,6 @@ sudo usermod -aG input $USER
    python3 -c "from evdev import list_devices; print(list_devices())"
    ```
 
-### Icon not visible in system tray
-
-1. Check KDE settings:
-   - System Settings → Workspace Behavior → System Tray → Ensure hidden icons can be shown
-
-2. Add system tray to panel:
-   - Right-click panel → Edit Panel → Add Widgets → System Tray
-
 ## Uninstallation
 
 ```bash
