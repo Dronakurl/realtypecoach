@@ -1,19 +1,19 @@
 """evdev keyboard event handler for RealTypeCoach (Wayland-compatible)."""
 
-import time
 import threading
 import logging
 from typing import Callable, Optional, List
-from queue import Queue
+from queue import Queue, Full
 from dataclasses import dataclass
+from select import select
+import traceback
 
 try:
-    from evdev import InputDevice, list_devices, categorize, ecodes
+    from evdev import InputDevice, list_devices, ecodes
     EVDEV_AVAILABLE = True
 except ImportError:
     EVDEV_AVAILABLE = False
 
-from core.burst_detector import BurstDetector, Burst
 from utils.keycodes import get_key_name
 
 log = logging.getLogger('realtypecoach.evdev')
@@ -25,8 +25,6 @@ class KeyEvent:
     keycode: int
     key_name: str
     timestamp_ms: int
-    event_type: str  # 'press' or 'release'
-    app_name: str
 
 
 class EvdevHandler:
@@ -46,10 +44,11 @@ class EvdevHandler:
         self.event_queue = event_queue
         self.layout_getter = layout_getter
         self.running = False
-        self.current_app_name: Optional[str] = 'unknown'
         self.thread: Optional[threading.Thread] = None
         self.devices: List[InputDevice] = []
         self.device_paths: List[str] = []
+        self._event_count: int = 0
+        self._drop_count: int = 0
 
     def _find_keyboard_devices(self) -> List[InputDevice]:
         """Find all keyboard input devices."""
@@ -95,8 +94,9 @@ class EvdevHandler:
     def stop(self) -> None:
         """Stop listening for keyboard events."""
         self.running = False
-        # Note: We don't close devices here as they may be used elsewhere
-        # The devices will be closed when the InputDevice objects are garbage collected
+        # Wait for listener thread to finish
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
 
     def _run_listener(self) -> None:
         """Main event loop that reads from devices."""
@@ -118,7 +118,6 @@ class EvdevHandler:
 
             while self.running:
                 # Use select to efficiently wait for events from any device
-                from select import select
                 r, _, _ = select(devices, [], [], 0.1)
 
                 for device in r:
@@ -133,9 +132,14 @@ class EvdevHandler:
                         continue
 
         except Exception as e:
-            log.error(f"Error in listener thread: {e}")
-            import traceback
-            traceback.print_exc()
+            log.exception("Error in listener thread")
+        finally:
+            # Close devices opened in this thread
+            for device in devices:
+                try:
+                    device.close()
+                except Exception as e:
+                    log.error(f"Error closing device: {e}")
 
     def _process_key_event(self, event) -> None:
         """Process a single key event from evdev."""
@@ -157,36 +161,31 @@ class EvdevHandler:
                 return  # Ignore repeat events
 
             # Log first few events for debugging
-            if not hasattr(self, '_event_count'):
-                self._event_count = 0
             if self._event_count < 5:
                 self._event_count += 1
                 log.info(f"Received key event: {key_name} ({keycode}) - {event_type}")
 
             # Only queue press events to reduce queue size
             if event_type == 'press':
-                self._queue_key_event(keycode, key_name, timestamp_ms, event_type)
+                self._queue_key_event(keycode, key_name, timestamp_ms)
 
-        except (AttributeError, TypeError, ValueError) as e:
-            log.error(f"Error processing keyboard event: {e}")
+        except Exception as e:
+            # Catch all exceptions to prevent event loop crashes
+            log.error(f"Error processing keyboard event (code={getattr(event, 'code', '?')}): {e}")
 
     def _queue_key_event(self, keycode: int, key_name: str,
-                        timestamp_ms: int, event_type: str) -> None:
+                        timestamp_ms: int) -> None:
         """Queue a key event."""
         key_event = KeyEvent(
             keycode=keycode,
             key_name=key_name,
-            timestamp_ms=timestamp_ms,
-            event_type=event_type,
-            app_name=self.current_app_name or 'unknown'
+            timestamp_ms=timestamp_ms
         )
 
         try:
             self.event_queue.put(key_event, block=False)
-        except:
+        except Full:
             # Queue full - log this so user knows events are being dropped
-            if not hasattr(self, '_drop_count'):
-                self._drop_count = 0
             self._drop_count += 1
             # Log every 100th dropped event to avoid spam
             if self._drop_count % 100 == 1:
@@ -200,7 +199,6 @@ class EvdevHandler:
         """
         return {
             'running': self.running,
-            'current_app': self.current_app_name,
             'queue_size': self.event_queue.qsize(),
             'devices': len(self.devices),
             'handler_type': 'evdev',

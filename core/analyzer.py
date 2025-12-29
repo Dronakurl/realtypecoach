@@ -3,11 +3,12 @@
 import time
 from typing import Optional, Dict, Tuple, List, Any
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 import threading
 
 from core.storage import Storage
 from core.burst_detector import Burst
+from core.models import DailySummaryDB, KeyPerformance, WordStatisticsLite
 
 
 class Analyzer:
@@ -62,13 +63,12 @@ class Analyzer:
         # Load daily summary if exists
         summary = self.storage.get_daily_summary(self.today_date)
         if summary:
-            total_keystrokes, total_bursts, avg_wpm, slowest_keycode, slowest_key_name, total_typing_sec, _ = summary
-            self.today_stats['total_keystrokes'] = total_keystrokes
-            self.today_stats['total_bursts'] = total_bursts
+            self.today_stats['total_keystrokes'] = summary.total_keystrokes
+            self.today_stats['total_bursts'] = summary.total_bursts
             # Don't load total_typing_ms - calculate fresh from database to avoid double-counting
-            if slowest_keycode and slowest_key_name:
-                self.today_stats['slowest_keycode'] = slowest_keycode
-                self.today_stats['slowest_key_name'] = slowest_key_name
+            if summary.slowest_keycode and summary.slowest_key_name:
+                self.today_stats['slowest_keycode'] = summary.slowest_keycode
+                self.today_stats['slowest_key_name'] = summary.slowest_key_name
         else:
             # No daily summary yet, calculate from raw data
             import sqlite3
@@ -100,8 +100,7 @@ class Analyzer:
         self.personal_best_today = self.storage.get_today_high_score(self.today_date)
 
     def process_key_event(self, keycode: int, key_name: str,
-                          timestamp_ms: int, event_type: str,
-                          app_name: str,
+                          timestamp_ms: int,
                           layout: str = 'us') -> None:
         """Process a single key event.
 
@@ -109,13 +108,8 @@ class Analyzer:
             keycode: Linux evdev keycode
             key_name: Human-readable key name
             timestamp_ms: Timestamp in milliseconds since epoch
-            event_type: 'press' or 'release'
-            app_name: Application name
             layout: Keyboard layout
         """
-        if event_type != 'press':
-            return
-
         now = datetime.now()
         current_date = now.strftime('%Y-%m-%d')
 
@@ -125,7 +119,7 @@ class Analyzer:
         self.today_stats['total_keystrokes'] += 1
 
         # Store key event to database
-        self.storage.store_key_event(keycode, key_name, timestamp_ms, event_type, app_name)
+        self.storage.store_key_event(keycode, key_name, timestamp_ms)
 
         press_time_ms = timestamp_ms
         last_press = self.today_stats['last_press_time'].get(keycode)
@@ -353,7 +347,7 @@ class Analyzer:
         }
 
     def get_slowest_keys(self, limit: int = 10,
-                          layout: Optional[str] = None) -> list:
+                          layout: Optional[str] = None) -> List[KeyPerformance]:
         """Get slowest keys from database.
 
         Args:
@@ -361,12 +355,12 @@ class Analyzer:
             layout: Filter by layout
 
         Returns:
-            List of (keycode, key_name, avg_time_ms) tuples
+            List of KeyPerformance models
         """
         return self.storage.get_slowest_keys(limit, layout)
 
     def get_fastest_keys(self, limit: int = 10,
-                         layout: Optional[str] = None) -> list:
+                         layout: Optional[str] = None) -> List[KeyPerformance]:
         """Get fastest keys from database.
 
         Args:
@@ -374,12 +368,12 @@ class Analyzer:
             layout: Filter by layout
 
         Returns:
-            List of (keycode, key_name, avg_time_ms) tuples
+            List of KeyPerformance models
         """
         return self.storage.get_fastest_keys(limit, layout)
 
     def get_slowest_words(self, limit: int = 10,
-                          layout: Optional[str] = None) -> list:
+                          layout: Optional[str] = None) -> List[WordStatisticsLite]:
         """Get slowest words from database.
 
         Args:
@@ -387,14 +381,14 @@ class Analyzer:
             layout: Filter by layout
 
         Returns:
-            List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
+            List of WordStatisticsLite models
         """
         current_layout = layout if layout else 'us'
         self.storage._process_new_key_events(layout=current_layout)
         return self.storage.get_slowest_words(limit, layout)
 
     def get_fastest_words(self, limit: int = 10,
-                          layout: Optional[str] = None) -> list:
+                          layout: Optional[str] = None) -> List[WordStatisticsLite]:
         """Get fastest words from database.
 
         Args:
@@ -402,20 +396,20 @@ class Analyzer:
             layout: Filter by layout
 
         Returns:
-            List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
+            List of WordStatisticsLite models
         """
         current_layout = layout if layout else 'us'
         self.storage._process_new_key_events(layout=current_layout)
         return self.storage.get_fastest_words(limit, layout)
 
-    def get_daily_summary(self, date: str) -> Optional[Tuple]:
+    def get_daily_summary(self, date: str) -> Optional[DailySummaryDB]:
         """Get daily summary for a date.
 
         Args:
             date: Date string (YYYY-MM-DD)
 
         Returns:
-            Tuple with summary data or None
+            DailySummaryDB model or None
         """
         return self.storage.get_daily_summary(date)
 

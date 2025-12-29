@@ -4,12 +4,13 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Tuple, Union
 from datetime import datetime, timedelta
 import logging
 
 from core.dictionary import Dictionary
 from core.word_detector import WordDetector
+from core.models import DailySummaryDB, KeyPerformance, WordStatisticsLite, WordStatisticsFull, BurstTimeSeries
 
 log = logging.getLogger('realtypecoach.storage')
 
@@ -70,9 +71,7 @@ class Storage:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 keycode INTEGER NOT NULL,
                 key_name TEXT NOT NULL,
-                timestamp_ms INTEGER NOT NULL,
-                event_type TEXT NOT NULL,
-                app_name TEXT
+                timestamp_ms INTEGER NOT NULL
             )
         ''')
 
@@ -195,23 +194,20 @@ class Storage:
         ''')
 
     def store_key_event(self, keycode: int, key_name: str,
-                     timestamp_ms: int, event_type: str,
-                     app_name: str) -> None:
+                     timestamp_ms: int) -> None:
         """Store a single key event.
 
         Args:
             keycode: Linux evdev keycode
             key_name: Human-readable key name
             timestamp_ms: Milliseconds since epoch
-            event_type: 'press' or 'release'
-            app_name: Application name
         """
         with self._get_connection() as conn:
             conn.execute('''
                 INSERT INTO key_events
-                (keycode, key_name, timestamp_ms, event_type, app_name)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (keycode, key_name, timestamp_ms, event_type, app_name))
+                (keycode, key_name, timestamp_ms)
+                VALUES (?, ?, ?)
+            ''', (keycode, key_name, timestamp_ms))
             conn.commit()
 
     def store_burst(self, start_time: int, end_time: int,
@@ -352,7 +348,7 @@ class Storage:
             conn.commit()
 
     def get_slowest_keys(self, limit: int = 10,
-                         layout: Optional[str] = None) -> List[Tuple[int, str, float]]:
+                         layout: Optional[str] = None) -> List[KeyPerformance]:
         """Get slowest keys (highest average press time).
 
         Only includes letter keys (a-z, ä, ö, ü, ß).
@@ -362,7 +358,7 @@ class Storage:
             layout: Filter by layout (None for all layouts)
 
         Returns:
-            List of (keycode, key_name, avg_press_time_ms) tuples
+            List of KeyPerformance models
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -384,10 +380,11 @@ class Storage:
                     ORDER BY avg_press_time DESC
                     LIMIT ?
                 ''', (limit,))
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            return [KeyPerformance(keycode=r[0], key_name=r[1], avg_press_time=r[2]) for r in rows]
 
     def get_fastest_keys(self, limit: int = 10,
-                         layout: Optional[str] = None) -> List[Tuple[int, str, float]]:
+                         layout: Optional[str] = None) -> List[KeyPerformance]:
         """Get fastest keys (lowest average press time).
 
         Only includes letter keys (a-z, ä, ö, ü, ß).
@@ -397,7 +394,7 @@ class Storage:
             layout: Filter by layout (None for all layouts)
 
         Returns:
-            List of (keycode, key_name, avg_press_time_ms) tuples
+            List of KeyPerformance models
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -419,16 +416,17 @@ class Storage:
                     ORDER BY avg_press_time ASC
                     LIMIT ?
                 ''', (limit,))
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            return [KeyPerformance(keycode=r[0], key_name=r[1], avg_press_time=r[2]) for r in rows]
 
-    def get_daily_summary(self, date: str) -> Optional[Tuple]:
+    def get_daily_summary(self, date: str) -> Optional[DailySummaryDB]:
         """Get daily summary for a date.
 
         Args:
             date: Date string (YYYY-MM-DD)
 
         Returns:
-            Tuple with summary data or None if not found
+            DailySummaryDB model or None if not found
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -437,7 +435,18 @@ class Storage:
                        slowest_keycode, slowest_key_name, total_typing_sec, summary_sent
                 FROM daily_summaries WHERE date = ?
             ''', (date,))
-            return cursor.fetchone()
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return DailySummaryDB(
+                total_keystrokes=row[0],
+                total_bursts=row[1],
+                avg_wpm=row[2],
+                slowest_keycode=row[3],
+                slowest_key_name=row[4],
+                total_typing_sec=row[5],
+                summary_sent=bool(row[6])
+            )
 
     def mark_summary_sent(self, date: str) -> None:
         """Mark daily summary as sent.
@@ -465,7 +474,7 @@ class Storage:
             Number of rows exported
         """
         query = '''
-            SELECT timestamp_ms, keycode, key_name, event_type, app_name
+            SELECT timestamp_ms, keycode, key_name
             FROM key_events
         '''
         params = []
@@ -491,7 +500,7 @@ class Storage:
             rows = cursor.fetchall()
 
             with open(csv_path, 'w') as f:
-                f.write('timestamp_ms,keycode,key_name,event_type,app_name\n')
+                f.write('timestamp_ms,keycode,key_name\n')
                 for row in rows:
                     f.write(','.join(str(x) for x in row) + '\n')
 
@@ -673,7 +682,7 @@ class Storage:
             cursor.execute('''
                 SELECT id, key_name, timestamp_ms
                 FROM key_events
-                WHERE id > ? AND event_type = 'press'
+                WHERE id > ?
                 ORDER BY id
                 LIMIT ?
             ''', (last_processed_id, max_events))
@@ -803,7 +812,7 @@ class Storage:
                   int(time.time() * 1000)))
 
     def get_slowest_words(self, limit: int = 10,
-                         layout: Optional[str] = None) -> List[Tuple[str, float, int, int]]:
+                         layout: Optional[str] = None) -> List[WordStatisticsLite]:
         """Get slowest words (highest average time per letter).
 
         Args:
@@ -811,13 +820,13 @@ class Storage:
             layout: Filter by layout (None for all layouts)
 
         Returns:
-            List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
+            List of WordStatisticsLite models
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             if layout:
                 cursor.execute('''
-                    SELECT word, avg_speed_ms_per_letter, 
+                    SELECT word, avg_speed_ms_per_letter,
                            total_duration_ms, total_letters
                     FROM word_statistics
                     WHERE layout = ? AND observation_count >= 2
@@ -833,10 +842,11 @@ class Storage:
                     ORDER BY avg_speed_ms_per_letter DESC
                     LIMIT ?
                 ''', (limit,))
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            return [WordStatisticsLite(word=r[0], avg_speed_ms_per_letter=r[1], total_duration_ms=r[2], total_letters=r[3]) for r in rows]
 
     def get_fastest_words(self, limit: int = 10,
-                          layout: Optional[str] = None) -> List[Tuple[str, float, int, int]]:
+                          layout: Optional[str] = None) -> List[WordStatisticsLite]:
         """Get fastest words (lowest average time per letter).
 
         Args:
@@ -844,7 +854,7 @@ class Storage:
             layout: Filter by layout (None for all layouts)
 
         Returns:
-            List of (word, avg_speed_ms_per_letter, total_duration_ms, num_letters) tuples
+            List of WordStatisticsLite models
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -866,10 +876,11 @@ class Storage:
                     ORDER BY avg_speed_ms_per_letter ASC
                     LIMIT ?
                 ''', (limit,))
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            return [WordStatisticsLite(word=r[0], avg_speed_ms_per_letter=r[1], total_duration_ms=r[2], total_letters=r[3]) for r in rows]
 
     def get_bursts_for_timeseries(self, start_ms: int, end_ms: int
-                                 ) -> List[Tuple[int, float]]:
+                                 ) -> List[BurstTimeSeries]:
         """Get burst data for time-series graph.
 
         Args:
@@ -877,7 +888,7 @@ class Storage:
             end_ms: End timestamp (milliseconds since epoch)
 
         Returns:
-            List of (timestamp_ms, avg_wpm) tuples
+            List of BurstTimeSeries models
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -887,4 +898,5 @@ class Storage:
                 WHERE start_time >= ? AND start_time < ?
                 ORDER BY start_time
             ''', (start_ms, end_ms))
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            return [BurstTimeSeries(timestamp_ms=r[0], avg_wpm=r[1]) for r in rows]

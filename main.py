@@ -8,7 +8,7 @@ import signal
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from queue import Queue
+from queue import Queue, Empty
 
 # Setup logging with XDG state directory
 xdg_state_home = os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local' / 'state'))
@@ -33,20 +33,20 @@ logging.basicConfig(
 )
 log = logging.getLogger('realtypecoach')
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog
-from PyQt5.QtCore import QTimer, QObject, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog  # noqa: E402
+from PyQt5.QtCore import QTimer, QObject, pyqtSignal  # noqa: E402
+from PyQt5.QtGui import QFont  # noqa: E402
 
-from core.storage import Storage
-from core.burst_detector import BurstDetector
-from core.evdev_handler import EvdevHandler
-from core.analyzer import Analyzer
-from core.notification_handler import NotificationHandler
-from utils.keyboard_detector import LayoutMonitor, get_current_layout
-from utils.config import Config
-from ui.stats_panel import StatsPanel
-from ui.tray_icon import TrayIcon
-from ui.settings_dialog import SettingsDialog
+from core.storage import Storage  # noqa: E402
+from core.burst_detector import BurstDetector  # noqa: E402
+from core.evdev_handler import EvdevHandler  # noqa: E402
+from core.analyzer import Analyzer  # noqa: E402
+from core.notification_handler import NotificationHandler  # noqa: E402
+from utils.keyboard_detector import LayoutMonitor, get_current_layout  # noqa: E402
+from utils.config import Config  # noqa: E402
+from ui.stats_panel import StatsPanel  # noqa: E402
+from ui.tray_icon import TrayIcon  # noqa: E402
+from ui.settings_dialog import SettingsDialog  # noqa: E402
 
 
 class Application(QObject):
@@ -66,6 +66,7 @@ class Application(QObject):
         super().__init__()
         self.event_queue = Queue(maxsize=1000)
         self.running = False
+        self._last_stats_update: int = 0
 
         self.init_data_directory()
         self.init_components()
@@ -189,11 +190,13 @@ class Application(QObject):
         minutes = duration_ms / 60000.0
         return words / minutes if minutes > 0 else 0.0
 
-    def show_daily_notification(self, date: str, title: str,
-                               message: str, slowest_key: str,
-                               personal_best: str, total_keystrokes: str) -> None:
-        """Show daily summary notification."""
-        self.tray_icon.show_notification(title, message, "info")
+    def show_daily_notification(self, summary) -> None:
+        """Show daily summary notification.
+
+        Args:
+            summary: DailySummary pydantic model with notification data
+        """
+        self.tray_icon.show_notification(summary.title, summary.message, "info")
 
     def show_exceptional_notification(self, wpm: float) -> None:
         """Show exceptional burst notification."""
@@ -266,30 +269,25 @@ class Application(QObject):
                     log.info(f"Processing key event: {key_event.key_name}")
                     logged = True
 
-                if key_event.event_type == 'press':
-                    self.burst_detector.process_key_event(
-                        key_event.timestamp_ms, True
-                    )
+                self.burst_detector.process_key_event(
+                    key_event.timestamp_ms, True
+                )
 
-                    self.analyzer.process_key_event(
-                        key_event.keycode,
-                        key_event.key_name,
-                        key_event.timestamp_ms,
-                        key_event.event_type,
-                        key_event.app_name,
-                        self.get_current_layout()
-                    )
+                self.analyzer.process_key_event(
+                    key_event.keycode,
+                    key_event.key_name,
+                    key_event.timestamp_ms,
+                    self.get_current_layout()
+                )
 
                 processed_count += 1
 
-            except:
+            except Empty:
                 break  # Queue empty
 
         # Update stats display periodically (every 10 seconds if processing events)
         current_time = int(time.time())
         if processed_count > 0:
-            if not hasattr(self, '_last_stats_update'):
-                self._last_stats_update = 0
             if current_time - self._last_stats_update >= 10:
                 self.update_statistics()
                 self._last_stats_update = current_time
