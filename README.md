@@ -4,7 +4,7 @@
 
 # RealTypeCoach
 
-**A KDE Wayland typing analysis application that monitors keyboard events and provides detailed statistics about your typing speed and habits.**
+**Track, analyze, and improve your typing on KDE Wayland**
 
 </div>
 
