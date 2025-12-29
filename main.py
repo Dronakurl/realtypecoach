@@ -38,6 +38,7 @@ from PyQt5.QtCore import QTimer, QObject, pyqtSignal  # noqa: E402
 from PyQt5.QtGui import QFont  # noqa: E402
 
 from core.storage import Storage  # noqa: E402
+from core.dictionary_config import DictionaryConfig  # noqa: E402
 from core.burst_detector import BurstDetector  # noqa: E402
 from core.evdev_handler import EvdevHandler  # noqa: E402
 from core.analyzer import Analyzer  # noqa: E402
@@ -93,11 +94,21 @@ class Application(QObject):
     def init_components(self) -> None:
         """Initialize all components."""
         self.config = Config(self.db_path)
+
+        # Build dictionary configuration
+        enabled_languages = self.config.get_list('enabled_languages')
+        accept_all_mode = self.config.get('dictionary_mode') == 'accept_all'
+
+        dictionary_config = DictionaryConfig(
+            enabled_languages=enabled_languages,
+            accept_all_mode=accept_all_mode
+        )
+
         self.storage = Storage(
             self.db_path,
             word_boundary_timeout_ms=self.config.get_int('word_boundary_timeout_ms', 1000),
-            english_dict_path=self.config.get('english_dict_path', '/usr/share/dict/words'),
-            german_dict_path=self.config.get('german_dict_path', '/usr/share/dict/ngerman')
+            dictionary_config=dictionary_config,
+            config=self.config
         )
 
         current_layout = get_current_layout()
@@ -125,7 +136,9 @@ class Application(QObject):
         self.notification_handler = NotificationHandler(
             summary_getter=self.analyzer.get_daily_summary,
             storage=self.storage,
-            update_interval_sec=self.config.get_int('threshold_update_interval_sec', 300)
+            min_burst_ms=self.config.get_int('notification_min_burst_ms', 10000),
+            threshold_days=self.config.get_int('notification_threshold_days', 30),
+            threshold_update_sec=self.config.get_int('notification_threshold_update_sec', 300)
         )
 
         self.layout_monitor = LayoutMonitor(
@@ -169,7 +182,7 @@ class Application(QObject):
         if burst.qualifies_for_high_score:
             wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
             self.notification_handler.notify_exceptional_burst(
-                wpm, burst.key_count, burst.duration_ms / 1000.0
+                wpm, burst.key_count, burst.duration_ms
             )
 
     def on_layout_changed(self, new_layout: str) -> None:
@@ -208,8 +221,20 @@ class Application(QObject):
 
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
+        # Migrate legacy settings if present
+        if 'english_dict_path' in new_settings or 'german_dict_path' in new_settings:
+            log.info("Migrating from legacy dictionary settings to new format")
+            # Remove legacy keys from new_settings
+            new_settings.pop('english_dict_path', None)
+            new_settings.pop('german_dict_path', None)
+            # The new settings will be detected automatically via DictionaryDetector
+
         for key, value in new_settings.items():
             self.config.set(key, value)
+
+        # Reload dictionary configuration if language settings changed
+        if 'dictionary_mode' in new_settings or 'enabled_languages' in new_settings:
+            log.info("Dictionary configuration changed, storage will reload on next restart")
 
         if '__clear_database__' in new_settings:
             self.storage.clear_database()
@@ -345,8 +370,9 @@ class Application(QObject):
             'notification_time_hour': self.config.get_int('notification_time_hour', 18),
             'slowest_keys_count': self.config.get_int('slowest_keys_count', 10),
             'data_retention_days': self.config.get_int('data_retention_days', -1),
-            'english_dict_path': self.config.get('english_dict_path', '/usr/share/dict/words'),
-            'german_dict_path': self.config.get('german_dict_path', '/usr/share/dict/ngerman'),
+            'dictionary_mode': self.config.get('dictionary_mode', 'validate'),
+            'enabled_languages': self.config.get('enabled_languages', 'en,de'),
+            'custom_dict_paths': self.config.get('custom_dict_paths', ''),
         }
         dialog = SettingsDialog(current_settings)
         if dialog.exec_() == QDialog.Accepted:
