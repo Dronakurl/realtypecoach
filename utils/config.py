@@ -15,7 +15,7 @@ DEFAULT_SETTINGS = {
     'password_exclusion': 'True',
     'notifications_enabled': 'True',
     'slowest_keys_count': '10',
-    'data_retention_days': '90',
+    'data_retention_days': '-1',
     'keyboard_layout': 'auto',
     'notification_time_hour': '18',
     'notification_time_minute': '0',

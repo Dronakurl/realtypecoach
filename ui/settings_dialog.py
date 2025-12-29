@@ -273,7 +273,7 @@ class SettingsDialog(QDialog):
         self.slowest_keys_spin.setValue(
             self.current_settings.get('slowest_keys_count', 10)
         )
-        retention_days = self.current_settings.get('data_retention_days', 90)
+        retention_days = self.current_settings.get('data_retention_days', -1)
         index = self.retention_combo.findData(retention_days)
         if index >= 0:
             self.retention_combo.setCurrentIndex(index)

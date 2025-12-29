@@ -6,6 +6,7 @@ import os
 import time
 import signal
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Queue
 
@@ -15,11 +16,18 @@ log_dir = Path(xdg_state_home) / 'realtypecoach'
 log_dir.mkdir(parents=True, exist_ok=True)
 log_file = log_dir / 'realtypecoach.log'
 
+# Configure rotating file handler (5MB max, keep 5 backups)
+file_handler = RotatingFileHandler(
+    log_file,
+    maxBytes=5*1024*1024,  # 5MB
+    backupCount=5
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_file),
+        file_handler,
         logging.StreamHandler()
     ]
 )
@@ -336,7 +344,7 @@ class Application(QObject):
             'exceptional_wpm_threshold': self.config.get_int('exceptional_wpm_threshold', 120),
             'notification_time_hour': self.config.get_int('notification_time_hour', 18),
             'slowest_keys_count': self.config.get_int('slowest_keys_count', 10),
-            'data_retention_days': self.config.get_int('data_retention_days', 90),
+            'data_retention_days': self.config.get_int('data_retention_days', -1),
             'english_dict_path': self.config.get('english_dict_path', '/usr/share/dict/words'),
             'german_dict_path': self.config.get('german_dict_path', '/usr/share/dict/ngerman'),
         }
@@ -377,7 +385,7 @@ class Application(QObject):
             minute=self.config.get_int('notification_time_minute', 0)
         )
 
-        retention_days = self.config.get_int('data_retention_days', 90)
+        retention_days = self.config.get_int('data_retention_days', -1)
         if retention_days >= 0:
             log.info(f"Deleting data older than {retention_days} days...")
             self.storage.delete_old_data(retention_days)
