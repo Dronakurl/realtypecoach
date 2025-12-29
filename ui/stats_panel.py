@@ -1,6 +1,6 @@
 """Statistics panel for RealTypeCoach."""
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QLabel,
@@ -11,9 +11,10 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QHBoxLayout,
     QApplication,
+    QGroupBox,
 )
-from PyQt5.QtCore import pyqtSignal, QSize, Qt
-from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QFont
+from PySide6.QtCore import Signal, QSize, Qt
+from PySide6.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QFont
 from typing import List, Tuple
 from core.models import KeyPerformance, WordStatisticsLite
 
@@ -21,7 +22,7 @@ from core.models import KeyPerformance, WordStatisticsLite
 class StatsPanel(QWidget):
     """Real-time statistics display panel."""
 
-    settings_requested = pyqtSignal()
+    settings_requested = Signal()
 
     def __init__(self, icon_path: str = None):
         """Initialize statistics panel.
@@ -101,7 +102,7 @@ class StatsPanel(QWidget):
 
         # Logo
         if self.icon_path:
-            from PyQt5.QtSvg import QSvgWidget
+            from PySide6.QtSvgWidgets import QSvgWidget
 
             self.logo_widget = QSvgWidget(self.icon_path)
             self.logo_widget.setFixedSize(48, 48)
@@ -134,33 +135,43 @@ class StatsPanel(QWidget):
         overview_tab = QWidget()
         overview_layout = QVBoxLayout(overview_tab)
 
+        # Performance section
+        performance_group = QGroupBox("Performance")
+        performance_layout = QVBoxLayout(performance_group)
+
         self.wpm_label = QLabel("Current WPM: --")
         self.wpm_label.setStyleSheet(
             "font-size: 24px; color: #3daee9; font-weight: bold;"
         )
-        overview_layout.addWidget(self.wpm_label)
+        performance_layout.addWidget(self.wpm_label)
 
         self.burst_wpm_label = QLabel("Burst WPM: --")
         self.burst_wpm_label.setStyleSheet("font-size: 16px;")
-        overview_layout.addWidget(self.burst_wpm_label)
+        performance_layout.addWidget(self.burst_wpm_label)
 
         self.personal_best_label = QLabel("Personal Best Today: --")
         self.personal_best_label.setStyleSheet("font-size: 16px; color: #ff6b6b;")
-        overview_layout.addWidget(self.personal_best_label)
+        performance_layout.addWidget(self.personal_best_label)
 
-        overview_layout.addSpacing(20)
+        overview_layout.addWidget(performance_group)
+
+        # Activity summary section
+        activity_group = QGroupBox("Activity Summary")
+        activity_layout = QVBoxLayout(activity_group)
 
         self.keystrokes_label = QLabel("Keystrokes: 0")
-        self.keystrokes_label.setStyleSheet("font-size: 12px;")
-        overview_layout.addWidget(self.keystrokes_label)
+        self.keystrokes_label.setStyleSheet("font-size: 14px;")
+        activity_layout.addWidget(self.keystrokes_label)
 
         self.bursts_label = QLabel("Bursts: 0")
-        self.bursts_label.setStyleSheet("font-size: 12px;")
-        overview_layout.addWidget(self.bursts_label)
+        self.bursts_label.setStyleSheet("font-size: 14px;")
+        activity_layout.addWidget(self.bursts_label)
 
         self.typing_time_label = QLabel("Typing time: 0m 0s")
-        self.typing_time_label.setStyleSheet("font-size: 12px;")
-        overview_layout.addWidget(self.typing_time_label)
+        self.typing_time_label.setStyleSheet("font-size: 14px;")
+        activity_layout.addWidget(self.typing_time_label)
+
+        overview_layout.addWidget(activity_group)
 
         overview_layout.addStretch()
         tab_widget.addTab(
@@ -287,7 +298,7 @@ class StatsPanel(QWidget):
         self.resize(700, 500)
 
     def update_wpm(
-        self, current_wpm: float, burst_wpm: float, personal_best: float
+        self, current_wpm: float, burst_wpm: float, personal_best: float, avg_wpm: float
     ) -> None:
         """Update WPM display.
 
@@ -295,9 +306,24 @@ class StatsPanel(QWidget):
             current_wpm: Current overall WPM
             burst_wpm: Current burst WPM
             personal_best: Personal best WPM today
+            avg_wpm: Long-term average WPM for comparison
         """
         self.wpm_label.setText(f"Current WPM: {current_wpm:.1f}")
-        self.burst_wpm_label.setText(f"Burst WPM: {burst_wpm:.1f}")
+
+        # Calculate percentage difference for burst WPM
+        if avg_wpm > 0:
+            percent_diff = ((burst_wpm - avg_wpm) / avg_wpm) * 100
+            if burst_wpm > avg_wpm:
+                color = "#4caf50"  # green
+                symbol = "+"
+            else:
+                color = "#f44336"  # red
+                symbol = "-"
+            self.burst_wpm_label.setText(
+                f"Burst WPM: {burst_wpm:.1f} <span style='color:{color}'>({symbol}{abs(percent_diff):.0f}% vs avg)</span>"
+            )
+        else:
+            self.burst_wpm_label.setText(f"Burst WPM: {burst_wpm:.1f}")
 
         if personal_best > 0:
             self.personal_best_label.setText(
@@ -314,7 +340,7 @@ class StatsPanel(QWidget):
         """
         for i, key_perf in enumerate(slowest_keys):
             avg_time = key_perf.avg_press_time
-            projected_wpm = 60000 / avg_time if avg_time > 0 else 0
+            projected_wpm = 60000 / (avg_time * 5) if avg_time > 0 else 0
             self.slowest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
             self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
 
@@ -330,7 +356,7 @@ class StatsPanel(QWidget):
         """
         for i, key_perf in enumerate(fastest_keys):
             avg_time = key_perf.avg_press_time
-            projected_wpm = 60000 / avg_time if avg_time > 0 else 0
+            projected_wpm = 60000 / (avg_time * 5) if avg_time > 0 else 0
             self.fastest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
             self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
 
@@ -351,9 +377,9 @@ class StatsPanel(QWidget):
         self.keystrokes_label.setText(f"Keystrokes: {keystrokes:,}")
         self.bursts_label.setText(f"Bursts: {bursts:,}")
 
-        hours = typing_sec // 3600
-        minutes = (typing_sec % 3600) // 60
-        seconds = typing_sec % 60
+        hours = int(typing_sec) // 3600
+        minutes = (int(typing_sec) % 3600) // 60
+        seconds = int(typing_sec) % 60
 
         if hours > 0:
             time_str = f"{hours}h {minutes}m {seconds}s"

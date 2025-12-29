@@ -35,9 +35,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("realtypecoach")
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog  # noqa: E402
-from PyQt5.QtCore import QTimer, QObject, pyqtSignal  # noqa: E402
-from PyQt5.QtGui import QFont, QIcon  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox, QDialog  # noqa: E402
+from PySide6.QtCore import QTimer, QObject, Signal  # noqa: E402
+from PySide6.QtGui import QFont, QIcon  # noqa: E402
 
 from core.storage import Storage  # noqa: E402
 from core.dictionary_config import DictionaryConfig  # noqa: E402
@@ -56,14 +56,14 @@ from ui.settings_dialog import SettingsDialog  # noqa: E402
 class Application(QObject):
     """Main application controller."""
 
-    signal_update_stats = pyqtSignal(float, float, float)
-    signal_update_slowest_keys = pyqtSignal(list)
-    signal_update_fastest_keys = pyqtSignal(list)
-    signal_update_hardest_words = pyqtSignal(list)
-    signal_update_fastest_words_stats = pyqtSignal(list)
-    signal_update_today_stats = pyqtSignal(int, int, float)
-    signal_update_trend_data = pyqtSignal(list)
-    signal_settings_changed = pyqtSignal(dict)
+    signal_update_stats = Signal(float, float, float, float)
+    signal_update_slowest_keys = Signal(list)
+    signal_update_fastest_keys = Signal(list)
+    signal_update_hardest_words = Signal(list)
+    signal_update_fastest_words_stats = Signal(list)
+    signal_update_today_stats = Signal(int, int, float)
+    signal_update_trend_data = Signal(list)
+    signal_settings_changed = Signal(dict)
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -284,7 +284,7 @@ class Application(QObject):
         if "__clear_database__" in new_settings:
             self.storage.clear_database()
             # Refresh statistics panel with empty data
-            self.signal_update_stats.emit(0, 0, 0)
+            self.signal_update_stats.emit(0, 0, 0, 0)
             self.signal_update_slowest_keys.emit([])
             self.signal_update_fastest_keys.emit([])
             self.signal_update_hardest_words.emit([])
@@ -370,7 +370,7 @@ class Application(QObject):
         stats = self.analyzer.get_statistics()
 
         self.signal_update_stats.emit(
-            stats["avg_wpm"], stats["burst_wpm"], stats["personal_best_today"] or 0
+            stats["avg_wpm"], stats["burst_wpm"], stats["personal_best_today"] or 0, stats["avg_wpm"]
         )
 
         slowest_keys = self.analyzer.get_slowest_keys(
@@ -427,7 +427,7 @@ class Application(QObject):
             "custom_dict_paths": self.config.get("custom_dict_paths", ""),
         }
         dialog = SettingsDialog(current_settings)
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             # Use dialog.settings if it was set by clear_data/export_csv, otherwise get fresh settings
             if dialog.settings:
                 new_settings = dialog.settings
@@ -580,7 +580,7 @@ def main():
     application.start()
 
     log.info("Starting Qt event loop...")
-    ret = app.exec_()
+    ret = app.exec()
 
     log.info(f"Qt event loop exited with code: {ret}")
     application.stop()
