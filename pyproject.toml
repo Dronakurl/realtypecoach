@@ -1,0 +1,20 @@
+[project]
+name = "realtypecoach"
+version = "1.0.0"
+description = "KDE Wayland typing analysis application"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "PyQt5",
+    "pandas",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
