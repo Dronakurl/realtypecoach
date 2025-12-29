@@ -6,7 +6,6 @@ from typing import Callable, Optional, List
 from queue import Queue, Full
 from dataclasses import dataclass
 from select import select
-import traceback
 
 try:
     from evdev import InputDevice, list_devices, ecodes
@@ -49,6 +48,7 @@ class EvdevHandler:
         self.device_paths: List[str] = []
         self._event_count: int = 0
         self._drop_count: int = 0
+        self._stop_event = threading.Event()
 
     def _find_keyboard_devices(self) -> List[InputDevice]:
         """Find all keyboard input devices."""
@@ -88,12 +88,14 @@ class EvdevHandler:
 
         self.device_paths = [device.path for device in self.devices]
         self.running = True
+        self._stop_event.clear()
         self.thread = threading.Thread(target=self._run_listener, daemon=True)
         self.thread.start()
 
     def stop(self) -> None:
         """Stop listening for keyboard events."""
         self.running = False
+        self._stop_event.set()
         # Wait for listener thread to finish
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
@@ -116,7 +118,7 @@ class EvdevHandler:
 
             log.info(f"Listening on {len(devices)} keyboard device(s)...")
 
-            while self.running:
+            while not self._stop_event.is_set():
                 # Use select to efficiently wait for events from any device
                 r, _, _ = select(devices, [], [], 0.1)
 
@@ -131,7 +133,7 @@ class EvdevHandler:
                         # Device disconnected
                         continue
 
-        except Exception as e:
+        except Exception:
             log.exception("Error in listener thread")
         finally:
             # Close devices opened in this thread

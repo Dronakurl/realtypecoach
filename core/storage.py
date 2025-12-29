@@ -4,13 +4,14 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
 
 from core.dictionary import Dictionary
+from core.dictionary_config import DictionaryConfig
 from core.word_detector import WordDetector
-from core.models import DailySummaryDB, KeyPerformance, WordStatisticsLite, WordStatisticsFull, BurstTimeSeries
+from core.models import DailySummaryDB, KeyPerformance, WordStatisticsLite, BurstTimeSeries
 
 log = logging.getLogger('realtypecoach.storage')
 
@@ -19,27 +20,34 @@ class Storage:
     """Database storage for typing data."""
 
     def __init__(self, db_path: Path, word_boundary_timeout_ms: int = 1000,
-                 english_dict_path: Optional[str] = None,
-                 german_dict_path: Optional[str] = None):
+                 dictionary_config: Optional[DictionaryConfig] = None,
+                 config: 'Config' = None):
         """Initialize storage with database at given path.
 
         Args:
             db_path: Path to SQLite database file
             word_boundary_timeout_ms: Max pause between letters before word splits (ms)
-            english_dict_path: Path to English dictionary file
-            german_dict_path: Path to German dictionary file
+            dictionary_config: Dictionary configuration object
+            config: Config instance for accessing settings (required)
+
+        Raises:
+            ValueError: If word_boundary_timeout_ms is not positive
         """
+        if word_boundary_timeout_ms <= 0:
+            raise ValueError("word_boundary_timeout_ms must be positive")
         self.db_path = db_path
         self.word_boundary_timeout_ms = word_boundary_timeout_ms
+        self.config = config
         self._init_database()
-        
-        self.dictionary = Dictionary(english_path=english_dict_path,
-                                german_path=german_dict_path)
+
+        # Initialize dictionary with config (use default if not provided)
+        dict_config = dictionary_config or DictionaryConfig()
+        self.dictionary = Dictionary(dict_config)
         self.word_detector = WordDetector(
             word_boundary_timeout_ms=word_boundary_timeout_ms,
             min_word_length=3
         )
-        
+
         self._add_word_statistics_columns()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -60,8 +68,9 @@ class Storage:
             self._create_statistics_table(conn)
             self._create_high_scores_table(conn)
             self._create_daily_summaries_table(conn)
-            self._create_settings_table(conn)
+            # Settings table is owned by Config class, not Storage
             self._create_word_statistics_table(conn)
+            self._migrate_high_scores_duration_ms(conn)
             conn.commit()
 
     def _create_key_events_table(self, conn: sqlite3.Connection) -> None:
@@ -116,7 +125,8 @@ class Storage:
                 fastest_burst_wpm REAL,
                 burst_duration_sec REAL,
                 burst_key_count INTEGER,
-                timestamp INTEGER NOT NULL
+                timestamp INTEGER NOT NULL,
+                burst_duration_ms INTEGER
             )
         ''')
 
@@ -132,15 +142,6 @@ class Storage:
                 slowest_key_name TEXT,
                 total_typing_sec INTEGER,
                 summary_sent INTEGER DEFAULT 0
-            )
-        ''')
-
-    def _create_settings_table(self, conn: sqlite3.Connection) -> None:
-        """Create settings table."""
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
             )
         ''')
 
@@ -175,6 +176,32 @@ class Storage:
                     log.error(f"Error adding editing_time_ms column: {e}")
             
             conn.commit()
+
+    def _migrate_high_scores_duration_ms(self, conn: sqlite3.Connection) -> None:
+        """Migrate high_scores table to use duration_ms instead of duration_sec."""
+        cursor = conn.cursor()
+
+        # Check if burst_duration_ms column exists
+        cursor.execute('''
+            SELECT COUNT(*) FROM pragma_table_info('high_scores')
+            WHERE name='burst_duration_ms'
+        ''')
+        has_column = cursor.fetchone()[0] > 0
+
+        if not has_column:
+            # Add new column
+            cursor.execute('''
+                ALTER TABLE high_scores ADD COLUMN burst_duration_ms INTEGER
+            ''')
+            log.info("Added burst_duration_ms column to high_scores table")
+
+            # Migrate existing data
+            cursor.execute('''
+                UPDATE high_scores
+                SET burst_duration_ms = CAST(burst_duration_sec * 1000 AS INTEGER)
+                WHERE burst_duration_ms IS NULL
+            ''')
+            log.info("Migrated high_scores data from duration_sec to duration_ms")
 
     def _create_word_statistics_table(self, conn: sqlite3.Connection) -> None:
         """Create word_statistics table."""
@@ -287,22 +314,23 @@ class Storage:
             conn.commit()
 
     def store_high_score(self, date: str, wpm: float,
-                       duration_sec: float, key_count: int) -> None:
+                       duration_ms: int, key_count: int) -> None:
         """Store a high score for a date.
 
         Args:
             date: Date string (YYYY-MM-DD)
             wpm: Words per minute achieved
-            duration_sec: Burst duration in seconds
+            duration_ms: Burst duration in milliseconds
             key_count: Number of keystrokes
         """
         timestamp_ms = int(time.time() * 1000)
+        duration_sec = duration_ms / 1000.0
         with self._get_connection() as conn:
             conn.execute('''
                 INSERT INTO high_scores
-                (date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (date, wpm, duration_sec, key_count, timestamp_ms))
+                (date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (date, wpm, duration_sec, key_count, timestamp_ms, duration_ms))
             conn.commit()
 
     def get_today_high_score(self, date: str) -> Optional[float]:
@@ -631,14 +659,8 @@ class Storage:
         Returns:
             Last processed event ID, or 0 if none
         """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            setting_key = f'last_processed_event_id_{layout}'
-            cursor.execute('''
-                SELECT value FROM settings WHERE key = ?
-            ''', (setting_key,))
-            result = cursor.fetchone()
-            return int(result[0]) if result else 0
+        key = f'last_processed_event_id_{layout}'
+        return self.config.get_int(key, 0)
 
     def _set_last_processed_event_id(self, layout: str, event_id: int) -> None:
         """Set the last processed event ID for a layout.
@@ -647,14 +669,8 @@ class Storage:
             layout: Keyboard layout identifier
             event_id: Event ID to save
         """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            setting_key = f'last_processed_event_id_{layout}'
-            cursor.execute('''
-                INSERT OR REPLACE INTO settings (key, value)
-                VALUES (?, ?)
-            ''', (setting_key, str(event_id)))
-            conn.commit()
+        key = f'last_processed_event_id_{layout}'
+        self.config.set(key, event_id)
 
     def _process_new_key_events(self, layout: str = 'us',
                                 max_events: int = 1000) -> int:
@@ -670,8 +686,10 @@ class Storage:
         Returns:
             Number of events processed
         """
-        if not self.dictionary.is_loaded():
-            log.warning("No dictionary loaded, skipping word processing")
+        # In accept_all mode, always process words
+        # In validate mode, only process if at least one dictionary loaded
+        if not self.dictionary.accept_all_mode and not self.dictionary.is_loaded():
+            log.warning("No dictionary loaded and accept_all_mode is False, skipping word processing")
             return 0
 
         last_processed_id = self._get_last_processed_event_id(layout)
@@ -716,6 +734,10 @@ class Storage:
     def _get_language_from_layout(self, layout: str) -> Optional[str]:
         """Get language code from layout identifier.
 
+        Also checks loaded dictionaries to ensure language is available.
+        If mapped language is not loaded, returns None to allow
+        validation against all loaded dictionaries.
+
         Args:
             layout: Keyboard layout (e.g., 'us', 'de', 'gb')
 
@@ -723,13 +745,37 @@ class Storage:
             Language code ('en', 'de') or None
         """
         layout_map = {
-            'us': 'en',
-            'gb': 'en',
-            'de': 'de',
-            'at': 'de',
-            'ch': 'de'
+            # English layouts
+            'us': 'en', 'usa': 'en', 'gb': 'en', 'uk': 'en',
+            'ca': 'en', 'au': 'en', 'nz': 'en',
+            # German layouts
+            'de': 'de', 'at': 'de', 'ch': 'de',
+            # French layouts
+            'fr': 'fr', 'be': 'fr',
+            # Spanish layouts
+            'es': 'es', 'latam': 'es',
+            # Italian layouts
+            'it': 'it',
+            # Portuguese layouts
+            'pt': 'pt', 'br': 'pt',
+            # Dutch layouts
+            'nl': 'nl',
+            # Polish layouts
+            'pl': 'pl',
+            # Russian layouts
+            'ru': 'ru',
         }
-        return layout_map.get(layout.lower())
+
+        layout_lower = layout.lower()
+        language = layout_map.get(layout_lower)
+
+        # If dictionary has loaded languages and the mapped one isn't loaded,
+        # return None to validate against all
+        if language and self.dictionary.get_loaded_languages():
+            if language not in self.dictionary.get_loaded_languages():
+                return None
+
+        return language
 
     def _store_word_from_state(self, conn: sqlite3.Connection,
                                word_info: dict) -> None:

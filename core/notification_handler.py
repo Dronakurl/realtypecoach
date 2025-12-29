@@ -1,5 +1,6 @@
 """Notification handler for daily summaries and exceptional bursts."""
 
+import sqlite3
 import time
 import threading
 import logging
@@ -22,20 +23,27 @@ class NotificationHandler(QObject):
 
     def __init__(self, summary_getter: Callable[[str], Optional[tuple]],
                  storage=None,
-                 update_interval_sec: int = 300):
+                 min_burst_ms: int = 10000,
+                 threshold_days: int = 30,
+                 threshold_update_sec: int = 300):
         """Initialize notification handler.
 
         Args:
             summary_getter: Function to get daily summary for a date
             storage: Storage instance for accessing burst history
-            update_interval_sec: How often to update threshold (default 300 = 5 minutes)
+            min_burst_ms: Minimum burst duration for notification (milliseconds)
+            threshold_days: Lookback period for 95th percentile calculation (days)
+            threshold_update_sec: How often to update threshold (seconds)
         """
         super().__init__()
         self.summary_getter = summary_getter
         self.storage = storage
-        self.update_interval_sec = update_interval_sec
+        self.min_burst_ms = min_burst_ms
+        self.threshold_days = threshold_days
+        self.update_interval_sec = threshold_update_sec
 
         self.running = False
+        self._stop_event = threading.Event()
         self.scheduler_thread: Optional[threading.Thread] = None
         self.threshold_thread: Optional[threading.Thread] = None
 
@@ -46,6 +54,7 @@ class NotificationHandler(QObject):
         # Dynamic threshold based on 95th percentile
         self.percentile_95_threshold = 60.0  # Default starting threshold
         self.last_threshold_update = 0
+        self._lock = threading.Lock()
 
     def start(self) -> None:
         """Start notification scheduler."""
@@ -53,6 +62,7 @@ class NotificationHandler(QObject):
             return
 
         self.running = True
+        self._stop_event.clear()
 
         # Start daily summary scheduler
         self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
@@ -68,30 +78,33 @@ class NotificationHandler(QObject):
     def stop(self) -> None:
         """Stop notification scheduler."""
         self.running = False
+        self._stop_event.set()
         if self.scheduler_thread:
-            self.scheduler_thread.join(timeout=1)
+            self.scheduler_thread.join(timeout=2)
         if self.threshold_thread:
-            self.threshold_thread.join(timeout=1)
+            self.threshold_thread.join(timeout=2)
 
     def notify_exceptional_burst(self, wpm: float, key_count: int,
-                                    duration_sec: float) -> None:
+                                    duration_ms: int) -> None:
         """Notify on exceptional burst.
 
         Args:
             wpm: Words per minute achieved
             key_count: Number of keystrokes
-            duration_sec: Burst duration in seconds
+            duration_ms: Burst duration in milliseconds
         """
-        # Only notify for bursts lasting at least 10 seconds
-        if duration_sec < 10:
+        # Only notify for bursts lasting at least minimum duration
+        if duration_ms < self.min_burst_ms:
             return
 
         # Check if this burst is exceptional (above 95th percentile threshold)
-        if wpm >= self.percentile_95_threshold:
-            message = "🚀 Exceptional typing speed!\n"
-            message += f"{wpm:.1f} WPM ({key_count} keys in {duration_sec:.1f}s)"
-            message += f"\nThreshold: {self.percentile_95_threshold:.1f} WPM (95th percentile)"
-            self.signal_exceptional_burst.emit(wpm)
+        with self._lock:
+            if wpm >= self.percentile_95_threshold:
+                pass
+            else:
+                return
+
+        self.signal_exceptional_burst.emit(wpm)
 
     def _update_threshold(self) -> None:
         """Update the 95th percentile threshold from burst history."""
@@ -99,32 +112,33 @@ class NotificationHandler(QObject):
             return
 
         try:
-            import sqlite3
             with sqlite3.connect(self.storage.db_path) as conn:
                 cursor = conn.cursor()
 
-                # Get bursts from the last 30 days
-                thirty_days_ago = int((datetime.now() - timedelta(days=30)).timestamp() * 1000)
+                # Get bursts from the configured lookback period
+                cutoff_time = int((datetime.now() - timedelta(days=self.threshold_days)).timestamp() * 1000)
 
                 cursor.execute('''
                     SELECT avg_wpm FROM bursts
-                    WHERE start_time >= ? AND duration_ms >= 10000
+                    WHERE start_time >= ? AND duration_ms >= ?
                     ORDER BY avg_wpm ASC
-                ''', (thirty_days_ago,))
+                ''', (cutoff_time, self.min_burst_ms))
 
                 wpms = [row[0] for row in cursor.fetchall()]
 
                 if len(wpms) >= 20:
-                    # Calculate 95th percentile
-                    wpms.sort()
+                    # Calculate 95th percentile (SQL already sorted)
                     percentile_index = int(len(wpms) * 0.95)
-                    self.percentile_95_threshold = wpms[percentile_index]
+                    with self._lock:
+                        self.percentile_95_threshold = wpms[percentile_index]
                 elif len(wpms) > 0:
                     # Not enough data, use max + 10%
-                    self.percentile_95_threshold = max(wpms) * 1.1
+                    with self._lock:
+                        self.percentile_95_threshold = max(wpms) * 1.1
                 else:
                     # No data yet, use default
-                    self.percentile_95_threshold = 60.0
+                    with self._lock:
+                        self.percentile_95_threshold = 60.0
 
                 self.last_threshold_update = time.time()
 
@@ -132,21 +146,25 @@ class NotificationHandler(QObject):
             log.error(f"Error updating threshold: {e}")
 
     def _run_threshold_updater(self) -> None:
-        """Background thread to update threshold every 5 minutes."""
-        while self.running:
-            time.sleep(self.update_interval_sec)
-            self._update_threshold()
+        """Background thread to update threshold periodically."""
+        while not self._stop_event.is_set():
+            self._stop_event.wait(self.update_interval_sec)
+            if not self._stop_event.is_set():
+                self._update_threshold()
 
     def _run_scheduler(self) -> None:
         """Background scheduler for daily notifications."""
-        while self.running:
+        while not self._stop_event.is_set():
             now = datetime.now()
 
             if now.hour == self.notification_hour and now.minute == self.notification_minute:
                 self._send_daily_summary(now.strftime('%Y-%m-%d'))
-                time.sleep(60)  # Wait 1 minute to avoid duplicate
+                # Wait until minute passes to avoid duplicate
+                self._stop_event.wait(60)
+                continue
 
-            time.sleep(30)  # Check every 30 seconds
+            # Check every 30 seconds
+            self._stop_event.wait(30)
 
     def _send_daily_summary(self, date: str) -> None:
         """Send daily summary notification.
@@ -154,8 +172,9 @@ class NotificationHandler(QObject):
         Args:
             date: Date string (YYYY-MM-DD)
         """
-        if date == self.last_notification_date:
-            return
+        with self._lock:
+            if date == self.last_notification_date:
+                return
 
         summary = self.summary_getter(date)
         if not summary:
@@ -194,7 +213,8 @@ Slowest key: '{slowest_key_name}' (avg)
 
         self.signal_daily_summary.emit(summary_obj)
 
-        self.last_notification_date = date
+        with self._lock:
+            self.last_notification_date = date
 
     def set_notification_time(self, hour: int = 18, minute: int = 0) -> None:
         """Set daily notification time.

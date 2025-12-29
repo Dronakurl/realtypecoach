@@ -13,13 +13,13 @@ class WordState:
 
     Tracks the complete typing history of a word including backspace edits.
     """
-    word: str = ""
-    start_time_ms: int = 0
-    last_keystroke_time_ms: int = 0
+    word: str = field(default="")
+    start_time_ms: int = field(default=0)
+    last_keystroke_time_ms: int = field(default=0)
     keystrokes: List[dict] = field(default_factory=list)
-    backspace_count: int = 0
-    editing_time_ms: int = 0
-    layout: str = "us"
+    backspace_count: int = field(default=0)
+    editing_time_ms: int = field(default=0)
+    layout: str = field(default="us")
 
     def add_keystroke(self, key_name: str, timestamp_ms: int) -> None:
         """Add a letter keystroke to current word.

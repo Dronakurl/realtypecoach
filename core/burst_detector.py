@@ -1,7 +1,12 @@
 """Burst detection for continuous typing periods."""
 
+import logging
 from typing import Callable, Optional, List
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from core.burst_config import BurstDetectorConfig, DurationCalculationMethod
+
+log = logging.getLogger('realtypecoach.burst_detector')
 
 
 @dataclass
@@ -12,39 +17,29 @@ class Burst:
     key_count: int = 0
     duration_ms: int = 0
     qualifies_for_high_score: bool = False
-    key_timestamps_ms: List[int] = field(default_factory=list)
 
 
 class BurstDetector:
     """Detects bursts of continuous typing."""
 
-    def __init__(self, burst_timeout_ms: int = 1000,
-                 high_score_min_duration_ms: int = 10000,
-                 duration_calculation_method: str = 'total_time',
-                 active_time_threshold_ms: int = 500,
-                 min_key_count: int = 10,
-                 min_duration_ms: int = 5000,
-                 on_burst_complete: Optional[Callable[[Burst], None]] = None):
+    def __init__(self, config: Optional[BurstDetectorConfig] = None,
+                 on_burst_complete: Optional[Callable[[Burst], None]] = None,
+                 **kwargs):
         """Initialize burst detector.
 
         Args:
-            burst_timeout_ms: Maximum pause between keystrokes before burst ends (default: 1000ms)
-            high_score_min_duration_ms: Minimum duration for burst to qualify for high score (default: 10000ms)
-            duration_calculation_method: How to calculate burst duration - 'total_time' or 'active_time' (default: 'total_time')
-            active_time_threshold_ms: For 'active_time' method, max interval to count as active (default: 500ms)
-            min_key_count: Minimum keystrokes required for burst to be recorded (default: 10)
-            min_duration_ms: Minimum duration required for burst to be recorded (default: 5000ms)
+            config: BurstDetectorConfig object (optional)
             on_burst_complete: Callback function called when burst completes
+            **kwargs: Individual config params for backwards compatibility
         """
-        self.burst_timeout_ms = burst_timeout_ms
-        self.high_score_min_duration_ms = high_score_min_duration_ms
-        self.duration_calculation_method = duration_calculation_method
-        self.active_time_threshold_ms = active_time_threshold_ms
-        self.min_key_count = min_key_count
-        self.min_duration_ms = min_duration_ms
+        if config is None:
+            config = BurstDetectorConfig(**kwargs)
+
+        self.config = config
         self.on_burst_complete = on_burst_complete
         self.current_burst: Optional[Burst] = None
         self.last_key_time_ms: Optional[int] = None
+        self._current_timestamps: List[int] = []
 
     def process_key_event(self, timestamp_ms: int, is_press: bool) -> Optional[Burst]:
         """Process a key event and detect bursts.
@@ -61,24 +56,24 @@ class BurstDetector:
 
         if self.last_key_time_ms is None:
             self.last_key_time_ms = timestamp_ms
+            self._current_timestamps = [timestamp_ms]
             self.current_burst = Burst(
                 start_time_ms=timestamp_ms,
                 end_time_ms=timestamp_ms,
                 key_count=1,
-                duration_ms=0,
-                key_timestamps_ms=[timestamp_ms]
+                duration_ms=0
             )
             return None
 
         time_since_last = timestamp_ms - self.last_key_time_ms
 
-        if time_since_last > self.burst_timeout_ms:
+        if time_since_last > self.config.burst_timeout_ms:
             return self._complete_burst(timestamp_ms)
         else:
             if self.current_burst:
                 self.current_burst.key_count += 1
                 self.current_burst.end_time_ms = timestamp_ms
-                self.current_burst.key_timestamps_ms.append(timestamp_ms)
+                self._current_timestamps.append(timestamp_ms)
                 self.current_burst.duration_ms = self._calculate_duration()
             self.last_key_time_ms = timestamp_ms
             return None
@@ -101,13 +96,13 @@ class BurstDetector:
 
             # Check if burst meets minimum criteria for recording
             meets_min_criteria = (
-                self.current_burst.key_count >= self.min_key_count and
-                self.current_burst.duration_ms >= self.min_duration_ms
+                self.current_burst.key_count >= self.config.min_key_count and
+                self.current_burst.duration_ms >= self.config.min_duration_ms
             )
 
             if meets_min_criteria:
                 self.current_burst.qualifies_for_high_score = (
-                    self.current_burst.duration_ms >= self.high_score_min_duration_ms
+                    self.current_burst.duration_ms >= self.config.high_score_min_duration_ms
                 )
                 completed_burst = self.current_burst
 
@@ -115,14 +110,14 @@ class BurstDetector:
                     try:
                         self.on_burst_complete(completed_burst)
                     except Exception as e:
-                        print(f"Error in burst complete callback: {e}")
+                        log.error(f"Error in burst complete callback: {e}")
 
+        self._current_timestamps = [timestamp_ms]
         self.current_burst = Burst(
             start_time_ms=timestamp_ms,
             end_time_ms=timestamp_ms,
             key_count=1,
-            duration_ms=0,
-            key_timestamps_ms=[timestamp_ms]
+            duration_ms=0
         )
         self.last_key_time_ms = timestamp_ms
 
@@ -134,21 +129,22 @@ class BurstDetector:
         Returns:
             Duration in milliseconds
         """
-        if not self.current_burst or len(self.current_burst.key_timestamps_ms) < 2:
+        if not self.current_burst or len(self._current_timestamps) < 2:
             return 0
 
-        if self.duration_calculation_method == 'active_time':
+        if self.config.duration_calculation_method == DurationCalculationMethod.ACTIVE_TIME:
             return self._calculate_active_time_duration()
-        else:  # 'total_time'
+        else:  # TOTAL_TIME
             return self._calculate_total_time_duration()
 
     def _calculate_total_time_duration(self) -> int:
         """Calculate duration as total time from first to last key.
 
         Returns:
-            Duration in milliseconds
+            Duration in milliseconds (non-negative)
         """
-        return self.current_burst.end_time_ms - self.current_burst.start_time_ms
+        duration = self.current_burst.end_time_ms - self.current_burst.start_time_ms
+        return max(0, duration)
 
     def _calculate_active_time_duration(self) -> int:
         """Calculate duration as sum of intervals between keys < threshold.
@@ -159,12 +155,12 @@ class BurstDetector:
         Returns:
             Duration in milliseconds
         """
-        timestamps = self.current_burst.key_timestamps_ms
+        timestamps = self._current_timestamps
         active_duration = 0
 
         for i in range(1, len(timestamps)):
             interval = timestamps[i] - timestamps[i-1]
-            if interval <= self.active_time_threshold_ms:
+            if interval <= self.config.active_time_threshold_ms:
                 active_duration += interval
 
         return active_duration
@@ -189,3 +185,4 @@ class BurstDetector:
         """Reset burst detector state."""
         self.current_burst = None
         self.last_key_time_ms = None
+        self._current_timestamps = []
