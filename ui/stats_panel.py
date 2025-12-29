@@ -2,9 +2,9 @@
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTabWidget,
                                QTableWidget, QTableWidgetItem, QHeaderView,
-                               QPushButton, QHBoxLayout)
+                               QPushButton, QHBoxLayout, QApplication)
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QPixmap, QImage, QPainter, QColor, QPalette
 from typing import List, Tuple
 
 
@@ -17,6 +17,59 @@ class StatsPanel(QWidget):
         """Initialize statistics panel."""
         super().__init__()
         self.init_ui()
+
+    @staticmethod
+    def _create_palette_aware_icon(theme_name: str) -> QIcon:
+        """Create an icon that automatically adapts to light/dark theme.
+
+        Uses the palette's text color to colorize the icon, ensuring
+        visibility in both light and dark themes.
+
+        Args:
+            theme_name: Icon theme name (e.g., 'view-refresh')
+
+        Returns:
+            QIcon colored with palette text color
+        """
+        icon = QIcon.fromTheme(theme_name)
+        if icon.isNull():
+            return icon
+
+        # Get the application's palette text color
+        palette = QApplication.palette()
+        text_color = palette.color(QPalette.Text)
+
+        # Colorize the icon for multiple sizes
+        colorized_icon = QIcon()
+        sizes = [16, 22, 24, 32]
+
+        for size in sizes:
+            pixmap = icon.pixmap(size, size)
+            if pixmap.isNull():
+                continue
+
+            # Convert to image for pixel manipulation
+            image = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
+
+            # Colorize: replace non-transparent pixels with palette text color
+            for y in range(image.height()):
+                for x in range(image.width()):
+                    color = image.pixelColor(x, y)
+                    if color.alpha() > 0:
+                        # Keep original alpha but use palette text color
+                        new_color = QColor(text_color)
+                        new_color.setAlpha(color.alpha())
+                        image.setPixelColor(x, y, new_color)
+
+            # Create pixmap from colorized image
+            colorized_pixmap = QPixmap.fromImage(image)
+
+            # Add to icon with proper modes
+            colorized_icon.addPixmap(colorized_pixmap, QIcon.Normal, QIcon.On)
+            colorized_icon.addPixmap(colorized_pixmap, QIcon.Active, QIcon.On)
+            colorized_icon.addPixmap(colorized_pixmap, QIcon.Selected, QIcon.On)
+
+        return colorized_icon if not colorized_icon.isNull() else icon
 
     def init_ui(self) -> None:
         """Initialize user interface."""
@@ -73,7 +126,7 @@ class StatsPanel(QWidget):
         overview_layout.addWidget(self.typing_time_label)
 
         overview_layout.addStretch()
-        tab_widget.addTab(overview_tab, QIcon.fromTheme("view-refresh"), "Overview")
+        tab_widget.addTab(overview_tab, self._create_palette_aware_icon("view-refresh"), "Overview")
 
         # Tab 2: Keys
         keys_tab = QWidget()
@@ -114,7 +167,7 @@ class StatsPanel(QWidget):
         keys_layout.addWidget(self.fastest_table)
 
         keys_layout.addStretch()
-        tab_widget.addTab(keys_tab, QIcon.fromTheme("input-keyboard"), "Keys")
+        tab_widget.addTab(keys_tab, self._create_palette_aware_icon("input-keyboard"), "Keys")
 
         # Tab 3: Words
         words_tab = QWidget()
@@ -157,7 +210,7 @@ class StatsPanel(QWidget):
         words_layout.addWidget(self.fastest_words_table)
 
         words_layout.addStretch()
-        tab_widget.addTab(words_tab, QIcon.fromTheme("text-x-generic"), "Words")
+        tab_widget.addTab(words_tab, self._create_palette_aware_icon("text-x-generic"), "Words")
 
         # Tab 4: Trends (NEW)
         trends_tab = QWidget()
@@ -168,7 +221,7 @@ class StatsPanel(QWidget):
         self.wpm_graph = WPMTimeSeriesGraph()
         trends_layout.addWidget(self.wpm_graph)
 
-        tab_widget.addTab(trends_tab, QIcon.fromTheme("go-up"), "Trends")
+        tab_widget.addTab(trends_tab, self._create_palette_aware_icon("go-up"), "Trends")
 
         layout.addWidget(tab_widget)
         self.setLayout(layout)
