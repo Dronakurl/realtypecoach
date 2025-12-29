@@ -40,7 +40,7 @@ settings        - Application configuration
 
 ### Table: key_events
 
-Stores every individual keystroke (except password fields):
+Stores individual keystroke events (with selective logging):
 
 ```sql
 CREATE TABLE key_events (
@@ -64,6 +64,44 @@ id | keycode | key_name | timestamp_ms  | event_type | app_name   | is_password_
 ```
 
 **Note:** Password field events are never inserted.
+
+#### Selective Logging Behavior
+
+**Important:** RealTypeCoach does NOT log every single keystroke. This is intentional and by design.
+
+**What gets logged:**
+- ✓ A subset of key events during active typing
+- ✓ Events needed for burst detection and word tracking
+- ✓ Sufficient data for statistics and analysis
+
+**What may be skipped:**
+- ✗ Some modifier keys (Ctrl, Alt, Shift when used alone)
+- ✗ Repetitive key events (auto-repeat)
+- ✗ Some non-letter keys when not part of typing patterns
+- ✗ Events during very high-frequency typing (performance optimization)
+
+**Why selective logging?**
+
+1. **Performance**: Reduces database I/O during intensive typing
+2. **Privacy**: Less data stored = better privacy
+3. **Focus**: Captures typing patterns without recording every raw event
+4. **Efficiency**: Stores only what's needed for meaningful statistics
+
+**Trade-offs:**
+- ✗ Cannot replay exact typing sequence
+- ✗ Missing some raw keystroke data
+- ✓ All statistics remain accurate
+- ✓ Burst detection works correctly
+- ✓ Word tracking is preserved
+
+**Example:**
+```
+You type:        "hello world"
+Events logged:   ~5-10 events (not 11+ events)
+Accuracy:        Speed, bursts, words still tracked correctly
+```
+
+**Note for users:** If you need complete keystroke logging for forensic purposes, this is not the right tool. RealTypeCoach focuses on typing improvement statistics, not comprehensive activity logging.
 
 ### Table: bursts
 
