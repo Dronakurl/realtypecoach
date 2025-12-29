@@ -44,16 +44,12 @@ sudo usermod -aG input $USER
 The install script creates a launcher icon and installs RealTypeCoach to `~/.local/share/realtypecoach/`.
 
 > [!NOTE]
-> After installation, the source checkout folder can be safely removed. The uninstall script can be copied from the source before removal, or re-downloaded later if needed.
+> After installation, the source checkout folder can be safely removed.
 
 ### Quick test (run without installing)
+
 ```bash
 python3 main.py
-```
-
-### Uninstall
-```bash
-./uninstall.sh
 ```
 
 ## Usage
@@ -87,6 +83,7 @@ The application runs in your system tray:
 ### "ModuleNotFoundError: No module named 'evdev'"
 
 Install evdev:
+
 ```bash
 pip install evdev --user
 ```
@@ -94,6 +91,7 @@ pip install evdev --user
 ### "Permission denied: /dev/input/eventX"
 
 Add your user to the input group:
+
 ```bash
 sudo usermod -aG input $USER
 # Log out and log back in for this to take effect
@@ -102,11 +100,13 @@ sudo usermod -aG input $USER
 ### "No keyboard events detected"
 
 1. Check that you're in the input group:
+
    ```bash
    groups $USER | grep input
    ```
 
 2. List available input devices:
+
    ```bash
    python3 -c "from evdev import list_devices; print(list_devices())"
    ```
@@ -118,6 +118,7 @@ sudo usermod -aG input $USER
 ```
 
 To also remove your typing data:
+
 ```bash
 rm -rf ~/.local/share/realtypecoach
 ```
