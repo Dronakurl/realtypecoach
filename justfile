@@ -56,6 +56,10 @@ reset:
     @echo "Database reset"
 
 # Testing
+# Run all Python tests
+test-all:
+    @python3 -m pytest tests/ -v
+
 # Test Python module imports
 test-imports:
     @python3 -c 'import sys; sys.path.insert(0, "."); \
