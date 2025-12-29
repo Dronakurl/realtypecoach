@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="icons/icon.svg" alt="RealTypeCoach Logo" width="128"/>
+
 # RealTypeCoach
 
 **A KDE Wayland typing analysis application that monitors keyboard events and provides detailed statistics about your typing speed and habits.**
@@ -8,12 +10,12 @@
 
 ## Features
 
-- ⌨️ **Global keyboard monitoring** - Tracks typing patterns using evdev
-- 📊 **Detailed statistics** - Per-key timing analysis, burst detection, and daily summaries
-- 🔒 **Privacy-first** - Only stores keycodes, never actual text or passwords
+- ⌨️ **Global keyboard monitoring** - Tracks typing patterns using [evdev](https://python-evdev.readthedocs.io/)
+- 📈 **Progress tracking** - Beautiful charts show your improvement over time
+- 🔤 **Word analysis** - Discover which words slow you down
 - 🎯 **Personalized insights** - Identifies your slowest keys to help you improve
 
-> **Warning:** The database at `~/.local/share/realtypecoach/typing_data.db` contains all your keystrokes. Do not share it with anyone.
+> ⚠️ **Warning:** The database at `~/.local/share/realtypecoach/typing_data.db` contains all your keystrokes. Do not share it with anyone.
 
 ## Requirements
 
@@ -23,60 +25,31 @@
 
 ## Installation
 
-### Quick Start
+**Requirements**: Ubuntu 24.04+, Wayland, Python 3.10+
 
 ```bash
-# 1. Install system dependencies
+# 1. Install dependencies
 sudo apt install python3-pyqt5
 pip install evdev --user
 
-# 2. Add user to input group (required for reading keyboard events)
+# 2. Add user to input group (required for keyboard access)
 sudo usermod -aG input $USER
-# Log out and log back in for this to take effect
+# Log out and log back in
 
-# 3. Clone and navigate to the application directory
-cd ~/realtypecoach
-
-# 4. Run the application
-python3 main.py
-```
-
-The application will start and appear in your system tray.
-
-### System Dependencies
-
-| Package | Purpose | Installation |
-|---------|---------|--------------|
-| `python3-pyqt5` | Qt5 GUI framework for system tray | `sudo apt install python3-pyqt5` |
-| `evdev` | Python bindings for reading /dev/input/eventX | `pip install evdev --user` |
-
-### Optional: Install with Launcher
-
-To install RealTypeCoach with an application launcher icon:
-
-```bash
+# 3. Install the application
 ./install.sh
 ```
 
-This will:
-- Copy application files to `~/.local/share/realtypecoach/`
-- Create a wrapper script at `~/.local/bin/realtypecoach`
-- Add a desktop entry for your application launcher
-- Generate required icons
+The install script creates a launcher icon and installs RealTypeCoach to `~/.local/share/realtypecoach/`.
 
-After installation, you can launch RealTypeCoach from your application menu or by typing `realtypecoach`.
-
-### Verify Installation
-
+### Quick test (run without installing)
 ```bash
-# Check PyQt5 is available
-python3 -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 OK')"
+python3 main.py
+```
 
-# Check evdev is available
-python3 -c "import evdev; print('evdev OK')"
-
-# Verify keyboard layout detection
-setxkbmap -query
+### Uninstall
+```bash
+./uninstall.sh
 ```
 
 ## Usage
@@ -144,22 +117,11 @@ sudo usermod -aG input $USER
 
 ## Uninstallation
 
-### Remove launcher installation
-
 ```bash
 ./uninstall.sh
 ```
 
-### Remove manually
-
+To also remove your typing data:
 ```bash
-# Remove application directory
-rm -rf ~/realtypecoach
-
-# Remove data (if desired)
 rm -rf ~/.local/share/realtypecoach
-
-# Remove dependencies (optional, only if no other apps need them)
-sudo apt remove python3-pyqt5
-pip uninstall evdev
 ```
