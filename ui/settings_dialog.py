@@ -22,6 +22,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.current_settings = current_settings
         self.settings: dict = {}
+        # Set window flags for Wayland compatibility
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.init_ui()
         self.load_current_settings()
 
@@ -128,6 +130,26 @@ class SettingsDialog(QDialog):
         )
         burst_layout.addRow("High score min duration:", self.high_score_duration_spin)
 
+        self.min_key_count_spin = QSpinBox()
+        self.min_key_count_spin.setRange(1, 100)
+        self.min_key_count_spin.setSuffix(" keys")
+        self.min_key_count_spin.setValue(10)
+        self.min_key_count_spin.setToolTip(
+            "Minimum keystrokes required for a burst to be recorded.\n"
+            "Prevents keyboard shortcuts and brief typing from being counted."
+        )
+        burst_layout.addRow("Min burst key count:", self.min_key_count_spin)
+
+        self.min_burst_duration_spin = QSpinBox()
+        self.min_burst_duration_spin.setRange(1000, 30000)
+        self.min_burst_duration_spin.setSuffix(" ms")
+        self.min_burst_duration_spin.setValue(5000)
+        self.min_burst_duration_spin.setToolTip(
+            "Minimum duration for a burst to be recorded.\n"
+            "Prevents very short typing sessions from being counted."
+        )
+        burst_layout.addRow("Min burst duration:", self.min_burst_duration_spin)
+
         burst_group.setLayout(burst_layout)
         layout.addWidget(burst_group)
 
@@ -224,14 +246,6 @@ class SettingsDialog(QDialog):
         retention_group.setLayout(retention_layout)
         layout.addWidget(retention_group)
 
-        privacy_label = QLabel(
-            "🔒 Privacy: Only keycodes and timestamps are stored.\n"
-            "No actual text or passwords are ever saved."
-        )
-        privacy_label.setWordWrap(True)
-        privacy_label.setStyleSheet("color: #3daee9; font-weight: bold;")
-        layout.addWidget(privacy_label)
-
         layout.addStretch()
         widget.setLayout(layout)
         return widget
@@ -257,6 +271,12 @@ class SettingsDialog(QDialog):
 
         self.high_score_duration_spin.setValue(
             self.current_settings.get('high_score_min_duration_ms', 10000) // 1000
+        )
+        self.min_key_count_spin.setValue(
+            self.current_settings.get('min_burst_key_count', 10)
+        )
+        self.min_burst_duration_spin.setValue(
+            self.current_settings.get('min_burst_duration_ms', 5000)
         )
         self.keyboard_layout_combo.setCurrentText(
             self.current_settings.get('keyboard_layout', 'Auto-detect').capitalize()
@@ -290,6 +310,8 @@ class SettingsDialog(QDialog):
             'burst_duration_calculation': self.duration_method_combo.currentData(),
             'active_time_threshold_ms': str(self.active_threshold_spin.value()),
             'high_score_min_duration_ms': str(self.high_score_duration_spin.value() * 1000),
+            'min_burst_key_count': str(self.min_key_count_spin.value()),
+            'min_burst_duration_ms': str(self.min_burst_duration_spin.value()),
             'keyboard_layout': self.keyboard_layout_combo.currentData().lower(),
             'notifications_enabled': str(self.notifications_check.isChecked()),
             'exceptional_wpm_threshold': str(self.exceptional_wpm_spin.value()),
