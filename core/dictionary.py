@@ -21,13 +21,22 @@ class Dictionary:
         newly installed dictionaries.
 
         Returns:
-            Dict mapping language codes to their file paths
+            Dict mapping dictionary identifiers to their file paths.
+            The identifier is language_code (e.g., 'de', 'en') for the first
+            dictionary found of each language to maintain backward compatibility.
         """
         try:
             from utils.dict_detector import DictionaryDetector
 
             detected = DictionaryDetector.detect_available()
-            detected_dict = {d.language_code: d.path for d in detected if d.available}
+            # Use language_code as key for backward compatibility
+            # With sorted detection, this gives us ngerman before ogerman
+            detected_dict = {}
+            seen_languages = set()
+            for d in detected:
+                if d.available and d.language_code not in seen_languages:
+                    detected_dict[d.language_code] = d.path
+                    seen_languages.add(d.language_code)
             log.debug(f"Detected dictionaries: {list(detected_dict.keys())}")
             return detected_dict
         except (ImportError, AttributeError, OSError) as e:
@@ -98,12 +107,44 @@ class Dictionary:
         Returns:
             Tuple of (dict mapping language codes to paths, should_use_accept_all_mode)
         """
-        requested = config.enabled_languages
-        custom_paths = config.custom_paths
-
         # If explicit accept_all_mode, don't load any dictionaries
         if config.accept_all_mode:
             return {}, True
+
+        # If specific dictionary paths are provided, use them
+        if config.enabled_dictionary_paths:
+            resolved_paths = {}
+            for path in config.enabled_dictionary_paths:
+                # Detect language code from the dictionary file
+                from utils.dict_detector import DictionaryDetector
+                dict_info = DictionaryDetector.identify_dictionary(path)
+                if dict_info:
+                    resolved_paths[dict_info.language_code] = path
+                else:
+                    # Fallback: try to guess from filename
+                    import re
+                    from pathlib import Path
+                    filename = Path(path).name.lower()
+                    if 'ngerman' in filename or 'german' in filename:
+                        resolved_paths['de'] = path
+                    elif 'american' in filename or 'english' in filename or 'words' in filename:
+                        resolved_paths['en'] = path
+                    else:
+                        log.warning(f"Could not detect language for {path}")
+
+            if resolved_paths:
+                log.info(f"Loading specific dictionaries: {list(resolved_paths.keys())}")
+                return resolved_paths, False
+            elif config.auto_fallback:
+                log.warning("No valid specific dictionaries found, enabling accept-all mode")
+                return {}, True
+            else:
+                log.error("No valid specific dictionaries found and auto_fallback is disabled")
+                return {}, False
+
+        # Legacy behavior: use enabled_languages
+        requested = config.enabled_languages
+        custom_paths = config.custom_paths
 
         # Resolve paths for requested languages
         resolved_paths = self._resolve_paths(requested, custom_paths)

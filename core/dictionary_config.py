@@ -9,6 +9,10 @@ class DictionaryConfig(BaseModel):
     enabled_languages: list[str] = Field(
         default_factory=lambda: ["en", "de"], description="Language codes to load"
     )
+    enabled_dictionary_paths: list[str] = Field(
+        default_factory=list,
+        description="Specific dictionary file paths to load (overrides enabled_languages)",
+    )
     custom_paths: dict[str, str] = Field(
         default_factory=dict, description="Custom dictionary paths per language"
     )

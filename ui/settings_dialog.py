@@ -427,15 +427,46 @@ class SettingsDialog(QDialog):
 
             available = DictionaryDetector.detect_available()
 
-            # Update language list widget
+            # Enable checkbox selection
             self.language_list_widget.clear()
+            self.language_list_widget.setSelectionMode(QListWidget.NoSelection)
+
+            # Get current selections from settings if available
+            current_selections = self.current_settings.get("enabled_dictionaries", "")
+            selected_set = set(current_selections.split(",")) if current_selections else set()
 
             for dict_info in available:
                 item_text = f"{dict_info.language_name}"
                 if dict_info.variant:
                     item_text += f" ({dict_info.variant})"
 
-                self.language_list_widget.addItem(item_text)
+                # Create item with checkbox
+                from PyQt5.QtWidgets import QListWidgetItem
+                item = QListWidgetItem(item_text)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Unchecked)
+
+                # Store dict_info path as data for identification
+                item.setData(Qt.UserRole, dict_info.path)
+
+                # Set default selections: German (reform) and US English
+                # Or restore from saved settings
+                should_check = False
+                if selected_set:
+                    # Restore from settings
+                    if dict_info.path in selected_set:
+                        should_check = True
+                else:
+                    # Default selections
+                    if (dict_info.language_code == "de" and dict_info.variant and "reform" in dict_info.variant):
+                        should_check = True
+                    elif (dict_info.language_code == "en" and dict_info.variant and "American" in dict_info.variant):
+                        should_check = True
+
+                if should_check:
+                    item.setCheckState(Qt.Checked)
+
+                self.language_list_widget.addItem(item)
 
             # Update status label
             available_count = sum(1 for d in available if d.available)
@@ -453,16 +484,16 @@ class SettingsDialog(QDialog):
             self.language_list_widget.clear()
 
     def get_enabled_languages(self) -> list:
-        """Get list of enabled language codes based on available dictionaries."""
-        try:
-            from utils.dict_detector import DictionaryDetector
+        """Get list of enabled dictionary paths based on user selection."""
+        enabled_paths = []
+        for i in range(self.language_list_widget.count()):
+            item = self.language_list_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                path = item.data(Qt.UserRole)
+                if path:
+                    enabled_paths.append(path)
 
-            available = DictionaryDetector.detect_available()
-            # By default, enable all available languages
-            return [d.language_code for d in available if d.available]
-        except (ImportError, AttributeError, OSError) as e:
-            log.warning(f"Error getting enabled languages, using fallback: {e}")
-            return ["en", "de"]  # Fallback to default
+        return enabled_paths
 
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
@@ -533,9 +564,18 @@ class SettingsDialog(QDialog):
         Returns:
             Dictionary of setting key-value pairs
         """
-        # Get enabled languages
-        enabled_langs = self.get_enabled_languages()
-        enabled_langs_str = ",".join(enabled_langs) if enabled_langs else "en,de"
+        # Get enabled dictionary paths
+        enabled_dict_paths = self.get_enabled_languages()
+        enabled_dicts_str = ",".join(enabled_dict_paths) if enabled_dict_paths else ""
+
+        # Also update enabled_languages for backward compatibility
+        from utils.dict_detector import DictionaryDetector
+        enabled_lang_codes = set()
+        for path in enabled_dict_paths:
+            dict_info = DictionaryDetector.identify_dictionary(path)
+            if dict_info:
+                enabled_lang_codes.add(dict_info.language_code)
+        enabled_langs_str = ",".join(sorted(enabled_lang_codes)) if enabled_lang_codes else "en,de"
 
         return {
             "burst_timeout_ms": str(self.burst_timeout_spin.value()),
@@ -549,7 +589,7 @@ class SettingsDialog(QDialog):
             "min_burst_duration_ms": str(self.min_burst_duration_spin.value()),
             "keyboard_layout": self.keyboard_layout_combo.currentData().lower(),
             "notifications_enabled": str(self.notifications_check.isChecked()),
-            "exceptional_wpm_threshold": str(self.exceptional_wpm_spin.value()),
+            "exceptional_wpm_threshold": str(int(self.exceptional_wpm_spin.value())),
             "notification_min_burst_ms": str(
                 self.notification_min_burst_spin.value() * 1000
             ),
@@ -566,6 +606,7 @@ class SettingsDialog(QDialog):
             if self.validate_mode_radio.isChecked()
             else "accept_all",
             "enabled_languages": enabled_langs_str,
+            "enabled_dictionaries": enabled_dicts_str,
             "custom_dict_paths": "",
         }
 

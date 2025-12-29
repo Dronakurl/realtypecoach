@@ -37,7 +37,7 @@ log = logging.getLogger("realtypecoach")
 
 from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog  # noqa: E402
 from PyQt5.QtCore import QTimer, QObject, pyqtSignal  # noqa: E402
-from PyQt5.QtGui import QFont  # noqa: E402
+from PyQt5.QtGui import QFont, QIcon  # noqa: E402
 
 from core.storage import Storage  # noqa: E402
 from core.dictionary_config import DictionaryConfig  # noqa: E402
@@ -116,10 +116,16 @@ class Application(QObject):
 
         # Build dictionary configuration
         enabled_languages = self.config.get_list("enabled_languages")
+        enabled_dictionaries = self.config.get("enabled_dictionaries", "")
+        enabled_dictionary_paths = (
+            enabled_dictionaries.split(",") if enabled_dictionaries else []
+        )
         accept_all_mode = self.config.get("dictionary_mode") == "accept_all"
 
         dictionary_config = DictionaryConfig(
-            enabled_languages=enabled_languages, accept_all_mode=accept_all_mode
+            enabled_languages=enabled_languages,
+            enabled_dictionary_paths=enabled_dictionary_paths,
+            accept_all_mode=accept_all_mode,
         )
 
         self.storage = Storage(
@@ -258,17 +264,33 @@ class Application(QObject):
 
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
+        # Special keys that should not be saved to config
+        special_keys = {"__clear_database__", "export_csv_path"}
+
         for key, value in new_settings.items():
-            self.config.set(key, value)
+            if key not in special_keys:
+                self.config.set(key, value)
 
         # Reload dictionary configuration if language settings changed
-        if "dictionary_mode" in new_settings or "enabled_languages" in new_settings:
+        if (
+            "dictionary_mode" in new_settings
+            or "enabled_languages" in new_settings
+            or "enabled_dictionaries" in new_settings
+        ):
             log.info(
                 "Dictionary configuration changed, storage will reload on next restart"
             )
 
         if "__clear_database__" in new_settings:
             self.storage.clear_database()
+            # Refresh statistics panel with empty data
+            self.signal_update_stats.emit(0, 0, 0)
+            self.signal_update_slowest_keys.emit([])
+            self.signal_update_fastest_keys.emit([])
+            self.signal_update_hardest_words.emit([])
+            self.signal_update_fastest_words_stats.emit([])
+            self.signal_update_today_stats.emit(0, 0, 0)
+            self.signal_update_trend_data.emit([])
             QMessageBox.information(
                 None, "Data Cleared", "All typing data has been deleted."
             )
@@ -406,7 +428,11 @@ class Application(QObject):
         }
         dialog = SettingsDialog(current_settings)
         if dialog.exec_() == QDialog.Accepted:
-            new_settings = dialog.get_settings()
+            # Use dialog.settings if it was set by clear_data/export_csv, otherwise get fresh settings
+            if dialog.settings:
+                new_settings = dialog.settings
+            else:
+                new_settings = dialog.get_settings()
             self.apply_settings(new_settings)
 
     def start(self) -> None:
@@ -520,6 +546,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setApplicationName("RealTypeCoach")
+    app.setApplicationDisplayName("RealTypeCoach")
 
     # Set default font to avoid malformed KDE font descriptions
     font = QFont()
@@ -528,6 +556,9 @@ def main():
 
     log.info("Creating Application instance...")
     application = Application()
+
+    # Set application icon
+    app.setWindowIcon(QIcon(str(application.icon_path)))
 
     signal.signal(signal.SIGINT, lambda s, f: app.quit())
     signal.signal(signal.SIGTERM, lambda s, f: app.quit())

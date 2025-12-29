@@ -102,16 +102,24 @@ class DictionaryDetector:
                 log.debug(f"Permission denied scanning {base_path}")
                 continue
 
-        # Deduplicate by language code (keep first found)
-        seen = set()
-        unique_dictionaries = []
-        for d in dictionaries:
-            if d.language_code not in seen:
-                seen.add(d.language_code)
-                unique_dictionaries.append(d)
+        # Sort to prefer ngerman over ogerman, and give consistent ordering
+        def dict_priority_key(d: DictionaryInfo) -> tuple:
+            # Priority: prefer modern/reform dictionaries, lowest number first
+            priority = 5  # Default middle priority
+            if d.variant and "pre-reform" in d.variant:
+                priority = 10  # Lowest priority for old/pre-reform
+            elif d.variant and "reform" in d.variant:
+                priority = 1  # High priority for reform dictionaries
+            elif d.variant and "Swiss" in d.variant:
+                priority = 3  # Medium-high priority for Swiss (after reform)
 
-        log.info(f"Detected {len(unique_dictionaries)} available dictionaries")
-        return unique_dictionaries
+            # Then sort by language name, then variant
+            return (priority, d.language_name, d.variant or "")
+
+        dictionaries.sort(key=dict_priority_key)
+
+        log.info(f"Detected {len(dictionaries)} available dictionaries")
+        return dictionaries
 
     @staticmethod
     def identify_dictionary(file_path: str) -> Optional[DictionaryInfo]:

@@ -30,7 +30,7 @@
 
 ```bash
 # 1. Install dependencies
-sudo apt install python3-pyqt5
+sudo apt install python3-pyqt5 python3-pyqt5.qtsvg
 pip install evdev --user
 
 # 2. Add user to input group (required for keyboard access)

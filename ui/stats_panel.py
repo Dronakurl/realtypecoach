@@ -12,9 +12,10 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QApplication,
 )
-from PyQt5.QtCore import pyqtSignal, QSize
-from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette
+from PyQt5.QtCore import pyqtSignal, QSize, Qt
+from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QFont
 from typing import List, Tuple
+from core.models import KeyPerformance, WordStatisticsLite
 
 
 class StatsPanel(QWidget):
@@ -87,6 +88,12 @@ class StatsPanel(QWidget):
 
     def init_ui(self) -> None:
         """Initialize user interface."""
+        # Enable font antialiasing
+        self.setAttribute(Qt.WA_StyledBackground)
+        font = QApplication.font()
+        font.setStyleStrategy(QFont.PreferAntialias)
+        self.setFont(font)
+
         layout = QVBoxLayout()
 
         # Header with logo and title
@@ -169,6 +176,7 @@ class StatsPanel(QWidget):
         keys_layout.addWidget(self.slowest_title)
 
         self.slowest_table = QTableWidget()
+        self.slowest_table.setFont(font)
         self.slowest_table.setColumnCount(3)
         self.slowest_table.setHorizontalHeaderLabels(["Rank", "Key", "WPM"])
         self.slowest_table.verticalHeader().setVisible(False)
@@ -187,6 +195,7 @@ class StatsPanel(QWidget):
         keys_layout.addWidget(self.fastest_title)
 
         self.fastest_table = QTableWidget()
+        self.fastest_table.setFont(font)
         self.fastest_table.setColumnCount(3)
         self.fastest_table.setHorizontalHeaderLabels(["Rank", "Key", "WPM"])
         self.fastest_table.verticalHeader().setVisible(False)
@@ -212,6 +221,7 @@ class StatsPanel(QWidget):
         words_layout.addWidget(self.hardest_words_title)
 
         self.hardest_words_table = QTableWidget()
+        self.hardest_words_table.setFont(font)
         self.hardest_words_table.setColumnCount(4)
         self.hardest_words_table.setHorizontalHeaderLabels(
             ["Rank", "Word", "WPM", "Duration (ms)"]
@@ -235,6 +245,7 @@ class StatsPanel(QWidget):
         words_layout.addWidget(self.fastest_words_title)
 
         self.fastest_words_table = QTableWidget()
+        self.fastest_words_table.setFont(font)
         self.fastest_words_table.setColumnCount(4)
         self.fastest_words_table.setHorizontalHeaderLabels(
             ["Rank", "Word", "WPM", "Duration (ms)"]
@@ -295,30 +306,32 @@ class StatsPanel(QWidget):
         else:
             self.personal_best_label.setText("Personal Best Today: --")
 
-    def update_slowest_keys(self, slowest_keys: List[Tuple[int, str, float]]) -> None:
+    def update_slowest_keys(self, slowest_keys: List[KeyPerformance]) -> None:
         """Update slowest keys display.
 
         Args:
-            slowest_keys: List of (keycode, key_name, avg_time_ms) tuples
+            slowest_keys: List of KeyPerformance models
         """
-        for i, (keycode, key_name, avg_time) in enumerate(slowest_keys):
-            projected_wpm = 12000 / avg_time if avg_time > 0 else 0
-            self.slowest_table.setItem(i, 1, QTableWidgetItem(key_name))
+        for i, key_perf in enumerate(slowest_keys):
+            avg_time = key_perf.avg_press_time
+            projected_wpm = 60000 / avg_time if avg_time > 0 else 0
+            self.slowest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
             self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
 
         for i in range(len(slowest_keys), 10):
             self.slowest_table.setItem(i, 1, QTableWidgetItem("--"))
             self.slowest_table.setItem(i, 2, QTableWidgetItem("--"))
 
-    def update_fastest_keys(self, fastest_keys: List[Tuple[int, str, float]]) -> None:
+    def update_fastest_keys(self, fastest_keys: List[KeyPerformance]) -> None:
         """Update fastest keys display.
 
         Args:
-            fastest_keys: List of (keycode, key_name, avg_time_ms) tuples
+            fastest_keys: List of KeyPerformance models
         """
-        for i, (keycode, key_name, avg_time) in enumerate(fastest_keys):
-            projected_wpm = 12000 / avg_time if avg_time > 0 else 0
-            self.fastest_table.setItem(i, 1, QTableWidgetItem(key_name))
+        for i, key_perf in enumerate(fastest_keys):
+            avg_time = key_perf.avg_press_time
+            projected_wpm = 60000 / avg_time if avg_time > 0 else 0
+            self.fastest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
             self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
 
         for i in range(len(fastest_keys), 10):
@@ -351,46 +364,44 @@ class StatsPanel(QWidget):
 
         self.typing_time_label.setText(f"Typing time: {time_str}")
 
-    def update_hardest_words(self, words: List[Tuple[str, float, int, int]]) -> None:
+    def update_hardest_words(self, words: List[WordStatisticsLite]) -> None:
         """Update hardest words display.
 
         Args:
-            words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
+            words: List of WordStatisticsLite models
         """
-        for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(
-            words
-        ):
+        for i, word_stat in enumerate(words):
+            speed_ms_per_letter = word_stat.avg_speed_ms_per_letter
             projected_wpm = (
                 12000 / speed_ms_per_letter if speed_ms_per_letter > 0 else 0
             )
-            self.hardest_words_table.setItem(i, 1, QTableWidgetItem(word))
+            self.hardest_words_table.setItem(i, 1, QTableWidgetItem(word_stat.word))
             self.hardest_words_table.setItem(
                 i, 2, QTableWidgetItem(f"{projected_wpm:.1f}")
             )
-            self.hardest_words_table.setItem(i, 3, QTableWidgetItem(str(duration_ms)))
+            self.hardest_words_table.setItem(i, 3, QTableWidgetItem(str(word_stat.total_duration_ms)))
 
         for i in range(len(words), 10):
             self.hardest_words_table.setItem(i, 1, QTableWidgetItem("--"))
             self.hardest_words_table.setItem(i, 2, QTableWidgetItem("--"))
             self.hardest_words_table.setItem(i, 3, QTableWidgetItem("--"))
 
-    def update_fastest_words(self, words: List[Tuple[str, float, int, int]]) -> None:
+    def update_fastest_words(self, words: List[WordStatisticsLite]) -> None:
         """Update fastest words display.
 
         Args:
-            words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
+            words: List of WordStatisticsLite models
         """
-        for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(
-            words
-        ):
+        for i, word_stat in enumerate(words):
+            speed_ms_per_letter = word_stat.avg_speed_ms_per_letter
             projected_wpm = (
                 12000 / speed_ms_per_letter if speed_ms_per_letter > 0 else 0
             )
-            self.fastest_words_table.setItem(i, 1, QTableWidgetItem(word))
+            self.fastest_words_table.setItem(i, 1, QTableWidgetItem(word_stat.word))
             self.fastest_words_table.setItem(
                 i, 2, QTableWidgetItem(f"{projected_wpm:.1f}")
             )
-            self.fastest_words_table.setItem(i, 3, QTableWidgetItem(str(duration_ms)))
+            self.fastest_words_table.setItem(i, 3, QTableWidgetItem(str(word_stat.total_duration_ms)))
 
         for i in range(len(words), 10):
             self.fastest_words_table.setItem(i, 1, QTableWidgetItem("--"))

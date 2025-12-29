@@ -85,6 +85,7 @@ class Storage:
             # Settings table is owned by Config class, not Storage
             self._create_word_statistics_table(conn)
             self._migrate_high_scores_duration_ms(conn)
+            self._migrate_key_events_event_type(conn)
             conn.commit()
 
     def _create_key_events_table(self, conn: sqlite3.Connection) -> None:
@@ -94,7 +95,8 @@ class Storage:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 keycode INTEGER NOT NULL,
                 key_name TEXT NOT NULL,
-                timestamp_ms INTEGER NOT NULL
+                timestamp_ms INTEGER NOT NULL,
+                event_type TEXT NOT NULL DEFAULT 'press'
             )
         """)
 
@@ -219,6 +221,24 @@ class Storage:
             """)
             log.info("Migrated high_scores data from duration_sec to duration_ms")
 
+    def _migrate_key_events_event_type(self, conn: sqlite3.Connection) -> None:
+        """Migrate key_events table to add event_type column."""
+        cursor = conn.cursor()
+
+        # Check if event_type column exists
+        cursor.execute("""
+            SELECT COUNT(*) FROM pragma_table_info('key_events')
+            WHERE name='event_type'
+        """)
+        has_column = cursor.fetchone()[0] > 0
+
+        if not has_column:
+            # Add new column
+            cursor.execute("""
+                ALTER TABLE key_events ADD COLUMN event_type TEXT NOT NULL DEFAULT 'press'
+            """)
+            log.info("Added event_type column to key_events table")
+
     def _create_word_statistics_table(self, conn: sqlite3.Connection) -> None:
         """Create word_statistics table."""
         conn.execute("""
@@ -248,10 +268,10 @@ class Storage:
             conn.execute(
                 """
                 INSERT INTO key_events
-                (keycode, key_name, timestamp_ms)
-                VALUES (?, ?, ?)
+                (keycode, key_name, timestamp_ms, event_type)
+                VALUES (?, ?, ?, ?)
             """,
-                (keycode, key_name, timestamp_ms),
+                (keycode, key_name, timestamp_ms, 'press'),
             )
             conn.commit()
 
@@ -914,11 +934,21 @@ class Storage:
         layout_lower = layout.lower()
         language = layout_map.get(layout_lower)
 
-        # If dictionary has loaded languages and the mapped one isn't loaded,
-        # return None to validate against all
-        if language and self.dictionary.get_loaded_languages():
-            if language not in self.dictionary.get_loaded_languages():
-                return None
+        # Get loaded languages
+        loaded_languages = self.dictionary.get_loaded_languages()
+
+        # If no dictionaries are loaded, return None to validate against all
+        if language and not loaded_languages:
+            return None
+
+        # If the mapped language is not loaded, return None to validate against all
+        if language and language not in loaded_languages:
+            return None
+
+        # If multiple dictionaries are loaded, check all of them
+        # This allows users to type in multiple languages regardless of keyboard layout
+        if loaded_languages and len(loaded_languages) > 1:
+            return None
 
         return language
 

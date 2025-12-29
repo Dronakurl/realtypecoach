@@ -84,6 +84,19 @@ else
     exit 1
 fi
 
+# Check PyQt5.QtSvg
+if python_package_exists PyQt5.QtSvg; then
+    print_status "OK" "PyQt5.QtSvg is installed"
+else
+    print_status "FAIL" "PyQt5.QtSvg is not installed"
+    echo ""
+    echo "To install PyQt5.QtSvg, run:"
+    echo "  sudo apt install python3-pyqt5.qtsvg"
+    echo "  sudo dnf install python3-qt5"
+    echo "  sudo pacman -S python-pyqt5"
+    exit 1
+fi
+
 # Check evdev
 if python_package_exists evdev; then
     print_status "OK" "evdev is installed"
