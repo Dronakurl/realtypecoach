@@ -77,7 +77,7 @@ def get_available_layouts() -> list[str]:
     # Method 1: XKB_DEFAULT_LAYOUT
     xkb_layout = os.environ.get('XKB_DEFAULT_LAYOUT')
     if xkb_layout:
-        return [l.strip().lower() for l in xkb_layout.split(',')]
+        return [layout.strip().lower() for layout in xkb_layout.split(',')]
 
     # Method 2: localectl status
     try:
@@ -91,7 +91,7 @@ def get_available_layouts() -> list[str]:
             if 'X11 Layout' in line and line.count(':') >= 1:
                 layout_part = line.split(':', 1)[1].strip()
                 if layout_part:
-                    return [l.strip().lower() for l in layout_part.split(',')]
+                    return [layout.strip().lower() for layout in layout_part.split(',')]
     except Exception:
         pass
 
@@ -102,7 +102,7 @@ def get_available_layouts() -> list[str]:
                 if line.startswith('XKBLAYOUT='):
                     layout = line.split('=')[1].strip().strip('"\'')
                     if layout:
-                        return [l.strip().lower() for l in layout.split(',')]
+                        return [layout_part.strip().lower() for layout_part in layout.split(',')]
     except Exception:
         pass
 
@@ -162,7 +162,6 @@ class LayoutMonitor:
         while self.running:
             new_layout = get_current_layout()
             if new_layout != self.current_layout:
-                old_layout = self.current_layout
                 self.current_layout = new_layout
                 try:
                     self.callback(new_layout)

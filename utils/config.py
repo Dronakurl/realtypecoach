@@ -101,12 +101,13 @@ class Config:
         value = self.get(key, default)
         if isinstance(value, bool):
             return value
+        if isinstance(value, int):
+            # Handle integer values (1 = True, 0 = False)
+            return bool(value)
         if isinstance(value, str):
             return value.lower() in ('true', '1', 'yes', 'on')
-        fallback = DEFAULT_SETTINGS.get(key, default)
-        if fallback is not None:
-            return bool(fallback)
-        return False
+        # Fallback for any other type
+        return bool(value) if value else False
 
     def set(self, key: str, value: Any) -> None:
         """Set configuration value.
