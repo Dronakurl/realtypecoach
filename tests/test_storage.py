@@ -12,7 +12,7 @@ from utils.config import Config
 @pytest.fixture
 def temp_db():
     """Create temporary database."""
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = Path(f.name)
     yield db_path
     db_path.unlink()
@@ -36,16 +36,16 @@ class TestStorage:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cursor.fetchall()]
 
-            assert 'key_events' in tables
-            assert 'bursts' in tables
-            assert 'statistics' in tables
-            assert 'high_scores' in tables
-            assert 'daily_summaries' in tables
-            assert 'settings' in tables
+            assert "key_events" in tables
+            assert "bursts" in tables
+            assert "statistics" in tables
+            assert "high_scores" in tables
+            assert "daily_summaries" in tables
+            assert "settings" in tables
 
     def test_store_key_event(self, storage):
         """Test storing key events."""
-        storage.store_key_event(30, 'KEY_A', 1234567890)
+        storage.store_key_event(30, "KEY_A", 1234567890)
 
         with sqlite3.connect(storage.db_path) as conn:
             cursor = conn.cursor()
@@ -70,22 +70,29 @@ class TestStorage:
 
     def test_update_daily_summary_typing_time(self, storage):
         """Test that typing time is stored correctly in daily summary."""
-        date = '2025-01-01'
+        date = "2025-01-01"
         keystrokes = 1000
         bursts = 10
         avg_wpm = 50.0
         slowest_keycode = 30
-        slowest_key_name = 'KEY_A'
+        slowest_key_name = "KEY_A"
         total_typing_sec = 300  # 5 minutes
 
         storage.update_daily_summary(
-            date, keystrokes, bursts, avg_wpm,
-            slowest_keycode, slowest_key_name, total_typing_sec
+            date,
+            keystrokes,
+            bursts,
+            avg_wpm,
+            slowest_keycode,
+            slowest_key_name,
+            total_typing_sec,
         )
 
         with sqlite3.connect(storage.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT total_typing_sec FROM daily_summaries WHERE date = ?", (date,))
+            cursor.execute(
+                "SELECT total_typing_sec FROM daily_summaries WHERE date = ?", (date,)
+            )
             result = cursor.fetchone()
 
             assert result is not None
@@ -98,8 +105,8 @@ class TestStorage:
 
     def test_update_key_statistics(self, storage):
         """Test updating key statistics."""
-        storage.update_key_statistics(30, 'a', 'us', 150.0, True, False)
-        storage.update_key_statistics(30, 'a', 'us', 140.0, False, True)
+        storage.update_key_statistics(30, "a", "us", 150.0)
+        storage.update_key_statistics(30, "a", "us", 140.0)
 
         result = storage.get_slowest_keys(limit=10)
 
@@ -107,23 +114,23 @@ class TestStorage:
         assert len(result) == 1
         key_perf = result[0]
         assert key_perf.keycode == 30
-        assert key_perf.key_name == 'a'
+        assert key_perf.key_name == "a"
         assert key_perf.avg_press_time == 145.0
 
     def test_get_slowest_keys_ordering(self, storage):
         """Test that slowest keys are returned in correct order."""
         # Add keys with different average times
-        storage.update_key_statistics(30, 'a', 'us', 100.0, False, False)
-        storage.update_key_statistics(30, 'a', 'us', 110.0, True, False)
-        storage.update_key_statistics(31, 'b', 'us', 200.0, False, False)
-        storage.update_key_statistics(31, 'b', 'us', 210.0, True, False)
-        storage.update_key_statistics(32, 'c', 'us', 150.0, False, False)
-        storage.update_key_statistics(32, 'c', 'us', 160.0, True, False)
+        storage.update_key_statistics(30, "a", "us", 100.0)
+        storage.update_key_statistics(30, "a", "us", 110.0)
+        storage.update_key_statistics(31, "b", "us", 200.0)
+        storage.update_key_statistics(31, "b", "us", 210.0)
+        storage.update_key_statistics(32, "c", "us", 150.0)
+        storage.update_key_statistics(32, "c", "us", 160.0)
 
         result = storage.get_slowest_keys(limit=10)
 
         # Should be ordered by avg_press_time DESC
         assert len(result) == 3
-        assert result[0].key_name == 'b'  # ~205ms - slowest
-        assert result[1].key_name == 'c'  # ~155ms
-        assert result[2].key_name == 'a'  # ~105ms - fastest
+        assert result[0].key_name == "b"  # ~205ms - slowest
+        assert result[1].key_name == "c"  # ~155ms
+        assert result[2].key_name == "a"  # ~105ms - fastest

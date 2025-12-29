@@ -19,7 +19,7 @@ def get_today_timestamp_ms(offset_seconds=0):
 @pytest.fixture
 def temp_db():
     """Create temporary database."""
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = Path(f.name)
     yield db_path
     db_path.unlink()
@@ -45,16 +45,16 @@ class TestAnalyzer:
         """Test analyzer initialization."""
         assert analyzer.storage is not None
         assert not analyzer.running
-        assert analyzer.today_stats['total_keystrokes'] == 0
-        assert analyzer.today_stats['total_typing_ms'] == 0
+        assert analyzer.today_stats["total_keystrokes"] == 0
+        assert analyzer.today_stats["total_typing_ms"] == 0
 
     def test_process_key_event(self, analyzer):
         """Test processing key events."""
         timestamp_ms = 1234567890
-        analyzer.process_key_event(30, 'KEY_A', timestamp_ms, 'us')
+        analyzer.process_key_event(30, "KEY_A", timestamp_ms, "us")
 
         # Should increment keystrokes
-        assert analyzer.today_stats['total_keystrokes'] == 1
+        assert analyzer.today_stats["total_keystrokes"] == 1
 
     def test_process_burst(self, analyzer):
         """Test processing bursts."""
@@ -64,14 +64,14 @@ class TestAnalyzer:
             end_time_ms=start + 5000,
             key_count=50,
             duration_ms=5000,
-            qualifies_for_high_score=True
+            qualifies_for_high_score=True,
         )
 
         analyzer.process_burst(burst)
 
         # Should update statistics
-        assert analyzer.today_stats['total_bursts'] == 1
-        assert analyzer.today_stats['total_typing_ms'] == 5000
+        assert analyzer.today_stats["total_bursts"] == 1
+        assert analyzer.today_stats["total_typing_ms"] == 5000
 
     def test_typing_time_units(self, analyzer):
         """Test that typing time units are consistent."""
@@ -82,7 +82,7 @@ class TestAnalyzer:
             end_time_ms=start + 5000,
             key_count=50,
             duration_ms=5000,  # 5 seconds in milliseconds
-            qualifies_for_high_score=False
+            qualifies_for_high_score=False,
         )
 
         analyzer.process_burst(burst)
@@ -91,16 +91,34 @@ class TestAnalyzer:
 
         # total_typing_sec should be in seconds, not milliseconds
         # Now calculated from database, so should be 5.0 seconds
-        assert stats['total_typing_sec'] == 5.0  # 5 seconds, not 5000
+        assert stats["total_typing_sec"] == 5.0  # 5 seconds, not 5000
 
     def test_multiple_bursts_typing_time(self, analyzer):
         """Test typing time accumulation across multiple bursts."""
         # Process multiple bursts
         base = get_today_timestamp_ms()
         bursts = [
-            Burst(start_time_ms=base, end_time_ms=base + 5000, key_count=10, duration_ms=5000, qualifies_for_high_score=False),
-            Burst(start_time_ms=base + 6000, end_time_ms=base + 11000, key_count=15, duration_ms=5000, qualifies_for_high_score=False),
-            Burst(start_time_ms=base + 12000, end_time_ms=base + 17000, key_count=20, duration_ms=5000, qualifies_for_high_score=False),
+            Burst(
+                start_time_ms=base,
+                end_time_ms=base + 5000,
+                key_count=10,
+                duration_ms=5000,
+                qualifies_for_high_score=False,
+            ),
+            Burst(
+                start_time_ms=base + 6000,
+                end_time_ms=base + 11000,
+                key_count=15,
+                duration_ms=5000,
+                qualifies_for_high_score=False,
+            ),
+            Burst(
+                start_time_ms=base + 12000,
+                end_time_ms=base + 17000,
+                key_count=20,
+                duration_ms=5000,
+                qualifies_for_high_score=False,
+            ),
         ]
 
         for burst in bursts:
@@ -109,8 +127,8 @@ class TestAnalyzer:
         stats = analyzer.get_statistics()
 
         # 3 bursts × 5 seconds each = 15 seconds total
-        assert stats['total_typing_sec'] == 15.0
-        assert stats['total_bursts'] == 3
+        assert stats["total_typing_sec"] == 15.0
+        assert stats["total_bursts"] == 3
 
     def test_calculate_wpm(self, analyzer):
         """Test WPM calculation."""
@@ -125,24 +143,24 @@ class TestAnalyzer:
         """Test that get_statistics returns correct types."""
         stats = analyzer.get_statistics()
 
-        assert isinstance(stats['total_keystrokes'], int)
-        assert isinstance(stats['total_bursts'], int)
-        assert isinstance(stats['total_typing_sec'], float)
-        assert isinstance(stats['avg_wpm'], float)
+        assert isinstance(stats["total_keystrokes"], int)
+        assert isinstance(stats["total_bursts"], int)
+        assert isinstance(stats["total_typing_sec"], float)
+        assert isinstance(stats["avg_wpm"], float)
 
     def test_daily_summary_storage(self, analyzer):
         """Test that daily summary stores typing time correctly."""
         # Create some typing activity (need key events to have keystrokes count)
         base = get_today_timestamp_ms()
         for i in range(50):
-            analyzer.process_key_event(30, 'KEY_A', base + (i * 100), 'us')
+            analyzer.process_key_event(30, "KEY_A", base + (i * 100), "us")
 
         burst = Burst(
             start_time_ms=base,
             end_time_ms=base + 10000,
             key_count=50,
             duration_ms=10000,  # 10 seconds
-            qualifies_for_high_score=False
+            qualifies_for_high_score=False,
         )
         analyzer.process_burst(burst)
 

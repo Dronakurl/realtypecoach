@@ -1,6 +1,7 @@
 """Tests for BurstDetector class."""
 
 from core.burst_detector import Burst, BurstDetector
+from core.burst_config import BurstDetectorConfig
 
 
 class TestBurst:
@@ -13,7 +14,7 @@ class TestBurst:
             end_time_ms=6000,
             key_count=10,
             duration_ms=5000,
-            qualifies_for_high_score=True
+            qualifies_for_high_score=True,
         )
 
         assert burst.start_time_ms == 1000
@@ -29,7 +30,7 @@ class TestBurst:
             end_time_ms=6000,
             key_count=10,
             duration_ms=5000,
-            qualifies_for_high_score=False
+            qualifies_for_high_score=False,
         )
 
         # Duration should be 5000ms = 5 seconds
@@ -43,10 +44,14 @@ class TestBurstDetector:
         """Test burst detector initialization."""
         burst_completed = []
 
-        detector = BurstDetector(
+        config = BurstDetectorConfig(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,
-            on_burst_complete=lambda b: burst_completed.append(b)
+        )
+
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
         )
 
         assert detector.config.burst_timeout_ms == 3000
@@ -56,10 +61,14 @@ class TestBurstDetector:
         """Test processing a single key press."""
         burst_completed = []
 
-        detector = BurstDetector(
+        config = BurstDetectorConfig(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,
-            on_burst_complete=lambda b: burst_completed.append(b)
+        )
+
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
         )
 
         # Process press and release
@@ -73,12 +82,16 @@ class TestBurstDetector:
         """Test that burst completes after timeout."""
         burst_completed = []
 
-        detector = BurstDetector(
+        config = BurstDetectorConfig(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,
             min_key_count=2,  # Lower threshold for test
             min_duration_ms=1000,  # Lower threshold for test
-            on_burst_complete=lambda b: burst_completed.append(b)
+        )
+
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
         )
 
         # Process some key events
@@ -87,29 +100,33 @@ class TestBurstDetector:
         detector.process_key_event(2000, True)
         detector.process_key_event(2200, False)
 
-        # Trigger timeout
+        # Trigger timeout (7800ms gap > 3000ms threshold)
         result = detector.process_key_event(10000, True)  # Way past timeout
 
         assert result is not None
         assert isinstance(result, Burst)
-        assert result.key_count == 2  # 2 complete key presses
+        assert result.key_count == 2  # 2 key press events
 
     def test_high_score_qualification(self):
         """Test high score qualification."""
         burst_completed = []
 
-        detector = BurstDetector(
+        config = BurstDetectorConfig(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,  # 10 seconds minimum
             min_key_count=2,  # Lower threshold for test
             min_duration_ms=1000,  # Lower threshold for test
-            on_burst_complete=lambda b: burst_completed.append(b)
+        )
+
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
         )
 
         # Simulate a burst with less than 10 seconds duration but >1 second
         # Need 2 key presses to meet min_key_count
-        detector.process_key_event(1000, True)   # First key press
-        detector.process_key_event(2100, True)   # Second key press (1100ms later)
+        detector.process_key_event(1000, True)  # First key press
+        detector.process_key_event(2100, True)  # Second key press (1100ms later)
 
         # Complete the burst (timeout triggered)
         result = detector.process_key_event(10000, True)
@@ -121,15 +138,19 @@ class TestBurstDetector:
         """Test that longer bursts qualify for high score."""
         burst_completed = []
 
-        detector = BurstDetector(
+        config = BurstDetectorConfig(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,  # 10 seconds minimum
             min_key_count=5,  # Lower threshold for test
             min_duration_ms=1000,  # Lower threshold for test
-            on_burst_complete=lambda b: burst_completed.append(b)
         )
 
-        # Simulate a 12-second burst (just key press/release events spread out)
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
+        )
+
+        # Simulate a ~10.8 second burst (just key press events spread out)
         start_time = 1000
         for i in range(10):
             press_time = start_time + (i * 1200)

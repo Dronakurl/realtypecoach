@@ -23,10 +23,10 @@ class TestDictionaryDetector:
         detected = DictionaryDetector.detect_available()
         for d in detected:
             assert isinstance(d, DictionaryInfo)
-            assert hasattr(d, 'path')
-            assert hasattr(d, 'language_code')
-            assert hasattr(d, 'language_name')
-            assert hasattr(d, 'available')
+            assert hasattr(d, "path")
+            assert hasattr(d, "language_code")
+            assert hasattr(d, "language_name")
+            assert hasattr(d, "available")
 
     def test_validate_dictionary_with_valid_file(self, tmp_path):
         """Should accept valid dictionary format."""
@@ -52,10 +52,7 @@ class TestDictionaryWithFallback:
         """Should accept all words in accept_all mode."""
         from core.dictionary import Dictionary
 
-        config = DictionaryConfig(
-            enabled_languages=[],
-            accept_all_mode=True
-        )
+        config = DictionaryConfig(enabled_languages=[], accept_all_mode=True)
         dict_obj = Dictionary(config)
         assert dict_obj.accept_all_mode
         assert dict_obj.is_valid_word("test")
@@ -83,7 +80,7 @@ class TestDictionaryWithFallback:
         assert dict_obj.accept_all_mode
 
         # Reload without accept_all_mode
-        new_config = DictionaryConfig(enabled_languages=['en', 'de'])
+        new_config = DictionaryConfig(enabled_languages=["en", "de"])
         dict_obj.reload_languages(new_config)
 
         # May have loaded dictionaries or enabled accept_all_mode
