@@ -80,6 +80,8 @@ class TestBurstDetector:
         detector = BurstDetector(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,
+            min_key_count=2,  # Lower threshold for test
+            min_duration_ms=1000,  # Lower threshold for test
             on_burst_complete=lambda b: burst_completed.append(b)
         )
 
@@ -103,18 +105,21 @@ class TestBurstDetector:
         detector = BurstDetector(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,  # 10 seconds minimum
+            min_key_count=2,  # Lower threshold for test
+            min_duration_ms=1000,  # Lower threshold for test
             on_burst_complete=lambda b: burst_completed.append(b)
         )
 
-        # Simulate a burst with less than 10 seconds duration
-        detector.process_key_event(1000, True)
-        detector.process_key_event(1200, False)
+        # Simulate a burst with less than 10 seconds duration but >1 second
+        # Need 2 key presses to meet min_key_count
+        detector.process_key_event(1000, True)   # First key press
+        detector.process_key_event(2100, True)   # Second key press (1100ms later)
 
-        # Complete the burst
+        # Complete the burst (timeout triggered)
         result = detector.process_key_event(10000, True)
 
         assert result is not None
-        assert result.qualifies_for_high_score == False  # Too short
+        assert result.qualifies_for_high_score == False  # Too short (duration < 10000ms)
 
     def test_high_score_qualified(self):
         """Test that longer bursts qualify for high score."""
@@ -123,6 +128,8 @@ class TestBurstDetector:
         detector = BurstDetector(
             burst_timeout_ms=3000,
             high_score_min_duration_ms=10000,  # 10 seconds minimum
+            min_key_count=5,  # Lower threshold for test
+            min_duration_ms=1000,  # Lower threshold for test
             on_burst_complete=lambda b: burst_completed.append(b)
         )
 

@@ -57,7 +57,7 @@ class Application(QObject):
     signal_update_fastest_keys = pyqtSignal(list)
     signal_update_hardest_words = pyqtSignal(list)
     signal_update_fastest_words_stats = pyqtSignal(list)
-    signal_update_today_stats = pyqtSignal(int, int, int)
+    signal_update_today_stats = pyqtSignal(int, int, float)
     signal_update_trend_data = pyqtSignal(list)
     signal_settings_changed = pyqtSignal(dict)
 
@@ -109,6 +109,8 @@ class Application(QObject):
             ),
             duration_calculation_method=self.config.get('burst_duration_calculation', 'total_time'),
             active_time_threshold_ms=self.config.get_int('active_time_threshold_ms', 500),
+            min_key_count=self.config.get_int('min_burst_key_count', 10),
+            min_duration_ms=self.config.get_int('min_burst_duration_ms', 5000),
             on_burst_complete=self.on_burst_complete
         )
 

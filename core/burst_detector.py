@@ -23,6 +23,8 @@ class BurstDetector:
                  high_score_min_duration_ms: int = 10000,
                  duration_calculation_method: str = 'total_time',
                  active_time_threshold_ms: int = 500,
+                 min_key_count: int = 10,
+                 min_duration_ms: int = 5000,
                  on_burst_complete: Optional[Callable[[Burst], None]] = None):
         """Initialize burst detector.
 
@@ -31,12 +33,16 @@ class BurstDetector:
             high_score_min_duration_ms: Minimum duration for burst to qualify for high score (default: 10000ms)
             duration_calculation_method: How to calculate burst duration - 'total_time' or 'active_time' (default: 'total_time')
             active_time_threshold_ms: For 'active_time' method, max interval to count as active (default: 500ms)
+            min_key_count: Minimum keystrokes required for burst to be recorded (default: 10)
+            min_duration_ms: Minimum duration required for burst to be recorded (default: 5000ms)
             on_burst_complete: Callback function called when burst completes
         """
         self.burst_timeout_ms = burst_timeout_ms
         self.high_score_min_duration_ms = high_score_min_duration_ms
         self.duration_calculation_method = duration_calculation_method
         self.active_time_threshold_ms = active_time_threshold_ms
+        self.min_key_count = min_key_count
+        self.min_duration_ms = min_duration_ms
         self.on_burst_complete = on_burst_complete
         self.current_burst: Optional[Burst] = None
         self.last_key_time_ms: Optional[int] = None
@@ -85,7 +91,7 @@ class BurstDetector:
             timestamp_ms: Timestamp of new key press
 
         Returns:
-            Completed Burst object
+            Completed Burst object if it meets minimum criteria, None otherwise
         """
         completed_burst = None
 
@@ -93,16 +99,24 @@ class BurstDetector:
             if self.last_key_time_ms is not None:
                 self.current_burst.end_time_ms = self.last_key_time_ms
                 self.current_burst.duration_ms = self._calculate_duration()
-            self.current_burst.qualifies_for_high_score = (
-                self.current_burst.duration_ms >= self.high_score_min_duration_ms
-            )
-            completed_burst = self.current_burst
 
-            if self.on_burst_complete:
-                try:
-                    self.on_burst_complete(completed_burst)
-                except Exception as e:
-                    print(f"Error in burst complete callback: {e}")
+            # Check if burst meets minimum criteria for recording
+            meets_min_criteria = (
+                self.current_burst.key_count >= self.min_key_count and
+                self.current_burst.duration_ms >= self.min_duration_ms
+            )
+
+            if meets_min_criteria:
+                self.current_burst.qualifies_for_high_score = (
+                    self.current_burst.duration_ms >= self.high_score_min_duration_ms
+                )
+                completed_burst = self.current_burst
+
+                if self.on_burst_complete:
+                    try:
+                        self.on_burst_complete(completed_burst)
+                    except Exception as e:
+                        print(f"Error in burst complete callback: {e}")
 
         self.current_burst = Burst(
             start_time_ms=timestamp_ms,

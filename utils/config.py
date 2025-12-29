@@ -11,6 +11,8 @@ DEFAULT_SETTINGS = {
     'burst_duration_calculation': 'total_time',
     'active_time_threshold_ms': '500',
     'high_score_min_duration_ms': '10000',
+    'min_burst_key_count': '10',
+    'min_burst_duration_ms': '5000',
     'exceptional_wpm_threshold': '120',
     'password_exclusion': 'True',
     'notifications_enabled': 'True',
