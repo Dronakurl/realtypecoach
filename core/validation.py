@@ -2,7 +2,7 @@
 
 import logging
 
-log = logging.getLogger('realtypecoach.validation')
+log = logging.getLogger("realtypecoach.validation")
 
 
 def validate_duration_ms(start_ms: int, end_ms: int) -> int:

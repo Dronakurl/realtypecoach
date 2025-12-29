@@ -4,7 +4,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, List
 
-log = logging.getLogger('realtypecoach.word_detector')
+from core.models import KeystrokeInfo, WordInfo
+
+log = logging.getLogger("realtypecoach.word_detector")
 
 
 @dataclass
@@ -13,10 +15,11 @@ class WordState:
 
     Tracks the complete typing history of a word including backspace edits.
     """
+
     word: str = field(default="")
     start_time_ms: int = field(default=0)
     last_keystroke_time_ms: int = field(default=0)
-    keystrokes: List[dict] = field(default_factory=list)
+    keystrokes: List[KeystrokeInfo] = field(default_factory=list)
     backspace_count: int = field(default=0)
     editing_time_ms: int = field(default=0)
     layout: str = field(default="us")
@@ -29,7 +32,9 @@ class WordState:
             timestamp_ms: Timestamp of keystroke
         """
         self.word += key_name
-        self.keystrokes.append({'key': key_name, 'time': timestamp_ms, 'type': 'letter'})
+        self.keystrokes.append(
+            KeystrokeInfo(key=key_name, time=timestamp_ms, type="letter")
+        )
         self.last_keystroke_time_ms = timestamp_ms
 
     def handle_backspace(self, timestamp_ms: int) -> None:
@@ -40,13 +45,15 @@ class WordState:
         """
         if self.word:
             self.backspace_count += 1
-            
+
             if self.last_keystroke_time_ms > 0:
                 time_since_last = timestamp_ms - self.last_keystroke_time_ms
                 self.editing_time_ms += time_since_last
 
             self.word = self.word[:-1]
-            self.keystrokes.append({'key': 'BACKSPACE', 'time': timestamp_ms, 'type': 'backspace'})
+            self.keystrokes.append(
+                KeystrokeInfo(key="BACKSPACE", time=timestamp_ms, type="backspace")
+            )
             self.last_keystroke_time_ms = timestamp_ms
 
     def finalize(self, end_time_ms: int) -> int:
@@ -79,8 +86,7 @@ class WordState:
 class WordDetector:
     """Detects words and tracks backspace editing."""
 
-    def __init__(self, word_boundary_timeout_ms: int = 1000,
-                 min_word_length: int = 3):
+    def __init__(self, word_boundary_timeout_ms: int = 1000, min_word_length: int = 3):
         """Initialize word detector.
 
         Args:
@@ -91,8 +97,13 @@ class WordDetector:
         self.min_word_length = min_word_length
         self.current_state: Optional[WordState] = None
 
-    def process_keystroke(self, key_name: str, timestamp_ms: int,
-                        layout: str = 'us', is_letter: bool = False) -> Optional[dict]:
+    def process_keystroke(
+        self,
+        key_name: str,
+        timestamp_ms: int,
+        layout: str = "us",
+        is_letter: bool = False,
+    ) -> Optional[WordInfo]:
         """Process a keystroke and return word info if finalized.
 
         Args:
@@ -102,25 +113,18 @@ class WordDetector:
             is_letter: Whether key is a letter key
 
         Returns:
-            Word info dict if word was finalized, None otherwise
-            Word info: {
-                'word': str,
-                'layout': str,
-                'total_duration_ms': int,
-                'editing_time_ms': int,
-                'backspace_count': int,
-                'num_letters': int
-            }
+            WordInfo if word was finalized, None otherwise
         """
         if is_letter:
             return self._process_letter(key_name, timestamp_ms, layout)
-        elif key_name == 'BACKSPACE':
+        elif key_name == "BACKSPACE":
             return self._process_backspace(timestamp_ms)
         else:
             return self._process_boundary(key_name, timestamp_ms)
 
-    def _process_letter(self, key_name: str, timestamp_ms: int,
-                      layout: str) -> Optional[dict]:
+    def _process_letter(
+        self, key_name: str, timestamp_ms: int, layout: str
+    ) -> Optional[WordInfo]:
         """Process letter keystroke.
 
         Args:
@@ -129,7 +133,7 @@ class WordDetector:
             layout: Keyboard layout
 
         Returns:
-            Word info if timeout triggered and existing word finalized, None otherwise
+            WordInfo if timeout triggered and existing word finalized, None otherwise
         """
         if not self.current_state:
             self.current_state = WordState(start_time_ms=timestamp_ms, layout=layout)
@@ -140,24 +144,26 @@ class WordDetector:
 
         if state.last_keystroke_time_ms > 0:
             pause = timestamp_ms - state.last_keystroke_time_ms
-            
+
             if pause > self.word_boundary_timeout_ms:
                 finalized = self._finalize_current_state()
-                self.current_state = WordState(start_time_ms=timestamp_ms, layout=layout)
+                self.current_state = WordState(
+                    start_time_ms=timestamp_ms, layout=layout
+                )
                 self.current_state.add_keystroke(key_name, timestamp_ms)
                 return finalized
 
         state.add_keystroke(key_name, timestamp_ms)
         return None
 
-    def _process_backspace(self, timestamp_ms: int) -> Optional[dict]:
+    def _process_backspace(self, timestamp_ms: int) -> Optional[WordInfo]:
         """Process backspace keystroke.
 
         Args:
             timestamp_ms: Timestamp
 
         Returns:
-            Word info if word was backspaced completely and needs finalization
+            WordInfo if word was backspaced completely and needs finalization
         """
         if not self.current_state:
             return None
@@ -169,7 +175,7 @@ class WordDetector:
 
         return None
 
-    def _process_boundary(self, key_name: str, timestamp_ms: int) -> Optional[dict]:
+    def _process_boundary(self, key_name: str, timestamp_ms: int) -> Optional[WordInfo]:
         """Process word boundary keystroke (space, punctuation, etc.).
 
         Args:
@@ -177,7 +183,7 @@ class WordDetector:
             timestamp_ms: Timestamp
 
         Returns:
-            Word info if word was finalized, None otherwise
+            WordInfo if word was finalized, None otherwise
         """
         if self.current_state:
             finalized = self._finalize_current_state(timestamp_ms)
@@ -186,14 +192,16 @@ class WordDetector:
 
         return None
 
-    def _finalize_current_state(self, end_time_ms: Optional[int] = None) -> Optional[dict]:
+    def _finalize_current_state(
+        self, end_time_ms: Optional[int] = None
+    ) -> Optional[WordInfo]:
         """Finalize current word state.
 
         Args:
             end_time_ms: End timestamp (if None, uses last keystroke time)
 
         Returns:
-            Word info dict if word meets criteria, None otherwise
+            WordInfo if word meets criteria, None otherwise
         """
         if not self.current_state:
             return None
@@ -208,14 +216,14 @@ class WordDetector:
 
         total_duration_ms = state.finalize(end_time_ms)
 
-        return {
-            'word': state.word,
-            'layout': state.layout,
-            'total_duration_ms': total_duration_ms,
-            'editing_time_ms': state.editing_time_ms,
-            'backspace_count': state.backspace_count,
-            'num_letters': len(state.word)
-        }
+        return WordInfo(
+            word=state.word,
+            layout=state.layout,
+            total_duration_ms=total_duration_ms,
+            editing_time_ms=state.editing_time_ms,
+            backspace_count=state.backspace_count,
+            num_letters=len(state.word),
+        )
 
     def reset(self) -> None:
         """Reset detector state."""

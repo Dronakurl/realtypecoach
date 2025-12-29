@@ -12,7 +12,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from core.models import DailySummary
 
 
-log = logging.getLogger('realtypecoach.notification')
+log = logging.getLogger("realtypecoach.notification")
 
 
 class NotificationHandler(QObject):
@@ -21,11 +21,14 @@ class NotificationHandler(QObject):
     signal_daily_summary = pyqtSignal(object)  # DailySummary object
     signal_exceptional_burst = pyqtSignal(float)
 
-    def __init__(self, summary_getter: Callable[[str], Optional[tuple]],
-                 storage=None,
-                 min_burst_ms: int = 10000,
-                 threshold_days: int = 30,
-                 threshold_update_sec: int = 300):
+    def __init__(
+        self,
+        summary_getter: Callable[[str], Optional[tuple]],
+        storage=None,
+        min_burst_ms: int = 10000,
+        threshold_days: int = 30,
+        threshold_update_sec: int = 300,
+    ):
         """Initialize notification handler.
 
         Args:
@@ -65,11 +68,15 @@ class NotificationHandler(QObject):
         self._stop_event.clear()
 
         # Start daily summary scheduler
-        self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
+        self.scheduler_thread = threading.Thread(
+            target=self._run_scheduler, daemon=True
+        )
         self.scheduler_thread.start()
 
         # Start threshold update thread
-        self.threshold_thread = threading.Thread(target=self._run_threshold_updater, daemon=True)
+        self.threshold_thread = threading.Thread(
+            target=self._run_threshold_updater, daemon=True
+        )
         self.threshold_thread.start()
 
         # Initial threshold calculation
@@ -84,8 +91,9 @@ class NotificationHandler(QObject):
         if self.threshold_thread:
             self.threshold_thread.join(timeout=2)
 
-    def notify_exceptional_burst(self, wpm: float, key_count: int,
-                                    duration_ms: int) -> None:
+    def notify_exceptional_burst(
+        self, wpm: float, key_count: int, duration_ms: int
+    ) -> None:
         """Notify on exceptional burst.
 
         Args:
@@ -116,13 +124,19 @@ class NotificationHandler(QObject):
                 cursor = conn.cursor()
 
                 # Get bursts from the configured lookback period
-                cutoff_time = int((datetime.now() - timedelta(days=self.threshold_days)).timestamp() * 1000)
+                cutoff_time = int(
+                    (datetime.now() - timedelta(days=self.threshold_days)).timestamp()
+                    * 1000
+                )
 
-                cursor.execute('''
+                cursor.execute(
+                    """
                     SELECT avg_wpm FROM bursts
                     WHERE start_time >= ? AND duration_ms >= ?
                     ORDER BY avg_wpm ASC
-                ''', (cutoff_time, self.min_burst_ms))
+                """,
+                    (cutoff_time, self.min_burst_ms),
+                )
 
                 wpms = [row[0] for row in cursor.fetchall()]
 
@@ -157,8 +171,11 @@ class NotificationHandler(QObject):
         while not self._stop_event.is_set():
             now = datetime.now()
 
-            if now.hour == self.notification_hour and now.minute == self.notification_minute:
-                self._send_daily_summary(now.strftime('%Y-%m-%d'))
+            if (
+                now.hour == self.notification_hour
+                and now.minute == self.notification_minute
+            ):
+                self._send_daily_summary(now.strftime("%Y-%m-%d"))
                 # Wait until minute passes to avoid duplicate
                 self._stop_event.wait(60)
                 continue
@@ -180,9 +197,15 @@ class NotificationHandler(QObject):
         if not summary:
             return
 
-        (total_keystrokes, total_bursts, avg_wpm,
-         slowest_keycode, slowest_key_name, total_typing_sec,
-         summary_sent) = summary
+        (
+            total_keystrokes,
+            total_bursts,
+            avg_wpm,
+            slowest_keycode,
+            slowest_key_name,
+            total_typing_sec,
+            summary_sent,
+        ) = summary
 
         if summary_sent:
             return
@@ -190,7 +213,11 @@ class NotificationHandler(QObject):
         typing_hours = total_typing_sec // 3600
         typing_minutes = (total_typing_sec % 3600) // 60
 
-        time_str = f"{typing_hours}h {typing_minutes}m" if typing_hours > 0 else f"{typing_minutes}m"
+        time_str = (
+            f"{typing_hours}h {typing_minutes}m"
+            if typing_hours > 0
+            else f"{typing_minutes}m"
+        )
 
         title = f"📊 Daily Typing Summary ({date})"
         message = f"""
@@ -208,7 +235,7 @@ Slowest key: '{slowest_key_name}' (avg)
             message=message,
             slowest_key=slowest_key_name,
             avg_wpm=str(int(avg_wpm)),
-            keystrokes=f"{total_keystrokes:,} keystrokes"
+            keystrokes=f"{total_keystrokes:,} keystrokes",
         )
 
         self.signal_daily_summary.emit(summary_obj)

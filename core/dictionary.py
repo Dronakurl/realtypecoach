@@ -5,42 +5,38 @@ import logging
 
 from core.dictionary_config import DictionaryConfig
 
-log = logging.getLogger('realtypecoach.dictionary')
+log = logging.getLogger("realtypecoach.dictionary")
 
 
 class Dictionary:
     """Dictionary validator for multiple languages with fallback support."""
 
     MIN_WORD_LENGTH: int = 3
-    _detected_dictionaries: dict[str, str] | None = None  # Cache: language_code -> path
 
     @classmethod
     def _detect_dictionaries(cls) -> dict[str, str]:
         """Detect available dictionaries on the system.
 
+        This method re-scans the filesystem on every call to detect
+        newly installed dictionaries.
+
         Returns:
             Dict mapping language codes to their file paths
         """
-        if cls._detected_dictionaries is not None:
-            return cls._detected_dictionaries
-
         try:
             from utils.dict_detector import DictionaryDetector
+
             detected = DictionaryDetector.detect_available()
-            cls._detected_dictionaries = {
-                d.language_code: d.path for d in detected if d.available
-            }
-            log.debug(f"Detected dictionaries: {list(cls._detected_dictionaries.keys())}")
-            return cls._detected_dictionaries
+            detected_dict = {d.language_code: d.path for d in detected if d.available}
+            log.debug(f"Detected dictionaries: {list(detected_dict.keys())}")
+            return detected_dict
         except (ImportError, AttributeError, OSError) as e:
             log.warning(f"Dictionary detection failed ({e})")
-            cls._detected_dictionaries = {}
             return {}
 
-    @staticmethod
+    @classmethod
     def _resolve_paths(
-        requested_languages: list[str],
-        custom_paths: dict[str, str]
+        cls, requested_languages: list[str], custom_paths: dict[str, str]
     ) -> dict[str, str]:
         """Resolve dictionary paths for requested languages.
 
@@ -52,7 +48,7 @@ class Dictionary:
             Dict mapping language codes to resolved paths (empty if not found)
         """
         resolved = {}
-        detected = Dictionary._detect_dictionaries()
+        detected = cls._detect_dictionaries()
 
         for lang in requested_languages:
             # Custom path takes priority
@@ -74,47 +70,40 @@ class Dictionary:
         self.loaded_paths: dict[str, str] = {}  # language_code -> file path
         self._config: DictionaryConfig = config
 
-        # Track explicit user intent for accept_all_mode
-        self._explicit_accept_all_mode: bool = config.accept_all_mode
+        # Resolve which languages to load and get their paths
+        resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
 
-        # Resolve which languages to load
-        final_languages, self.accept_all_mode = self._determine_languages_to_load(config)
-
-        # Load dictionaries
-        for lang_code in final_languages:
-            path = config.custom_paths.get(lang_code)
-            if path is None:
-                detected = self._detect_dictionaries()
-                path = detected.get(lang_code)
-            if path:
-                self._load_dictionary(lang_code, path)
+        # Load dictionaries using resolved paths
+        for lang_code, path in resolved_paths.items():
+            self._load_dictionary(lang_code, path)
 
         # Log final state
         if self.accept_all_mode:
-            log.warning("Dictionary in accept-all mode - all words (3+ letters) will be valid")
+            log.warning(
+                "Dictionary in accept-all mode - all words (3+ letters) will be valid"
+            )
         else:
             loaded = self.get_loaded_languages()
             if loaded:
                 log.info(f"Dictionary loaded for languages: {', '.join(loaded)}")
 
     def _determine_languages_to_load(
-        self,
-        config: DictionaryConfig
-    ) -> tuple[list[str], bool]:
+        self, config: DictionaryConfig
+    ) -> tuple[dict[str, str], bool]:
         """Determine which languages to load and whether to use accept_all mode.
 
         Args:
             config: Dictionary configuration
 
         Returns:
-            Tuple of (list of language codes to load, should_use_accept_all_mode)
+            Tuple of (dict mapping language codes to paths, should_use_accept_all_mode)
         """
         requested = config.enabled_languages
         custom_paths = config.custom_paths
 
         # If explicit accept_all_mode, don't load any dictionaries
         if config.accept_all_mode:
-            return [], True
+            return {}, True
 
         # Resolve paths for requested languages
         resolved_paths = self._resolve_paths(requested, custom_paths)
@@ -122,7 +111,7 @@ class Dictionary:
         # Check if all requested languages are available
         if len(resolved_paths) >= len(requested):
             # All (or most) requested languages available
-            return list(resolved_paths.keys()), False
+            return resolved_paths, False
 
         # Some requested languages not available
         missing = set(requested) - set(resolved_paths.keys())
@@ -131,15 +120,15 @@ class Dictionary:
         if resolved_paths:
             # Load what we can find
             log.info(f"Loading available languages: {', '.join(resolved_paths.keys())}")
-            return list(resolved_paths.keys()), False
+            return resolved_paths, False
 
         # No dictionaries available
         if config.auto_fallback:
             log.warning("No dictionaries available, enabling accept-all mode")
-            return [], True
+            return {}, True
         else:
             log.error("No dictionaries available and auto_fallback is disabled")
-            return [], False
+            return {}, False
 
     def _load_dictionary(self, language_code: str, path: str) -> bool:
         """Load dictionary for a language.
@@ -158,10 +147,14 @@ class Dictionary:
 
         # Load dictionary
         try:
-            with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                self.words[language_code] = set(line.strip().lower() for line in f if line.strip())
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                self.words[language_code] = set(
+                    line.strip().lower() for line in f if line.strip()
+                )
             self.loaded_paths[language_code] = path
-            log.info(f"Loaded {len(self.words[language_code])} {language_code} words from {path}")
+            log.info(
+                f"Loaded {len(self.words[language_code])} {language_code} words from {path}"
+            )
             return True
         except (PermissionError, UnicodeDecodeError, OSError, IOError) as e:
             log.error(f"Error loading {language_code} dictionary from {path}: {e}")
@@ -228,21 +221,12 @@ class Dictionary:
         self.loaded_paths.clear()
         self._config = config
 
-        # Update explicit intent (preserve original choice unless explicitly changed)
-        if config.accept_all_mode:
-            self._explicit_accept_all_mode = True
+        # Determine new state and get resolved paths
+        resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
 
-        # Determine new state
-        final_languages, self.accept_all_mode = self._determine_languages_to_load(config)
-
-        # Load dictionaries
-        for lang_code in final_languages:
-            path = config.custom_paths.get(lang_code)
-            if path is None:
-                detected = self._detect_dictionaries()
-                path = detected.get(lang_code)
-            if path:
-                self._load_dictionary(lang_code, path)
+        # Load dictionaries using resolved paths
+        for lang_code, path in resolved_paths.items():
+            self._load_dictionary(lang_code, path)
 
         # Log final state
         if self.accept_all_mode:

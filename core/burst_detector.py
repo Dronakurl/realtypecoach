@@ -5,13 +5,15 @@ from typing import Callable, Optional, List
 from dataclasses import dataclass
 
 from core.burst_config import BurstDetectorConfig, DurationCalculationMethod
+from core.models import BurstInfo
 
-log = logging.getLogger('realtypecoach.burst_detector')
+log = logging.getLogger("realtypecoach.burst_detector")
 
 
 @dataclass
 class Burst:
     """Represents a burst of continuous typing."""
+
     start_time_ms: int
     end_time_ms: int = 0
     key_count: int = 0
@@ -22,19 +24,17 @@ class Burst:
 class BurstDetector:
     """Detects bursts of continuous typing."""
 
-    def __init__(self, config: Optional[BurstDetectorConfig] = None,
-                 on_burst_complete: Optional[Callable[[Burst], None]] = None,
-                 **kwargs):
+    def __init__(
+        self,
+        config: BurstDetectorConfig,
+        on_burst_complete: Optional[Callable[[Burst], None]] = None,
+    ):
         """Initialize burst detector.
 
         Args:
-            config: BurstDetectorConfig object (optional)
+            config: BurstDetectorConfig object
             on_burst_complete: Callback function called when burst completes
-            **kwargs: Individual config params for backwards compatibility
         """
-        if config is None:
-            config = BurstDetectorConfig(**kwargs)
-
         self.config = config
         self.on_burst_complete = on_burst_complete
         self.current_burst: Optional[Burst] = None
@@ -61,7 +61,7 @@ class BurstDetector:
                 start_time_ms=timestamp_ms,
                 end_time_ms=timestamp_ms,
                 key_count=1,
-                duration_ms=0
+                duration_ms=0,
             )
             return None
 
@@ -96,13 +96,14 @@ class BurstDetector:
 
             # Check if burst meets minimum criteria for recording
             meets_min_criteria = (
-                self.current_burst.key_count >= self.config.min_key_count and
-                self.current_burst.duration_ms >= self.config.min_duration_ms
+                self.current_burst.key_count >= self.config.min_key_count
+                and self.current_burst.duration_ms >= self.config.min_duration_ms
             )
 
             if meets_min_criteria:
                 self.current_burst.qualifies_for_high_score = (
-                    self.current_burst.duration_ms >= self.config.high_score_min_duration_ms
+                    self.current_burst.duration_ms
+                    >= self.config.high_score_min_duration_ms
                 )
                 completed_burst = self.current_burst
 
@@ -117,7 +118,7 @@ class BurstDetector:
             start_time_ms=timestamp_ms,
             end_time_ms=timestamp_ms,
             key_count=1,
-            duration_ms=0
+            duration_ms=0,
         )
         self.last_key_time_ms = timestamp_ms
 
@@ -132,7 +133,10 @@ class BurstDetector:
         if not self.current_burst or len(self._current_timestamps) < 2:
             return 0
 
-        if self.config.duration_calculation_method == DurationCalculationMethod.ACTIVE_TIME:
+        if (
+            self.config.duration_calculation_method
+            == DurationCalculationMethod.ACTIVE_TIME
+        ):
             return self._calculate_active_time_duration()
         else:  # TOTAL_TIME
             return self._calculate_total_time_duration()
@@ -159,27 +163,28 @@ class BurstDetector:
         active_duration = 0
 
         for i in range(1, len(timestamps)):
-            interval = timestamps[i] - timestamps[i-1]
+            interval = timestamps[i] - timestamps[i - 1]
             if interval <= self.config.active_time_threshold_ms:
                 active_duration += interval
 
         return active_duration
 
-    def get_current_burst_info(self) -> Optional[dict]:
+    def get_current_burst_info(self) -> Optional[BurstInfo]:
         """Get information about current active burst.
 
         Returns:
-            Dictionary with burst info or None if no active burst
+            BurstInfo or None if no active burst
         """
         if not self.current_burst:
             return None
 
-        return {
-            'key_count': self.current_burst.key_count,
-            'duration_ms': self.current_burst.duration_ms,
-            'duration_sec': self.current_burst.duration_ms / 1000.0,
-            'qualifies': self.current_burst.qualifies_for_high_score,
-        }
+        from core.models import BurstInfo
+
+        return BurstInfo(
+            key_count=self.current_burst.key_count,
+            duration_ms=self.current_burst.duration_ms,
+            qualifies=self.current_burst.qualifies_for_high_score,
+        )
 
     def reset(self) -> None:
         """Reset burst detector state."""
