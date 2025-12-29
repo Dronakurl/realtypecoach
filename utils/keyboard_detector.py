@@ -6,12 +6,12 @@ import threading
 import logging
 from typing import Callable, Optional
 
-log = logging.getLogger('realtypecoach.layout_monitor')
+log = logging.getLogger("realtypecoach.layout_monitor")
 
 # Constants
 SUBPROCESS_TIMEOUT = 5  # seconds
-KEYBOARD_FILE_PATH = '/etc/default/keyboard'
-FALLBACK_LAYOUT = 'us'
+KEYBOARD_FILE_PATH = "/etc/default/keyboard"
+FALLBACK_LAYOUT = "us"
 
 
 def _query_layout_sources() -> list[str]:
@@ -27,49 +27,49 @@ def _query_layout_sources() -> list[str]:
         List of layout codes (e.g., ['de', 'us']) or [FALLBACK_LAYOUT]
     """
     # Method 1: Check XKB_DEFAULT_LAYOUT (Wayland)
-    xkb_layout = os.environ.get('XKB_DEFAULT_LAYOUT')
+    xkb_layout = os.environ.get("XKB_DEFAULT_LAYOUT")
     if xkb_layout:
-        return [layout.strip().lower() for layout in xkb_layout.split(',')]
+        return [layout.strip().lower() for layout in xkb_layout.split(",")]
 
     # Method 2: Check localectl status
     try:
         result = subprocess.run(
-            ['localectl', 'status'],
+            ["localectl", "status"],
             capture_output=True,
             text=True,
-            timeout=SUBPROCESS_TIMEOUT
+            timeout=SUBPROCESS_TIMEOUT,
         )
-        for line in result.stdout.split('\n'):
-            if 'X11 Layout' in line:
-                layout = line.split(':', 1)[1].strip()
+        for line in result.stdout.split("\n"):
+            if "X11 Layout" in line:
+                layout = line.split(":", 1)[1].strip()
                 if layout:
-                    return [layout.strip().lower() for layout in layout.split(',')]
+                    return [layout.strip().lower() for layout in layout.split(",")]
     except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, IndexError):
         pass
 
     # Method 3: Read /etc/default/keyboard
     try:
-        with open(KEYBOARD_FILE_PATH, 'r') as f:
+        with open(KEYBOARD_FILE_PATH, "r") as f:
             for line in f:
-                if line.startswith('XKBLAYOUT='):
+                if line.startswith("XKBLAYOUT="):
                     # Handle both XKBLAYOUT="de" and XKBLAYOUT=de
-                    layout = line.split('=')[1].strip().strip('"\'')
+                    layout = line.split("=")[1].strip().strip("\"'")
                     if layout:
-                        return [layout.strip().lower() for layout in layout.split(',')]
+                        return [layout.strip().lower() for layout in layout.split(",")]
     except (FileNotFoundError, IOError, IndexError):
         pass
 
     # Method 4: Use setxkbmap (X11/Xwayland fallback)
     try:
         result = subprocess.run(
-            ['setxkbmap', '-query'],
+            ["setxkbmap", "-query"],
             capture_output=True,
             text=True,
-            timeout=SUBPROCESS_TIMEOUT
+            timeout=SUBPROCESS_TIMEOUT,
         )
-        for line in result.stdout.split('\n'):
-            if line.startswith('layout:'):
-                layout = line.split(':')[1].strip()
+        for line in result.stdout.split("\n"):
+            if line.startswith("layout:"):
+                layout = line.split(":")[1].strip()
                 if layout:
                     return [layout.lower()]
     except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, IndexError):

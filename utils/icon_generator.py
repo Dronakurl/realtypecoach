@@ -49,7 +49,7 @@ def save_icon(path: str, active: bool = True, stopping: bool = False) -> None:
         icon_svg = SVG_ICON_STOPPING
     else:
         icon_svg = SVG_ICON if active else SVG_ICON_PAUSED
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         f.write(icon_svg)
 
 
@@ -59,4 +59,4 @@ def get_icon_data(active: bool = True, stopping: bool = False) -> bytes:
         icon_svg = SVG_ICON_STOPPING
     else:
         icon_svg = SVG_ICON if active else SVG_ICON_PAUSED
-    return icon_svg.encode('utf-8')
+    return icon_svg.encode("utf-8")

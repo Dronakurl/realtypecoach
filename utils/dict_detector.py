@@ -6,12 +6,13 @@ from typing import List, Optional, Dict
 from dataclasses import dataclass, field
 import logging
 
-log = logging.getLogger('realtypecoach.dict_detector')
+log = logging.getLogger("realtypecoach.dict_detector")
 
 
 @dataclass
 class DictionaryInfo:
     """Information about a detected dictionary."""
+
     path: str
     language_code: str  # 'en', 'de', 'fr', etc.
     language_name: str  # 'English', 'German', etc.
@@ -24,46 +25,46 @@ class DictionaryDetector:
     """Auto-detect available system dictionaries."""
 
     COMMON_SYSTEM_PATHS = [
-        '/usr/share/dict',
-        '/usr/dict',
-        '/usr/share/dictd',
-        str(Path.home() / '.local' / 'share' / 'dict'),
+        "/usr/share/dict",
+        "/usr/dict",
+        "/usr/share/dictd",
+        str(Path.home() / ".local" / "share" / "dict"),
     ]
 
     LANGUAGE_PATTERNS: Dict[str, List[str]] = {
-        'en': [r'words$', r'american-english', r'british-english', r'english'],
-        'de': [r'ngerman', r'ogerman', r'german', r'swiss'],
-        'fr': [r'french'],
-        'es': [r'spanish'],
-        'it': [r'italian'],
-        'pt': [r'portuguese'],
-        'nl': [r'dutch'],
-        'pl': [r'polish'],
-        'ru': [r'russian'],
+        "en": [r"words$", r"american-english", r"british-english", r"english"],
+        "de": [r"ngerman", r"ogerman", r"german", r"swiss"],
+        "fr": [r"french"],
+        "es": [r"spanish"],
+        "it": [r"italian"],
+        "pt": [r"portuguese"],
+        "nl": [r"dutch"],
+        "pl": [r"polish"],
+        "ru": [r"russian"],
     }
 
     LANGUAGE_NAMES: Dict[str, str] = {
-        'en': 'English',
-        'de': 'German',
-        'fr': 'French',
-        'es': 'Spanish',
-        'it': 'Italian',
-        'pt': 'Portuguese',
-        'nl': 'Dutch',
-        'pl': 'Polish',
-        'ru': 'Russian',
+        "en": "English",
+        "de": "German",
+        "fr": "French",
+        "es": "Spanish",
+        "it": "Italian",
+        "pt": "Portuguese",
+        "nl": "Dutch",
+        "pl": "Polish",
+        "ru": "Russian",
     }
 
     VARIANTS: Dict[str, Dict[str, str]] = {
-        'en': {
-            'words': 'General',
-            'american-english': 'American',
-            'british-english': 'British',
+        "en": {
+            "words": "General",
+            "american-english": "American",
+            "british-english": "British",
         },
-        'de': {
-            'ngerman': 'New German (reform)',
-            'ogerman': 'Old German (pre-reform)',
-            'swiss': 'Swiss',
+        "de": {
+            "ngerman": "New German (reform)",
+            "ogerman": "Old German (pre-reform)",
+            "swiss": "Swiss",
         },
     }
 
@@ -129,13 +130,18 @@ class DictionaryDetector:
             return None
 
         # Try to match language patterns
-        for lang_code, compiled_patterns in DictionaryDetector._COMPILED_PATTERNS.items():
+        for (
+            lang_code,
+            compiled_patterns,
+        ) in DictionaryDetector._COMPILED_PATTERNS.items():
             for pattern in compiled_patterns:
                 if pattern.search(filename):
                     # Determine variant
                     variant = None
                     if lang_code in DictionaryDetector.VARIANTS:
-                        for variant_key, variant_name in DictionaryDetector.VARIANTS[lang_code].items():
+                        for variant_key, variant_name in DictionaryDetector.VARIANTS[
+                            lang_code
+                        ].items():
                             if variant_key in filename:
                                 variant = variant_name
                                 break
@@ -146,10 +152,12 @@ class DictionaryDetector:
                     return DictionaryInfo(
                         path=file_path,
                         language_code=lang_code,
-                        language_name=DictionaryDetector.LANGUAGE_NAMES.get(lang_code, lang_code.upper()),
+                        language_name=DictionaryDetector.LANGUAGE_NAMES.get(
+                            lang_code, lang_code.upper()
+                        ),
                         variant=variant,
                         available=True,
-                        word_count=word_count
+                        word_count=word_count,
                     )
 
         return None
@@ -169,7 +177,7 @@ class DictionaryDetector:
 
         try:
             # Check if file is readable and has at least one line
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 line_count = 0
                 MAX_LINES_TO_CHECK = 10  # Don't read entire file for validation
                 for line in f:
@@ -194,7 +202,7 @@ class DictionaryDetector:
             Word count or None if unable to count
         """
         try:
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 return sum(1 for line in f if line.strip())
         except (PermissionError, UnicodeDecodeError, OSError, IOError) as e:
             log.debug(f"Could not count words in {path}: {e}")

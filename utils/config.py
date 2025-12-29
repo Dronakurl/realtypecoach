@@ -15,130 +15,104 @@ class AppSettings(BaseModel):
     burst_timeout_ms: int = Field(
         default=1000,
         gt=0,
-        description="Max pause between keystrokes before burst ends (ms)"
+        description="Max pause between keystrokes before burst ends (ms)",
     )
     word_boundary_timeout_ms: int = Field(
         default=1000,
         gt=0,
-        description="Max pause between letters before word splits (ms)"
+        description="Max pause between letters before word splits (ms)",
     )
     burst_duration_calculation: str = Field(
-        default='total_time',
-        description="How to calculate burst duration (total_time or active_time)"
+        default="total_time",
+        description="How to calculate burst duration (total_time or active_time)",
     )
     active_time_threshold_ms: int = Field(
         default=500,
         gt=0,
-        description="For active_time method, max interval to count as active (ms)"
+        description="For active_time method, max interval to count as active (ms)",
     )
     high_score_min_duration_ms: int = Field(
         default=10000,
         gt=0,
-        description="Minimum duration for burst to qualify for high score (ms)"
+        description="Minimum duration for burst to qualify for high score (ms)",
     )
     min_burst_key_count: int = Field(
         default=10,
         ge=1,
-        description="Minimum keystrokes required for burst to be recorded"
+        description="Minimum keystrokes required for burst to be recorded",
     )
     min_burst_duration_ms: int = Field(
         default=5000,
         gt=0,
-        description="Minimum duration required for burst to be recorded (ms)"
+        description="Minimum duration required for burst to be recorded (ms)",
     )
 
     # Performance thresholds
     exceptional_wpm_threshold: int = Field(
-        default=120,
-        gt=0,
-        description="WPM threshold for exceptional performance"
+        default=120, gt=0, description="WPM threshold for exceptional performance"
     )
 
     # Feature flags
     password_exclusion: bool = Field(
-        default=True,
-        description="Exclude password fields from tracking"
+        default=True, description="Exclude password fields from tracking"
     )
     notifications_enabled: bool = Field(
-        default=True,
-        description="Enable notifications"
+        default=True, description="Enable notifications"
     )
 
     # Data management
     slowest_keys_count: int = Field(
-        default=10,
-        ge=1,
-        le=100,
-        description="Number of slowest keys to track"
+        default=10, ge=1, le=100, description="Number of slowest keys to track"
     )
     data_retention_days: int = Field(
-        default=-1,
-        ge=-1,
-        description="Days to keep data (-1 = keep forever)"
+        default=-1, ge=-1, description="Days to keep data (-1 = keep forever)"
     )
 
     # Keyboard layout
     keyboard_layout: str = Field(
-        default='auto',
-        description="Keyboard layout identifier"
+        default="auto", description="Keyboard layout identifier"
     )
 
     # Notification settings
     notification_time_hour: int = Field(
-        default=18,
-        ge=0,
-        le=23,
-        description="Daily notification hour (0-23)"
+        default=18, ge=0, le=23, description="Daily notification hour (0-23)"
     )
     notification_time_minute: int = Field(
-        default=0,
-        ge=0,
-        le=59,
-        description="Daily notification minute (0-59)"
+        default=0, ge=0, le=59, description="Daily notification minute (0-59)"
     )
     notification_min_burst_ms: int = Field(
-        default=10000,
-        gt=0,
-        description="Min burst duration for notification (ms)"
+        default=10000, gt=0, description="Min burst duration for notification (ms)"
     )
     notification_threshold_days: int = Field(
-        default=30,
-        ge=1,
-        description="Days threshold for notification"
+        default=30, ge=1, description="Days threshold for notification"
     )
     notification_threshold_update_sec: int = Field(
-        default=300,
-        ge=60,
-        description="Update interval for notification (sec)"
+        default=300, ge=60, description="Update interval for notification (sec)"
     )
 
     # Dictionary settings
     dictionary_mode: str = Field(
-        default='validate',
-        description="Dictionary validation mode (validate or accept_all)"
+        default="validate",
+        description="Dictionary validation mode (validate or accept_all)",
     )
     enabled_languages: str = Field(
-        default='en,de',
-        description="Comma-separated language codes"
+        default="en,de", description="Comma-separated language codes"
     )
-    custom_dict_paths: str = Field(
-        default='',
-        description="Custom dictionary paths"
-    )
+    custom_dict_paths: str = Field(default="", description="Custom dictionary paths")
 
     class Config:
         """Pydantic model configuration."""
 
-        extra = 'ignore'
+        extra = "ignore"
         use_enum_values = True
 
-    @validator('active_time_threshold_ms')
+    @validator("active_time_threshold_ms")
     def validate_active_threshold(cls, v, values):
         """Validate interdependent field relationships."""
-        if 'burst_timeout_ms' in values and v >= values['burst_timeout_ms']:
+        if "burst_timeout_ms" in values and v >= values["burst_timeout_ms"]:
             raise ValueError(
-                f'active_time_threshold_ms ({v}) must be '
-                f'less than burst_timeout_ms ({values["burst_timeout_ms"]})'
+                f"active_time_threshold_ms ({v}) must be "
+                f"less than burst_timeout_ms ({values['burst_timeout_ms']})"
             )
         return v
 
@@ -159,12 +133,12 @@ class Config:
     def _init_settings_table(self) -> None:
         """Create settings table if not exists."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute('''
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 )
-            ''')
+            """)
             conn.commit()
 
     def _ensure_defaults(self) -> None:
@@ -174,16 +148,19 @@ class Config:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             for key, value in defaults.items():
-                cursor.execute('''
+                cursor.execute(
+                    """
                     INSERT OR IGNORE INTO settings (key, value)
                     VALUES (?, ?)
-                ''', (key, self._serialize_value(value)))
+                """,
+                    (key, self._serialize_value(value)),
+                )
             conn.commit()
 
     def _serialize_value(self, value: Any) -> str:
         """Convert value to string for storage."""
         if isinstance(value, bool):
-            return 'True' if value else 'False'
+            return "True" if value else "False"
         if isinstance(value, (list, dict)):
             return json.dumps(value)
         return str(value)
@@ -191,7 +168,7 @@ class Config:
     def _simple_parse(self, value: str) -> Any:
         """Simple fallback parsing without pydantic."""
         # Try JSON first (for lists/dicts)
-        if value.startswith('[') or value.startswith('{'):
+        if value.startswith("[") or value.startswith("{"):
             try:
                 return json.loads(value)
             except json.JSONDecodeError:
@@ -210,9 +187,9 @@ class Config:
             pass
 
         # Boolean values
-        if value.lower() in ('true', '1', 'yes', 'on'):
+        if value.lower() in ("true", "1", "yes", "on"):
             return True
-        if value.lower() in ('false', '0', 'no', 'off'):
+        if value.lower() in ("false", "0", "no", "off"):
             return False
 
         # Return as string
@@ -230,7 +207,7 @@ class Config:
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+            cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
             result = cursor.fetchone()
             if result:
                 raw_value = result[0]
@@ -286,7 +263,7 @@ class Config:
             # Handle integer values (1 = True, 0 = False)
             return bool(value)
         if isinstance(value, str):
-            return value.lower() in ('true', '1', 'yes', 'on')
+            return value.lower() in ("true", "1", "yes", "on")
         # Fallback for any other type
         return bool(value) if value else False
 
@@ -311,17 +288,20 @@ class Config:
 
         # Store value (validated or custom)
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO settings (key, value)
                 VALUES (?, ?)
-            ''', (key, self._serialize_value(value)))
+            """,
+                (key, self._serialize_value(value)),
+            )
             conn.commit()
 
     def get_all(self) -> dict[str, Any]:
         """Get all settings as dictionary."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT key, value FROM settings')
+            cursor.execute("SELECT key, value FROM settings")
             settings = {row[0]: self._simple_parse(row[1]) for row in cursor.fetchall()}
         return settings
 
@@ -340,7 +320,7 @@ class Config:
             return value
         if isinstance(value, str):
             if value.strip():
-                return [item.strip() for item in value.split(',') if item.strip()]
+                return [item.strip() for item in value.split(",") if item.strip()]
             return []
         if default is not None:
             return default
@@ -353,4 +333,4 @@ class Config:
             key: Setting key
             value: List of strings to store
         """
-        self.set(key, ','.join(str(v) for v in value))
+        self.set(key, ",".join(str(v) for v in value))
