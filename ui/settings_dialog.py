@@ -1,11 +1,16 @@
 """Settings dialog for RealTypeCoach."""
 
+import logging
+
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
                              QLabel, QSpinBox, QDoubleSpinBox,
                              QCheckBox, QPushButton, QFileDialog,
-                             QGroupBox, QFormLayout, QComboBox, QTabWidget, QWidget, QApplication)
+                             QGroupBox, QFormLayout, QComboBox, QTabWidget, QWidget,
+                             QListWidget, QApplication)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette
+
+log = logging.getLogger('realtypecoach.settings_dialog')
 
 
 class SettingsDialog(QDialog):
@@ -97,6 +102,9 @@ class SettingsDialog(QDialog):
 
         data_tab = self.create_data_tab()
         tabs.addTab(data_tab, self._create_palette_aware_icon("database"), "Data")
+
+        language_tab = self.create_language_tab()
+        tabs.addTab(language_tab, self._create_palette_aware_icon("accessories-dictionary"), "Language")
 
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
@@ -241,6 +249,27 @@ class SettingsDialog(QDialog):
         enabled_layout.addRow("Exceptional burst WPM threshold:",
                             self.exceptional_wpm_spin)
 
+        self.notification_min_burst_spin = QSpinBox()
+        self.notification_min_burst_spin.setRange(1, 60)
+        self.notification_min_burst_spin.setSuffix(" s")
+        self.notification_min_burst_spin.setValue(10)
+        enabled_layout.addRow("Minimum burst duration for notification:",
+                            self.notification_min_burst_spin)
+
+        self.notification_threshold_days_spin = QSpinBox()
+        self.notification_threshold_days_spin.setRange(7, 365)
+        self.notification_threshold_days_spin.setSuffix(" days")
+        self.notification_threshold_days_spin.setValue(30)
+        enabled_layout.addRow("Threshold calculation lookback period:",
+                            self.notification_threshold_days_spin)
+
+        self.notification_threshold_update_spin = QSpinBox()
+        self.notification_threshold_update_spin.setRange(60, 3600)
+        self.notification_threshold_update_spin.setSuffix(" s")
+        self.notification_threshold_update_spin.setValue(300)
+        enabled_layout.addRow("Threshold update interval:",
+                            self.notification_threshold_update_spin)
+
         enabled_group.setLayout(enabled_layout)
         layout.addWidget(enabled_group)
 
@@ -302,6 +331,106 @@ class SettingsDialog(QDialog):
         widget.setLayout(layout)
         return widget
 
+    def create_language_tab(self) -> QWidget:
+        """Create language and dictionary settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        # Dictionary Mode Group
+        mode_group = QGroupBox("Dictionary Mode")
+        mode_layout = QVBoxLayout()
+
+        self.validate_mode_radio = QCheckBox("Validate words against dictionaries")
+        self.validate_mode_radio.setToolTip(
+            "Only store words found in selected dictionaries.\n"
+            "Best for accurate word statistics."
+        )
+        self.validate_mode_radio.setChecked(True)
+
+        mode_layout.addWidget(self.validate_mode_radio)
+        mode_group.setLayout(mode_layout)
+        layout.addWidget(mode_group)
+
+        # Language Selection Group
+        lang_group = QGroupBox("Active Languages")
+        lang_layout = QVBoxLayout()
+
+        lang_label = QLabel("Select languages to validate:")
+        lang_layout.addWidget(lang_label)
+
+        self.language_list_widget = QListWidget()
+        self.language_list_widget.setMaximumHeight(120)
+        lang_layout.addWidget(self.language_list_widget)
+
+        # Scan button
+        scan_button_layout = QHBoxLayout()
+        self.rescan_button = QPushButton("Rescan Dictionaries")
+        self.rescan_button.clicked.connect(self.rescan_dictionaries)
+        scan_button_layout.addWidget(self.rescan_button)
+        scan_button_layout.addStretch()
+        lang_layout.addLayout(scan_button_layout)
+
+        lang_group.setLayout(lang_layout)
+        layout.addWidget(lang_group)
+
+        # Status label
+        self.dictionary_status_label = QLabel()
+        self.dictionary_status_label.setWordWrap(True)
+        self.dictionary_status_label.setStyleSheet("color: #666; font-style: italic;")
+        layout.addWidget(self.dictionary_status_label)
+
+        layout.addStretch()
+        widget.setLayout(layout)
+
+        # Trigger initial scan
+        self.rescan_dictionaries()
+
+        return widget
+
+    def rescan_dictionaries(self) -> None:
+        """Rescan system for available dictionaries."""
+        try:
+            from utils.dict_detector import DictionaryDetector
+
+            available = DictionaryDetector.detect_available()
+
+            # Update language list widget
+            self.language_list_widget.clear()
+
+            for dict_info in available:
+                item_text = f"{dict_info.language_name}"
+                if dict_info.variant:
+                    item_text += f" ({dict_info.variant})"
+
+                self.language_list_widget.addItem(item_text)
+
+            # Update status label
+            available_count = sum(1 for d in available if d.available)
+            if available_count > 0:
+                self.dictionary_status_label.setText(
+                    f"Found {available_count} available dictionaries"
+                )
+            else:
+                self.dictionary_status_label.setText(
+                    "No dictionaries found - accept-all mode will be enabled automatically"
+                )
+        except (ImportError, AttributeError, OSError) as e:
+            log.error(f"Error scanning dictionaries: {e}")
+            self.dictionary_status_label.setText(f"Error scanning dictionaries: {e}")
+            self.language_list_widget.clear()
+
+    def get_enabled_languages(self) -> list:
+        """Get list of enabled language codes based on available dictionaries."""
+        try:
+            from utils.dict_detector import DictionaryDetector
+
+            available = DictionaryDetector.detect_available()
+            # By default, enable all available languages
+            return [d.language_code for d in available if d.available]
+        except (ImportError, AttributeError, OSError) as e:
+            log.warning(f"Error getting enabled languages, using fallback: {e}")
+            return ['en', 'de']  # Fallback to default
+
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
         self.burst_timeout_spin.setValue(
@@ -339,6 +468,15 @@ class SettingsDialog(QDialog):
         self.exceptional_wpm_spin.setValue(
             self.current_settings.get('exceptional_wpm_threshold', 120)
         )
+        self.notification_min_burst_spin.setValue(
+            self.current_settings.get('notification_min_burst_ms', 10000) // 1000
+        )
+        self.notification_threshold_days_spin.setValue(
+            self.current_settings.get('notification_threshold_days', 30)
+        )
+        self.notification_threshold_update_spin.setValue(
+            self.current_settings.get('notification_threshold_update_sec', 300)
+        )
         self.notification_hour_spin.setValue(
             self.current_settings.get('notification_time_hour', 18)
         )
@@ -350,12 +488,20 @@ class SettingsDialog(QDialog):
         if index >= 0:
             self.retention_combo.setCurrentIndex(index)
 
+        # Load dictionary mode
+        dict_mode = self.current_settings.get('dictionary_mode', 'validate')
+        self.validate_mode_radio.setChecked(dict_mode == 'validate')
+
     def get_settings(self) -> dict:
         """Get settings from UI.
 
         Returns:
             Dictionary of setting key-value pairs
         """
+        # Get enabled languages
+        enabled_langs = self.get_enabled_languages()
+        enabled_langs_str = ','.join(enabled_langs) if enabled_langs else 'en,de'
+
         return {
             'burst_timeout_ms': str(self.burst_timeout_spin.value()),
             'word_boundary_timeout_ms': str(self.word_boundary_timeout_spin.value()),
@@ -367,9 +513,15 @@ class SettingsDialog(QDialog):
             'keyboard_layout': self.keyboard_layout_combo.currentData().lower(),
             'notifications_enabled': str(self.notifications_check.isChecked()),
             'exceptional_wpm_threshold': str(self.exceptional_wpm_spin.value()),
+            'notification_min_burst_ms': str(self.notification_min_burst_spin.value() * 1000),
+            'notification_threshold_days': str(self.notification_threshold_days_spin.value()),
+            'notification_threshold_update_sec': str(self.notification_threshold_update_spin.value()),
             'notification_time_hour': str(self.notification_hour_spin.value()),
             'slowest_keys_count': str(self.slowest_keys_spin.value()),
             'data_retention_days': str(self.retention_combo.currentData()),
+            'dictionary_mode': 'validate' if self.validate_mode_radio.isChecked() else 'accept_all',
+            'enabled_languages': enabled_langs_str,
+            'custom_dict_paths': '',
         }
 
     def export_csv(self) -> None:
