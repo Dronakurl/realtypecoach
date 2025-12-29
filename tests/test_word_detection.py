@@ -3,11 +3,9 @@
 import pytest
 import tempfile
 from pathlib import Path
-import sys
 import time
-sys.path.insert(0, '.')
 
-from core.word_detector import WordDetector, WordState
+from core.word_detector import WordDetector
 from core.dictionary import Dictionary
 from core.storage import Storage
 
@@ -223,7 +221,7 @@ class TestWordStorageWithDictionary:
         ]
         
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp, 'press', 'test_app')
+            storage_with_dict.store_key_event(keycode, key_name, timestamp)
         
         processed = storage_with_dict._process_new_key_events(layout='us', max_events=100)
         assert processed == 6
@@ -254,7 +252,7 @@ class TestWordStorageWithDictionary:
         ]
         
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp, 'press', 'test_app')
+            storage_with_dict.store_key_event(keycode, key_name, timestamp)
         
         processed = storage_with_dict._process_new_key_events(layout='us', max_events=100)
         assert processed == 4
@@ -289,7 +287,7 @@ class TestWordStorageWithDictionary:
         ]
         
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp, 'press', 'test_app')
+            storage_with_dict.store_key_event(keycode, key_name, timestamp)
 
         processed = storage_with_dict._process_new_key_events(layout='us', max_events=100)
         assert processed == 12
@@ -329,7 +327,7 @@ class TestWordStorageWithDictionary:
         ]
         
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp, 'press', 'test_app')
+            storage_with_dict.store_key_event(keycode, key_name, timestamp)
         
         processed = storage_with_dict._process_new_key_events(layout='us', max_events=100)
         assert processed == 12
@@ -365,7 +363,7 @@ class TestWordStorageWithDictionary:
         ]
 
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp, 'press', 'test_app')
+            storage_with_dict.store_key_event(keycode, key_name, timestamp)
 
         processed = storage_with_dict._process_new_key_events(layout='us', max_events=100)
         assert processed == 12

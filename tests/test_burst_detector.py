@@ -1,9 +1,5 @@
 """Tests for BurstDetector class."""
 
-import pytest
-import sys
-sys.path.insert(0, '.')
-
 from core.burst_detector import Burst, BurstDetector
 
 
@@ -24,7 +20,7 @@ class TestBurst:
         assert burst.end_time_ms == 6000
         assert burst.key_count == 10
         assert burst.duration_ms == 5000
-        assert burst.qualifies_for_high_score == True
+        assert burst.qualifies_for_high_score
 
     def test_burst_duration_calculation(self):
         """Test that burst duration is calculated correctly."""
@@ -119,7 +115,7 @@ class TestBurstDetector:
         result = detector.process_key_event(10000, True)
 
         assert result is not None
-        assert result.qualifies_for_high_score == False  # Too short (duration < 10000ms)
+        assert not result.qualifies_for_high_score  # Too short (duration < 10000ms)
 
     def test_high_score_qualified(self):
         """Test that longer bursts qualify for high score."""
@@ -147,4 +143,4 @@ class TestBurstDetector:
         assert result is not None
         # Should qualify because duration > 10 seconds
         # (start_time to last event is > 10 seconds)
-        assert result.qualifies_for_high_score == True
+        assert result.qualifies_for_high_score

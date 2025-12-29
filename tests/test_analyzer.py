@@ -4,9 +4,6 @@ import pytest
 import tempfile
 from pathlib import Path
 from datetime import datetime
-import sys
-import time
-sys.path.insert(0, '.')
 
 from core.storage import Storage
 from core.analyzer import Analyzer
@@ -45,14 +42,14 @@ class TestAnalyzer:
     def test_init(self, analyzer):
         """Test analyzer initialization."""
         assert analyzer.storage is not None
-        assert analyzer.running == False
+        assert not analyzer.running
         assert analyzer.today_stats['total_keystrokes'] == 0
         assert analyzer.today_stats['total_typing_ms'] == 0
 
     def test_process_key_event(self, analyzer):
         """Test processing key events."""
         timestamp_ms = 1234567890
-        analyzer.process_key_event(30, 'KEY_A', timestamp_ms, 'press', 'test_app', 'us')
+        analyzer.process_key_event(30, 'KEY_A', timestamp_ms, 'us')
 
         # Should increment keystrokes
         assert analyzer.today_stats['total_keystrokes'] == 1
@@ -136,7 +133,7 @@ class TestAnalyzer:
         # Create some typing activity (need key events to have keystrokes count)
         base = get_today_timestamp_ms()
         for i in range(50):
-            analyzer.process_key_event(30, 'KEY_A', base + (i * 100), 'press', 'test_app', 'us')
+            analyzer.process_key_event(30, 'KEY_A', base + (i * 100), 'us')
 
         burst = Burst(
             start_time_ms=base,
@@ -154,7 +151,5 @@ class TestAnalyzer:
         summary = analyzer.storage.get_daily_summary(analyzer.today_date)
 
         assert summary is not None
-        keystrokes, bursts, avg_wpm, slowest_keycode, slowest_key_name, total_typing_sec, summary_sent = summary
-
         # total_typing_sec should be in seconds
-        assert total_typing_sec == 10  # 10 seconds, not 10000
+        assert summary.total_typing_sec == 10  # 10 seconds, not 10000

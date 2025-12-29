@@ -3,9 +3,6 @@
 import pytest
 import tempfile
 from pathlib import Path
-from datetime import datetime, timedelta
-import sys
-sys.path.insert(0, '.')
 
 from core.storage import Storage
 
@@ -46,7 +43,7 @@ class TestStorage:
 
     def test_store_key_event(self, storage):
         """Test storing key events."""
-        storage.store_key_event(30, 'KEY_A', 1234567890, 'press', 'test_app')
+        storage.store_key_event(30, 'KEY_A', 1234567890)
 
         import sqlite3
         with sqlite3.connect(storage.db_path) as conn:
@@ -109,10 +106,10 @@ class TestStorage:
 
         # Check that statistics were created
         assert len(result) == 1
-        keycode, key_name, avg_time = result[0]
-        assert keycode == 30
-        assert key_name == 'a'
-        assert avg_time == 145.0
+        key_perf = result[0]
+        assert key_perf.keycode == 30
+        assert key_perf.key_name == 'a'
+        assert key_perf.avg_press_time == 145.0
 
     def test_get_slowest_keys_ordering(self, storage):
         """Test that slowest keys are returned in correct order."""
@@ -128,6 +125,6 @@ class TestStorage:
 
         # Should be ordered by avg_press_time DESC
         assert len(result) == 3
-        assert result[0][1] == 'b'  # ~205ms - slowest
-        assert result[1][1] == 'c'  # ~155ms
-        assert result[2][1] == 'a'  # ~105ms - fastest
+        assert result[0].key_name == 'b'  # ~205ms - slowest
+        assert result[1].key_name == 'c'  # ~155ms
+        assert result[2].key_name == 'a'  # ~105ms - fastest
