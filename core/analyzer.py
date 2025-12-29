@@ -55,7 +55,7 @@ class Analyzer:
         """Stop analyzer."""
         self.running = False
         if self.thread:
-            self.thread.join(timeout=5)
+            self.thread.join(timeout=1)
 
     def _load_today_data(self) -> None:
         """Load today's existing data from database."""
@@ -101,7 +101,7 @@ class Analyzer:
 
     def process_key_event(self, keycode: int, key_name: str,
                           timestamp_ms: int, event_type: str,
-                          app_name: str, is_password_field: bool,
+                          app_name: str,
                           layout: str = 'us') -> None:
         """Process a single key event.
 
@@ -111,10 +111,9 @@ class Analyzer:
             timestamp_ms: Timestamp in milliseconds since epoch
             event_type: 'press' or 'release'
             app_name: Application name
-            is_password_field: Whether typing in password field
             layout: Keyboard layout
         """
-        if is_password_field or event_type != 'press':
+        if event_type != 'press':
             return
 
         now = datetime.now()
@@ -126,7 +125,7 @@ class Analyzer:
         self.today_stats['total_keystrokes'] += 1
 
         # Store key event to database
-        self.storage.store_key_event(keycode, key_name, timestamp_ms, event_type, app_name, is_password_field)
+        self.storage.store_key_event(keycode, key_name, timestamp_ms, event_type, app_name)
 
         press_time_ms = timestamp_ms
         last_press = self.today_stats['last_press_time'].get(keycode)
@@ -419,3 +418,34 @@ class Analyzer:
             Tuple with summary data or None
         """
         return self.storage.get_daily_summary(date)
+
+    def get_wpm_burst_sequence(self, window_size: int = 1) -> List[float]:
+        """Get WPM values over burst sequence with sliding window aggregation.
+
+        Args:
+            window_size: Number of bursts to aggregate (1-50)
+                        1 = no aggregation (each burst is one point)
+                        50 = 50-burst sliding average
+
+        Returns:
+            List of WPM values (one per data point)
+        """
+        # Get all bursts ordered by time
+        import sqlite3
+        with sqlite3.connect(self.storage.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT avg_wpm FROM bursts ORDER BY start_time')
+            raw_wpm = [row[0] for row in cursor.fetchall() if row[0] is not None]
+
+        if not raw_wpm:
+            return []
+
+        # Apply sliding window if window_size > 1
+        if window_size == 1:
+            return raw_wpm
+        else:
+            # Calculate sliding window average
+            import pandas as pd
+            series = pd.Series(raw_wpm)
+            rolling_avg = series.rolling(window=window_size, center=True, min_periods=1).mean()
+            return rolling_avg.tolist()
