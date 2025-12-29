@@ -1,7 +1,6 @@
 """WPM burst sequence graph widget for RealTypeCoach."""
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QSlider)
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider
 from PyQt5.QtCore import Qt, QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
@@ -9,8 +8,14 @@ from typing import List, Callable, Optional
 
 # Configure matplotlib to use standard font to avoid "Sans Not-Rotated" warning
 import matplotlib
-matplotlib.rcParams['font.family'] = 'DejaVu Sans'
-matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Liberation Sans', 'sans-serif']
+
+matplotlib.rcParams["font.family"] = "DejaVu Sans"
+matplotlib.rcParams["font.sans-serif"] = [
+    "DejaVu Sans",
+    "Arial",
+    "Liberation Sans",
+    "sans-serif",
+]
 
 
 class WPMTimeSeriesGraph(QWidget):
@@ -112,8 +117,14 @@ class WPMTimeSeriesGraph(QWidget):
 
         if not wpm_values:
             ax = self.figure.add_subplot(111)
-            ax.text(0.5, 0.5, 'No data available',
-                   ha='center', va='center', transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No data available",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             self.canvas.draw()
             self.info_label.setText("Showing: No data")
             return
@@ -123,13 +134,19 @@ class WPMTimeSeriesGraph(QWidget):
 
         # Create plot
         ax = self.figure.add_subplot(111)
-        ax.plot(burst_numbers, wpm_values, linewidth=2, color='#3daee9',
-                marker='o', markersize=4 if len(wpm_values) < 100 else 2)
+        ax.plot(
+            burst_numbers,
+            wpm_values,
+            linewidth=2,
+            color="#3daee9",
+            marker="o",
+            markersize=4 if len(wpm_values) < 100 else 2,
+        )
 
         # Format axes
-        ax.set_xlabel('Burst Number', fontsize=10)
-        ax.set_ylabel('WPM', fontsize=10)
-        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_xlabel("Burst Number", fontsize=10)
+        ax.set_ylabel("WPM", fontsize=10)
+        ax.grid(True, alpha=0.3, linestyle="--")
 
         # Adjust layout
         self.figure.tight_layout()

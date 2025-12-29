@@ -1,16 +1,30 @@
 """Settings dialog for RealTypeCoach."""
 
 import logging
+from typing import Any
 
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
-                             QLabel, QSpinBox, QDoubleSpinBox,
-                             QCheckBox, QPushButton, QFileDialog,
-                             QGroupBox, QFormLayout, QComboBox, QTabWidget, QWidget,
-                             QListWidget, QApplication)
+from PyQt5.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QSpinBox,
+    QDoubleSpinBox,
+    QCheckBox,
+    QPushButton,
+    QFileDialog,
+    QGroupBox,
+    QFormLayout,
+    QComboBox,
+    QTabWidget,
+    QWidget,
+    QListWidget,
+    QApplication,
+)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette
 
-log = logging.getLogger('realtypecoach.settings_dialog')
+log = logging.getLogger("realtypecoach.settings_dialog")
 
 
 class SettingsDialog(QDialog):
@@ -95,16 +109,28 @@ class SettingsDialog(QDialog):
         layout.addWidget(tabs)
 
         general_tab = self.create_general_tab()
-        tabs.addTab(general_tab, self._create_palette_aware_icon("preferences-system"), "General")
+        tabs.addTab(
+            general_tab,
+            self._create_palette_aware_icon("preferences-system"),
+            "General",
+        )
 
         notification_tab = self.create_notification_tab()
-        tabs.addTab(notification_tab, self._create_palette_aware_icon("preferences-desktop-notification"), "Notifications")
+        tabs.addTab(
+            notification_tab,
+            self._create_palette_aware_icon("preferences-desktop-notification"),
+            "Notifications",
+        )
 
         data_tab = self.create_data_tab()
         tabs.addTab(data_tab, self._create_palette_aware_icon("database"), "Data")
 
         language_tab = self.create_language_tab()
-        tabs.addTab(language_tab, self._create_palette_aware_icon("accessories-dictionary"), "Language")
+        tabs.addTab(
+            language_tab,
+            self._create_palette_aware_icon("accessories-dictionary"),
+            "Language",
+        )
 
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
@@ -246,29 +272,34 @@ class SettingsDialog(QDialog):
         self.exceptional_wpm_spin.setDecimals(1)
         self.exceptional_wpm_spin.setSuffix(" WPM")
         self.exceptional_wpm_spin.setValue(120)
-        enabled_layout.addRow("Exceptional burst WPM threshold:",
-                            self.exceptional_wpm_spin)
+        enabled_layout.addRow(
+            "Exceptional burst WPM threshold:", self.exceptional_wpm_spin
+        )
 
         self.notification_min_burst_spin = QSpinBox()
         self.notification_min_burst_spin.setRange(1, 60)
         self.notification_min_burst_spin.setSuffix(" s")
         self.notification_min_burst_spin.setValue(10)
-        enabled_layout.addRow("Minimum burst duration for notification:",
-                            self.notification_min_burst_spin)
+        enabled_layout.addRow(
+            "Minimum burst duration for notification:", self.notification_min_burst_spin
+        )
 
         self.notification_threshold_days_spin = QSpinBox()
         self.notification_threshold_days_spin.setRange(7, 365)
         self.notification_threshold_days_spin.setSuffix(" days")
         self.notification_threshold_days_spin.setValue(30)
-        enabled_layout.addRow("Threshold calculation lookback period:",
-                            self.notification_threshold_days_spin)
+        enabled_layout.addRow(
+            "Threshold calculation lookback period:",
+            self.notification_threshold_days_spin,
+        )
 
         self.notification_threshold_update_spin = QSpinBox()
         self.notification_threshold_update_spin.setRange(60, 3600)
         self.notification_threshold_update_spin.setSuffix(" s")
         self.notification_threshold_update_spin.setValue(300)
-        enabled_layout.addRow("Threshold update interval:",
-                            self.notification_threshold_update_spin)
+        enabled_layout.addRow(
+            "Threshold update interval:", self.notification_threshold_update_spin
+        )
 
         enabled_group.setLayout(enabled_layout)
         layout.addWidget(enabled_group)
@@ -285,8 +316,10 @@ class SettingsDialog(QDialog):
         time_group.setLayout(time_layout)
         layout.addWidget(time_group)
 
-        info_label = QLabel("📊 Daily summary will show total keystrokes, "
-                           "typing time, average WPM, and slowest key.")
+        info_label = QLabel(
+            "📊 Daily summary will show total keystrokes, "
+            "typing time, average WPM, and slowest key."
+        )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: #666; font-style: italic;")
         layout.addWidget(info_label)
@@ -429,70 +462,72 @@ class SettingsDialog(QDialog):
             return [d.language_code for d in available if d.available]
         except (ImportError, AttributeError, OSError) as e:
             log.warning(f"Error getting enabled languages, using fallback: {e}")
-            return ['en', 'de']  # Fallback to default
+            return ["en", "de"]  # Fallback to default
 
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
         self.burst_timeout_spin.setValue(
-            self.current_settings.get('burst_timeout_ms', 1000)
+            self.current_settings.get("burst_timeout_ms", 1000)
         )
         self.word_boundary_timeout_spin.setValue(
-            self.current_settings.get('word_boundary_timeout_ms', 1000)
+            self.current_settings.get("word_boundary_timeout_ms", 1000)
         )
 
         # Load duration calculation method
-        duration_method = self.current_settings.get('burst_duration_calculation', 'total_time')
+        duration_method = self.current_settings.get(
+            "burst_duration_calculation", "total_time"
+        )
         index = self.duration_method_combo.findData(duration_method)
         if index >= 0:
             self.duration_method_combo.setCurrentIndex(index)
 
         self.active_threshold_spin.setValue(
-            self.current_settings.get('active_time_threshold_ms', 500)
+            self.current_settings.get("active_time_threshold_ms", 500)
         )
 
         self.high_score_duration_spin.setValue(
-            self.current_settings.get('high_score_min_duration_ms', 10000) // 1000
+            self.current_settings.get("high_score_min_duration_ms", 10000) // 1000
         )
         self.min_key_count_spin.setValue(
-            self.current_settings.get('min_burst_key_count', 10)
+            self.current_settings.get("min_burst_key_count", 10)
         )
         self.min_burst_duration_spin.setValue(
-            self.current_settings.get('min_burst_duration_ms', 5000)
+            self.current_settings.get("min_burst_duration_ms", 5000)
         )
         self.keyboard_layout_combo.setCurrentText(
-            self.current_settings.get('keyboard_layout', 'Auto-detect').capitalize()
+            self.current_settings.get("keyboard_layout", "Auto-detect").capitalize()
         )
         self.notifications_check.setChecked(
-            self.current_settings.get('notifications_enabled', True)
+            self.current_settings.get("notifications_enabled", True)
         )
         self.exceptional_wpm_spin.setValue(
-            self.current_settings.get('exceptional_wpm_threshold', 120)
+            self.current_settings.get("exceptional_wpm_threshold", 120)
         )
         self.notification_min_burst_spin.setValue(
-            self.current_settings.get('notification_min_burst_ms', 10000) // 1000
+            self.current_settings.get("notification_min_burst_ms", 10000) // 1000
         )
         self.notification_threshold_days_spin.setValue(
-            self.current_settings.get('notification_threshold_days', 30)
+            self.current_settings.get("notification_threshold_days", 30)
         )
         self.notification_threshold_update_spin.setValue(
-            self.current_settings.get('notification_threshold_update_sec', 300)
+            self.current_settings.get("notification_threshold_update_sec", 300)
         )
         self.notification_hour_spin.setValue(
-            self.current_settings.get('notification_time_hour', 18)
+            self.current_settings.get("notification_time_hour", 18)
         )
         self.slowest_keys_spin.setValue(
-            self.current_settings.get('slowest_keys_count', 10)
+            self.current_settings.get("slowest_keys_count", 10)
         )
-        retention_days = self.current_settings.get('data_retention_days', -1)
+        retention_days = self.current_settings.get("data_retention_days", -1)
         index = self.retention_combo.findData(retention_days)
         if index >= 0:
             self.retention_combo.setCurrentIndex(index)
 
         # Load dictionary mode
-        dict_mode = self.current_settings.get('dictionary_mode', 'validate')
-        self.validate_mode_radio.setChecked(dict_mode == 'validate')
+        dict_mode = self.current_settings.get("dictionary_mode", "validate")
+        self.validate_mode_radio.setChecked(dict_mode == "validate")
 
-    def get_settings(self) -> dict:
+    def get_settings(self) -> dict[str, Any]:
         """Get settings from UI.
 
         Returns:
@@ -500,37 +535,44 @@ class SettingsDialog(QDialog):
         """
         # Get enabled languages
         enabled_langs = self.get_enabled_languages()
-        enabled_langs_str = ','.join(enabled_langs) if enabled_langs else 'en,de'
+        enabled_langs_str = ",".join(enabled_langs) if enabled_langs else "en,de"
 
         return {
-            'burst_timeout_ms': str(self.burst_timeout_spin.value()),
-            'word_boundary_timeout_ms': str(self.word_boundary_timeout_spin.value()),
-            'burst_duration_calculation': self.duration_method_combo.currentData(),
-            'active_time_threshold_ms': str(self.active_threshold_spin.value()),
-            'high_score_min_duration_ms': str(self.high_score_duration_spin.value() * 1000),
-            'min_burst_key_count': str(self.min_key_count_spin.value()),
-            'min_burst_duration_ms': str(self.min_burst_duration_spin.value()),
-            'keyboard_layout': self.keyboard_layout_combo.currentData().lower(),
-            'notifications_enabled': str(self.notifications_check.isChecked()),
-            'exceptional_wpm_threshold': str(self.exceptional_wpm_spin.value()),
-            'notification_min_burst_ms': str(self.notification_min_burst_spin.value() * 1000),
-            'notification_threshold_days': str(self.notification_threshold_days_spin.value()),
-            'notification_threshold_update_sec': str(self.notification_threshold_update_spin.value()),
-            'notification_time_hour': str(self.notification_hour_spin.value()),
-            'slowest_keys_count': str(self.slowest_keys_spin.value()),
-            'data_retention_days': str(self.retention_combo.currentData()),
-            'dictionary_mode': 'validate' if self.validate_mode_radio.isChecked() else 'accept_all',
-            'enabled_languages': enabled_langs_str,
-            'custom_dict_paths': '',
+            "burst_timeout_ms": str(self.burst_timeout_spin.value()),
+            "word_boundary_timeout_ms": str(self.word_boundary_timeout_spin.value()),
+            "burst_duration_calculation": self.duration_method_combo.currentData(),
+            "active_time_threshold_ms": str(self.active_threshold_spin.value()),
+            "high_score_min_duration_ms": str(
+                self.high_score_duration_spin.value() * 1000
+            ),
+            "min_burst_key_count": str(self.min_key_count_spin.value()),
+            "min_burst_duration_ms": str(self.min_burst_duration_spin.value()),
+            "keyboard_layout": self.keyboard_layout_combo.currentData().lower(),
+            "notifications_enabled": str(self.notifications_check.isChecked()),
+            "exceptional_wpm_threshold": str(self.exceptional_wpm_spin.value()),
+            "notification_min_burst_ms": str(
+                self.notification_min_burst_spin.value() * 1000
+            ),
+            "notification_threshold_days": str(
+                self.notification_threshold_days_spin.value()
+            ),
+            "notification_threshold_update_sec": str(
+                self.notification_threshold_update_spin.value()
+            ),
+            "notification_time_hour": str(self.notification_hour_spin.value()),
+            "slowest_keys_count": str(self.slowest_keys_spin.value()),
+            "data_retention_days": str(self.retention_combo.currentData()),
+            "dictionary_mode": "validate"
+            if self.validate_mode_radio.isChecked()
+            else "accept_all",
+            "enabled_languages": enabled_langs_str,
+            "custom_dict_paths": "",
         }
 
     def export_csv(self) -> None:
         """Export data to CSV file."""
         file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Typing Data",
-            "",
-            "CSV Files (*.csv);;All Files (*)"
+            self, "Export Typing Data", "", "CSV Files (*.csv);;All Files (*)"
         )
 
         if file_path:
@@ -547,10 +589,10 @@ class SettingsDialog(QDialog):
             "Are you sure you want to delete all typing data?\n\n"
             "This action cannot be undone!",
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.No,
         )
 
         if reply == QMessageBox.Yes:
             self.settings = self.get_settings()
-            self.settings['__clear_database__'] = True
+            self.settings["__clear_database__"] = True
             self.accept()

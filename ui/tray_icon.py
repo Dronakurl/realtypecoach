@@ -1,7 +1,6 @@
 """System tray icon for RealTypeCoach."""
 
-from PyQt5.QtWidgets import (QSystemTrayIcon, QMenu, QAction,
-                             QApplication, QDialog)
+from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication, QDialog
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSignal, QTimer
 from pathlib import Path
@@ -16,9 +15,14 @@ class TrayIcon(QSystemTrayIcon):
     settings_changed = pyqtSignal(dict)
     stats_requested = pyqtSignal()  # Emitted when stats panel is requested
 
-    def __init__(self, stats_panel: StatsPanel,
-                 icon_path: Path, icon_paused_path: Path, icon_stopping_path: Path,
-                 parent=None):
+    def __init__(
+        self,
+        stats_panel: StatsPanel,
+        icon_path: Path,
+        icon_paused_path: Path,
+        icon_stopping_path: Path,
+        parent=None,
+    ):
         """Initialize tray icon.
 
         Args:
@@ -43,7 +47,7 @@ class TrayIcon(QSystemTrayIcon):
             "RealTypeCoach",
             "Typing analysis started. Click icon for stats!",
             QSystemTrayIcon.MessageIcon.Information,
-            3000
+            3000,
         )
 
     def create_menu(self) -> None:
@@ -93,7 +97,7 @@ class TrayIcon(QSystemTrayIcon):
                 "Monitoring Resumed",
                 "RealTypeCoach is now recording your typing!",
                 QSystemTrayIcon.MessageIcon.Information,
-                2000
+                2000,
             )
         else:
             self.pause_action.setText("▶️ Resume Monitoring")
@@ -103,7 +107,7 @@ class TrayIcon(QSystemTrayIcon):
                 "Monitoring Paused",
                 "RealTypeCoach is not recording typing.",
                 QSystemTrayIcon.MessageIcon.Warning,
-                2000
+                2000,
             )
 
     def _quit_app(self) -> None:
@@ -124,6 +128,7 @@ class TrayIcon(QSystemTrayIcon):
             QApplication.instance().quit()
         else:
             import sys
+
             sys.exit(0)
 
     def show_settings_dialog(self) -> None:
@@ -133,8 +138,9 @@ class TrayIcon(QSystemTrayIcon):
             new_settings = dialog.get_settings()
             self.settings_changed.emit(new_settings)
 
-    def show_notification(self, title: str, message: str,
-                       message_type: str = "info") -> None:
+    def show_notification(
+        self, title: str, message: str, message_type: str = "info"
+    ) -> None:
         """Show desktop notification.
 
         Args:
