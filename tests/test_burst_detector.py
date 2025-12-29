@@ -140,3 +140,4 @@ class TestBurstDetector:
         assert result is not None
         # Should qualify because duration > 10 seconds
         # (start_time to last event is > 10 seconds)
+        assert result.qualifies_for_high_score == True

@@ -52,7 +52,7 @@ class TestAnalyzer:
     def test_process_key_event(self, analyzer):
         """Test processing key events."""
         timestamp_ms = 1234567890
-        analyzer.process_key_event(30, 'KEY_A', timestamp_ms, 'press', 'test_app', False, 'us')
+        analyzer.process_key_event(30, 'KEY_A', timestamp_ms, 'press', 'test_app', 'us')
 
         # Should increment keystrokes
         assert analyzer.today_stats['total_keystrokes'] == 1
@@ -136,7 +136,7 @@ class TestAnalyzer:
         # Create some typing activity (need key events to have keystrokes count)
         base = get_today_timestamp_ms()
         for i in range(50):
-            analyzer.process_key_event(30, 'KEY_A', base + (i * 100), 'press', 'test_app', False, 'us')
+            analyzer.process_key_event(30, 'KEY_A', base + (i * 100), 'press', 'test_app', 'us')
 
         burst = Burst(
             start_time_ms=base,

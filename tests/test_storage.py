@@ -46,7 +46,7 @@ class TestStorage:
 
     def test_store_key_event(self, storage):
         """Test storing key events."""
-        storage.store_key_event(30, 'KEY_A', 1234567890, 'press', 'test_app', False)
+        storage.store_key_event(30, 'KEY_A', 1234567890, 'press', 'test_app')
 
         import sqlite3
         with sqlite3.connect(storage.db_path) as conn:
@@ -102,7 +102,8 @@ class TestStorage:
 
     def test_update_key_statistics(self, storage):
         """Test updating key statistics."""
-        storage.update_key_statistics(30, 'KEY_A', 'us', 150.0, True, False)
+        storage.update_key_statistics(30, 'a', 'us', 150.0, True, False)
+        storage.update_key_statistics(30, 'a', 'us', 140.0, False, True)
 
         result = storage.get_slowest_keys(limit=10)
 
@@ -110,20 +111,23 @@ class TestStorage:
         assert len(result) == 1
         keycode, key_name, avg_time = result[0]
         assert keycode == 30
-        assert key_name == 'KEY_A'
-        assert avg_time == 150.0
+        assert key_name == 'a'
+        assert avg_time == 145.0
 
     def test_get_slowest_keys_ordering(self, storage):
         """Test that slowest keys are returned in correct order."""
         # Add keys with different average times
-        storage.update_key_statistics(30, 'KEY_A', 'us', 100.0, False, False)
-        storage.update_key_statistics(31, 'KEY_B', 'us', 200.0, False, False)
-        storage.update_key_statistics(32, 'KEY_C', 'us', 150.0, False, False)
+        storage.update_key_statistics(30, 'a', 'us', 100.0, False, False)
+        storage.update_key_statistics(30, 'a', 'us', 110.0, True, False)
+        storage.update_key_statistics(31, 'b', 'us', 200.0, False, False)
+        storage.update_key_statistics(31, 'b', 'us', 210.0, True, False)
+        storage.update_key_statistics(32, 'c', 'us', 150.0, False, False)
+        storage.update_key_statistics(32, 'c', 'us', 160.0, True, False)
 
         result = storage.get_slowest_keys(limit=10)
 
         # Should be ordered by avg_press_time DESC
         assert len(result) == 3
-        assert result[0][1] == 'KEY_B'  # 200ms - slowest
-        assert result[1][1] == 'KEY_C'  # 150ms
-        assert result[2][1] == 'KEY_A'  # 100ms - fastest
+        assert result[0][1] == 'b'  # ~205ms - slowest
+        assert result[1][1] == 'c'  # ~155ms
+        assert result[2][1] == 'a'  # ~105ms - fastest
