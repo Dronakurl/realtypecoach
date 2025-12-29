@@ -3,7 +3,8 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTabWidget,
                                QTableWidget, QTableWidgetItem, QHeaderView,
                                QPushButton, QHBoxLayout)
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from PyQt5.QtGui import QIcon
 from typing import List, Tuple
 
 
@@ -38,6 +39,8 @@ class StatsPanel(QWidget):
 
         # Create tab widget
         tab_widget = QTabWidget()
+        # Set larger icon size for better visibility
+        tab_widget.setIconSize(QSize(24, 24))
 
         # Tab 1: Overview (WPM + Today's Stats)
         overview_tab = QWidget()
@@ -70,7 +73,7 @@ class StatsPanel(QWidget):
         overview_layout.addWidget(self.typing_time_label)
 
         overview_layout.addStretch()
-        tab_widget.addTab(overview_tab, "⚡ Overview")
+        tab_widget.addTab(overview_tab, QIcon.fromTheme("view-refresh"), "Overview")
 
         # Tab 2: Keys
         keys_tab = QWidget()
@@ -82,7 +85,7 @@ class StatsPanel(QWidget):
 
         self.slowest_table = QTableWidget()
         self.slowest_table.setColumnCount(3)
-        self.slowest_table.setHorizontalHeaderLabels(["Rank", "Key", "Avg Time (ms)"])
+        self.slowest_table.setHorizontalHeaderLabels(["Rank", "Key", "WPM"])
         self.slowest_table.verticalHeader().setVisible(False)
         self.slowest_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.slowest_table.setRowCount(10)
@@ -100,7 +103,7 @@ class StatsPanel(QWidget):
 
         self.fastest_table = QTableWidget()
         self.fastest_table.setColumnCount(3)
-        self.fastest_table.setHorizontalHeaderLabels(["Rank", "Key", "Avg Time (ms)"])
+        self.fastest_table.setHorizontalHeaderLabels(["Rank", "Key", "WPM"])
         self.fastest_table.verticalHeader().setVisible(False)
         self.fastest_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.fastest_table.setRowCount(10)
@@ -111,7 +114,7 @@ class StatsPanel(QWidget):
         keys_layout.addWidget(self.fastest_table)
 
         keys_layout.addStretch()
-        tab_widget.addTab(keys_tab, "🔑 Keys")
+        tab_widget.addTab(keys_tab, QIcon.fromTheme("input-keyboard"), "Keys")
 
         # Tab 3: Words
         words_tab = QWidget()
@@ -123,7 +126,7 @@ class StatsPanel(QWidget):
 
         self.hardest_words_table = QTableWidget()
         self.hardest_words_table.setColumnCount(4)
-        self.hardest_words_table.setHorizontalHeaderLabels(["Rank", "Word", "Avg Speed (ms/letter)", "Duration (ms)"])
+        self.hardest_words_table.setHorizontalHeaderLabels(["Rank", "Word", "WPM", "Duration (ms)"])
         self.hardest_words_table.verticalHeader().setVisible(False)
         self.hardest_words_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.hardest_words_table.setRowCount(10)
@@ -142,7 +145,7 @@ class StatsPanel(QWidget):
 
         self.fastest_words_table = QTableWidget()
         self.fastest_words_table.setColumnCount(4)
-        self.fastest_words_table.setHorizontalHeaderLabels(["Rank", "Word", "Avg Speed (ms/letter)", "Duration (ms)"])
+        self.fastest_words_table.setHorizontalHeaderLabels(["Rank", "Word", "WPM", "Duration (ms)"])
         self.fastest_words_table.verticalHeader().setVisible(False)
         self.fastest_words_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.fastest_words_table.setRowCount(10)
@@ -154,7 +157,7 @@ class StatsPanel(QWidget):
         words_layout.addWidget(self.fastest_words_table)
 
         words_layout.addStretch()
-        tab_widget.addTab(words_tab, "📝 Words")
+        tab_widget.addTab(words_tab, QIcon.fromTheme("text-x-generic"), "Words")
 
         # Tab 4: Trends (NEW)
         trends_tab = QWidget()
@@ -165,7 +168,7 @@ class StatsPanel(QWidget):
         self.wpm_graph = WPMTimeSeriesGraph()
         trends_layout.addWidget(self.wpm_graph)
 
-        tab_widget.addTab(trends_tab, "📈 Trends")
+        tab_widget.addTab(trends_tab, QIcon.fromTheme("go-up"), "Trends")
 
         layout.addWidget(tab_widget)
         self.setLayout(layout)
@@ -197,8 +200,9 @@ class StatsPanel(QWidget):
             slowest_keys: List of (keycode, key_name, avg_time_ms) tuples
         """
         for i, (keycode, key_name, avg_time) in enumerate(slowest_keys):
+            projected_wpm = 12000 / avg_time if avg_time > 0 else 0
             self.slowest_table.setItem(i, 1, QTableWidgetItem(key_name))
-            self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{avg_time:.1f}"))
+            self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
 
         for i in range(len(slowest_keys), 10):
             self.slowest_table.setItem(i, 1, QTableWidgetItem("--"))
@@ -211,15 +215,16 @@ class StatsPanel(QWidget):
             fastest_keys: List of (keycode, key_name, avg_time_ms) tuples
         """
         for i, (keycode, key_name, avg_time) in enumerate(fastest_keys):
+            projected_wpm = 12000 / avg_time if avg_time > 0 else 0
             self.fastest_table.setItem(i, 1, QTableWidgetItem(key_name))
-            self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{avg_time:.1f}"))
+            self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
 
         for i in range(len(fastest_keys), 10):
             self.fastest_table.setItem(i, 1, QTableWidgetItem("--"))
             self.fastest_table.setItem(i, 2, QTableWidgetItem("--"))
 
     def update_today_stats(self, keystrokes: int, bursts: int,
-                         typing_sec: int) -> None:
+                         typing_sec: float) -> None:
         """Update today's statistics.
 
         Args:
@@ -250,8 +255,9 @@ class StatsPanel(QWidget):
             words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
         """
         for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(words):
+            projected_wpm = 12000 / speed_ms_per_letter if speed_ms_per_letter > 0 else 0
             self.hardest_words_table.setItem(i, 1, QTableWidgetItem(word))
-            self.hardest_words_table.setItem(i, 2, QTableWidgetItem(f"{speed_ms_per_letter:.1f}"))
+            self.hardest_words_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
             self.hardest_words_table.setItem(i, 3, QTableWidgetItem(str(duration_ms)))
 
         for i in range(len(words), 10):
@@ -266,8 +272,9 @@ class StatsPanel(QWidget):
             words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
         """
         for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(words):
+            projected_wpm = 12000 / speed_ms_per_letter if speed_ms_per_letter > 0 else 0
             self.fastest_words_table.setItem(i, 1, QTableWidgetItem(word))
-            self.fastest_words_table.setItem(i, 2, QTableWidgetItem(f"{speed_ms_per_letter:.1f}"))
+            self.fastest_words_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
             self.fastest_words_table.setItem(i, 3, QTableWidgetItem(str(duration_ms)))
 
         for i in range(len(words), 10):
