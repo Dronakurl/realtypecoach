@@ -1,7 +1,6 @@
 """Dictionary validation for English and German words."""
 
 import os
-from pathlib import Path
 from typing import Set, List, Optional
 import logging
 

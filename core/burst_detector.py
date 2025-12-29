@@ -1,6 +1,5 @@
 """Burst detection for continuous typing periods."""
 
-import time
 from typing import Callable, Optional, List
 from dataclasses import dataclass, field
 
