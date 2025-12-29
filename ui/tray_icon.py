@@ -1,12 +1,10 @@
 """System tray icon for RealTypeCoach."""
 
 from PyQt5.QtWidgets import (QSystemTrayIcon, QMenu, QAction,
-                             QApplication, QMessageBox, QDialog)
+                             QApplication, QDialog)
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QTimer
+from PyQt5.QtCore import pyqtSignal, QTimer
 from pathlib import Path
-import sys
-sys.path.insert(0, '.')
 
 from ui.stats_panel import StatsPanel
 from ui.settings_dialog import SettingsDialog

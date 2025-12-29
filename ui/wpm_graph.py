@@ -21,6 +21,7 @@ class WPMTimeSeriesGraph(QWidget):
         self.data: List[float] = []
         self.current_window_size = 10
         self._data_callback: Optional[Callable[[int], None]] = None
+        self._update_timer: Optional[QTimer] = None
 
         self.init_ui()
 
@@ -74,7 +75,7 @@ class WPMTimeSeriesGraph(QWidget):
 
     def on_resolution_changed(self, value: int) -> None:
         """Handle resolution slider change with debouncing."""
-        if hasattr(self, '_update_timer'):
+        if self._update_timer is not None:
             self._update_timer.stop()
 
         self._update_timer = QTimer()

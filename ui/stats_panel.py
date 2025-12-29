@@ -3,8 +3,8 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTabWidget,
                                QTableWidget, QTableWidgetItem, QHeaderView,
                                QPushButton, QHBoxLayout, QApplication)
-from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QIcon, QPixmap, QImage, QPainter, QColor, QPalette
+from PyQt5.QtCore import pyqtSignal, QSize
+from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette
 from typing import List, Tuple
 
 

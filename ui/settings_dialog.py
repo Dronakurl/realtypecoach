@@ -3,11 +3,9 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
                              QLabel, QSpinBox, QDoubleSpinBox,
                              QCheckBox, QPushButton, QFileDialog,
-                             QGroupBox, QFormLayout, QLineEdit,
-                             QComboBox, QTabWidget, QWidget, QApplication)
+                             QGroupBox, QFormLayout, QComboBox, QTabWidget, QWidget, QApplication)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette
-from pathlib import Path
 
 
 class SettingsDialog(QDialog):
