@@ -5,7 +5,7 @@ import tempfile
 import sqlite3
 from pathlib import Path
 
-from utils.config import Config, DEFAULT_SETTINGS
+from utils.config import Config, AppSettings
 
 
 @pytest.fixture
@@ -42,12 +42,14 @@ class TestConfigInit:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM settings")
             count = cursor.fetchone()[0]
-            assert count == len(DEFAULT_SETTINGS)
+            # Count fields in AppSettings model (exclude private fields)
+            expected_count = len(AppSettings.__fields__)
+            assert count == expected_count
 
     def test_config_initialization_all_default_keys_present(self, config):
-        """Test that all DEFAULT_SETTINGS keys are in database."""
+        """Test that all AppSettings keys are in database."""
         all_settings = config.get_all()
-        for key in DEFAULT_SETTINGS:
+        for key in AppSettings.__fields__:
             assert key in all_settings
 
     def test_config_db_path_stored(self, temp_db):
@@ -75,14 +77,15 @@ class TestConfigGet:
         assert value is True
 
     def test_get_nonexistent_key_returns_default_from_defaults(self, config):
-        """Test that nonexistent key returns value from DEFAULT_SETTINGS."""
+        """Test that nonexistent key returns value from AppSettings."""
         # Delete a key
         with sqlite3.connect(config.db_path) as conn:
             conn.execute("DELETE FROM settings WHERE key = 'min_burst_key_count'")
 
-        # get() returns from DEFAULT_SETTINGS as unparsed string
+        # get() returns from AppSettings default (typed as int)
         value = config.get('min_burst_key_count')
-        assert value == '10'
+        assert value == 10
+        assert isinstance(value, int)
 
     def test_get_nonexistent_key_with_custom_default(self, config):
         """Test that custom default overrides DEFAULT_SETTINGS."""
@@ -122,13 +125,14 @@ class TestConfigTypeGetters:
         assert value == 999
 
     def test_get_int_uses_default_setting_fallback(self, config):
-        """Test get_int falls back to DEFAULT_SETTINGS."""
+        """Test get_int falls back to AppSettings defaults."""
         # Remove from database
         with sqlite3.connect(config.db_path) as conn:
             conn.execute("DELETE FROM settings WHERE key = 'slowest_keys_count'")
 
         value = config.get_int('slowest_keys_count')
         assert value == 10
+        assert isinstance(value, int)
 
     def test_get_float_returns_float(self, config):
         """Test get_float returns float value."""
@@ -263,7 +267,7 @@ class TestConfigGetAll:
     def test_get_all_contains_all_defaults(self, config):
         """Test that get_all() contains all default keys."""
         all_settings = config.get_all()
-        for key in DEFAULT_SETTINGS:
+        for key in AppSettings.__fields__:
             assert key in all_settings
 
     def test_get_all_includes_custom_values(self, config):
@@ -384,19 +388,63 @@ class TestConfigValueParsing:
         assert config.get('test_off') is False
 
 
+class TestConfigValidation:
+    """Tests for pydantic validation in Config."""
+
+    def test_set_rejects_invalid_positive_int(self, config):
+        """Test that set() rejects invalid positive integers."""
+        with pytest.raises(ValueError, match="Invalid value for burst_timeout_ms"):
+            config.set('burst_timeout_ms', -1)
+
+    def test_set_rejects_invalid_retention_days(self, config):
+        """Test that set() rejects invalid retention days (< -1)."""
+        with pytest.raises(ValueError, match="Invalid value for data_retention_days"):
+            config.set('data_retention_days', -2)
+
+    def test_set_accepts_magic_minus_one_for_retention(self, config):
+        """Test that -1 is accepted for data_retention_days (keep forever)."""
+        config.set('data_retention_days', -1)
+        value = config.get_int('data_retention_days')
+        assert value == -1
+
+    def test_set_rejects_invalid_hour(self, config):
+        """Test that set() rejects invalid hour values."""
+        with pytest.raises(ValueError, match="Invalid value for notification_time_hour"):
+            config.set('notification_time_hour', 24)
+
+    def test_set_rejects_invalid_minute(self, config):
+        """Test that set() rejects invalid minute values."""
+        with pytest.raises(ValueError, match="Invalid value for notification_time_minute"):
+            config.set('notification_time_minute', 60)
+
+    def test_cross_field_validation_active_threshold_too_high(self, config):
+        """Test that active_time_threshold_ms < burst_timeout_ms is enforced."""
+        # First set burst_timeout_ms
+        config.set('burst_timeout_ms', 1000)
+        # Then try to set active_time_threshold_ms >= burst_timeout_ms
+        with pytest.raises(ValueError, match="must be less than"):
+            config.set('active_time_threshold_ms', 1000)
+
+    def test_cross_field_validation_active_threshold_ok(self, config):
+        """Test that valid active_time_threshold_ms is accepted."""
+        config.set('burst_timeout_ms', 1000)
+        config.set('active_time_threshold_ms', 500)
+        assert config.get_int('active_time_threshold_ms') == 500
+
+
 class TestDefaultSettings:
-    """Tests for DEFAULT_SETTINGS constant."""
+    """Tests for AppSettings model."""
 
-    def test_default_settings_is_dict(self):
-        """Test that DEFAULT_SETTINGS is a dictionary."""
-        assert isinstance(DEFAULT_SETTINGS, dict)
+    def test_app_settings_is_model(self):
+        """Test that AppSettings is a pydantic model."""
+        assert hasattr(AppSettings, '__fields__')
 
-    def test_default_settings_not_empty(self):
-        """Test that DEFAULT_SETTINGS is not empty."""
-        assert len(DEFAULT_SETTINGS) > 0
+    def test_app_settings_not_empty(self):
+        """Test that AppSettings has fields."""
+        assert len(AppSettings.__fields__) > 0
 
-    def test_default_settings_expected_keys_present(self):
-        """Test that expected keys are in DEFAULT_SETTINGS."""
+    def test_app_settings_expected_keys_present(self):
+        """Test that expected keys are in AppSettings."""
         expected_keys = [
             'burst_timeout_ms',
             'notifications_enabled',
@@ -404,9 +452,13 @@ class TestDefaultSettings:
             'exceptional_wpm_threshold',
         ]
         for key in expected_keys:
-            assert key in DEFAULT_SETTINGS
+            assert key in AppSettings.__fields__
 
-    def test_default_settings_values_are_strings(self):
-        """Test that all DEFAULT_SETTINGS values are strings."""
-        for value in DEFAULT_SETTINGS.values():
-            assert isinstance(value, str)
+    def test_app_settings_has_proper_types(self):
+        """Test that AppSettings fields have proper types."""
+        # Check that fields exist and have base types
+        # Note: ConstrainedIntValue is a subclass of int in pydantic
+        assert hasattr(AppSettings.__fields__['burst_timeout_ms'].type_, '__mro__')
+        assert int in AppSettings.__fields__['burst_timeout_ms'].type_.__mro__
+        assert AppSettings.__fields__['notifications_enabled'].type_ == bool
+        assert AppSettings.__fields__['keyboard_layout'].type_ == str

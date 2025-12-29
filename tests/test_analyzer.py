@@ -8,6 +8,7 @@ from datetime import datetime
 from core.storage import Storage
 from core.analyzer import Analyzer
 from core.burst_detector import Burst
+from utils.config import Config
 
 
 def get_today_timestamp_ms(offset_seconds=0):
@@ -27,7 +28,8 @@ def temp_db():
 @pytest.fixture
 def storage(temp_db):
     """Create storage with temporary database."""
-    return Storage(temp_db)
+    config = Config(temp_db)
+    return Storage(temp_db, config=config)
 
 
 @pytest.fixture
@@ -144,11 +146,14 @@ class TestAnalyzer:
         )
         analyzer.process_burst(burst)
 
-        # Finalize the day
-        analyzer._finalize_day()
+        # Finalize the day by calling _new_day with a new date
+        # This will finalize the current day and start a new one
+        old_date = analyzer.today_date
+        new_date = "2099-01-01"  # Far future date
+        analyzer._new_day(new_date)
 
-        # Check the daily summary
-        summary = analyzer.storage.get_daily_summary(analyzer.today_date)
+        # Check the daily summary for the old day
+        summary = analyzer.storage.get_daily_summary(old_date)
 
         assert summary is not None
         # total_typing_sec should be in seconds

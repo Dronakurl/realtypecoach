@@ -1,10 +1,12 @@
 """Tests for word statistics functionality (updated for dictionary validation)."""
 
 import pytest
+import sqlite3
 import tempfile
 from pathlib import Path
 
 from core.storage import Storage
+from utils.config import Config
 
 
 @pytest.fixture
@@ -19,7 +21,8 @@ def temp_db():
 @pytest.fixture
 def storage(temp_db):
     """Create storage with temporary database."""
-    return Storage(temp_db)
+    config = Config(temp_db)
+    return Storage(temp_db, config=config)
 
 
 class TestWordStatistics:
@@ -27,7 +30,6 @@ class TestWordStatistics:
 
     def test_word_statistics_table_created(self, storage):
         """Test that word_statistics table is created."""
-        import sqlite3
         with sqlite3.connect(storage.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='word_statistics'")
@@ -37,7 +39,6 @@ class TestWordStatistics:
 
     def test_new_columns_exist(self, storage):
         """Test that new columns were added to word_statistics table."""
-        import sqlite3
         with sqlite3.connect(storage.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(word_statistics)")
@@ -50,7 +51,6 @@ class TestWordStatistics:
         """Test adding a new word to statistics."""
         storage.update_word_statistics('hello', 'us', 500, 5)
 
-        import sqlite3
         with sqlite3.connect(storage.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM word_statistics WHERE word = ? AND layout = ?', ('hello', 'us'))
@@ -71,7 +71,6 @@ class TestWordStatistics:
         """Test adding word with backspace editing metadata."""
         storage.update_word_statistics('shoes', 'us', 550, 5, backspace_count=2, editing_time_ms=100)
 
-        import sqlite3
         with sqlite3.connect(storage.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM word_statistics WHERE word = ? AND layout = ?', ('shoes', 'us'))

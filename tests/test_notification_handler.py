@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from core.notification_handler import NotificationHandler
 from core.models import DailySummary, DailySummaryDB
 from core.storage import Storage
+from utils.config import Config
 
 
 @pytest.fixture
@@ -23,7 +24,8 @@ def temp_db():
 @pytest.fixture
 def storage(temp_db):
     """Create storage for notification handler."""
-    return Storage(temp_db)
+    config = Config(temp_db)
+    return Storage(temp_db, config=config)
 
 
 @pytest.fixture
@@ -42,7 +44,9 @@ def notification_handler(mock_summary_getter, storage):
     handler = NotificationHandler(
         summary_getter=mock_summary_getter,
         storage=storage,
-        update_interval_sec=1  # Short for testing
+        min_burst_ms=10000,
+        threshold_days=30,
+        threshold_update_sec=1  # Short for testing
     )
     yield handler
     if handler.running:
@@ -57,11 +61,15 @@ class TestNotificationHandlerInit:
         handler = NotificationHandler(
             summary_getter=mock_summary_getter,
             storage=storage,
-            update_interval_sec=60
+            min_burst_ms=10000,
+            threshold_days=30,
+            threshold_update_sec=60
         )
 
         assert handler.summary_getter is mock_summary_getter
         assert handler.storage is storage
+        assert handler.min_burst_ms == 10000
+        assert handler.threshold_days == 30
         assert handler.update_interval_sec == 60
         assert handler.notification_hour == 18
         assert handler.notification_minute == 0
@@ -92,7 +100,7 @@ class TestNotifyExceptionalBurst:
         notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # WPM above default threshold of 60.0
-        notification_handler.notify_exceptional_burst(wpm=80.0, key_count=200, duration_sec=15.0)
+        notification_handler.notify_exceptional_burst(wpm=80.0, key_count=200, duration_ms=15000)
 
         assert len(emitted_wpm) == 1
         assert emitted_wpm[0] == 80.0
@@ -103,7 +111,7 @@ class TestNotifyExceptionalBurst:
         notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # WPM below default threshold of 60.0
-        notification_handler.notify_exceptional_burst(wpm=50.0, key_count=100, duration_sec=15.0)
+        notification_handler.notify_exceptional_burst(wpm=50.0, key_count=100, duration_ms=15000)
 
         assert len(emitted_wpm) == 0
 
@@ -113,7 +121,7 @@ class TestNotifyExceptionalBurst:
         notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # High WPM but short duration (< 10 seconds)
-        notification_handler.notify_exceptional_burst(wpm=100.0, key_count=50, duration_sec=5.0)
+        notification_handler.notify_exceptional_burst(wpm=100.0, key_count=50, duration_ms=5000)
 
         assert len(emitted_wpm) == 0
 
@@ -123,7 +131,7 @@ class TestNotifyExceptionalBurst:
         notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # Exactly 10 seconds, should notify
-        notification_handler.notify_exceptional_burst(wpm=70.0, key_count=150, duration_sec=10.0)
+        notification_handler.notify_exceptional_burst(wpm=70.0, key_count=150, duration_ms=10000)
 
         assert len(emitted_wpm) == 1
 
@@ -135,11 +143,11 @@ class TestNotifyExceptionalBurst:
         notification_handler.percentile_95_threshold = 100.0
 
         # Below custom threshold
-        notification_handler.notify_exceptional_burst(wpm=80.0, key_count=200, duration_sec=15.0)
+        notification_handler.notify_exceptional_burst(wpm=80.0, key_count=200, duration_ms=15000)
         assert len(emitted_wpm) == 0
 
         # Above custom threshold
-        notification_handler.notify_exceptional_burst(wpm=120.0, key_count=300, duration_sec=15.0)
+        notification_handler.notify_exceptional_burst(wpm=120.0, key_count=300, duration_ms=15000)
         assert len(emitted_wpm) == 1
 
 

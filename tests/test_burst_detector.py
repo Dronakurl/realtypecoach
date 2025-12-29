@@ -49,8 +49,8 @@ class TestBurstDetector:
             on_burst_complete=lambda b: burst_completed.append(b)
         )
 
-        assert detector.burst_timeout_ms == 3000
-        assert detector.high_score_min_duration_ms == 10000
+        assert detector.config.burst_timeout_ms == 3000
+        assert detector.config.high_score_min_duration_ms == 10000
 
     def test_single_keypress(self):
         """Test processing a single key press."""
