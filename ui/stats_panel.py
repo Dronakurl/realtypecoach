@@ -13,9 +13,14 @@ class StatsPanel(QWidget):
 
     settings_requested = pyqtSignal()
 
-    def __init__(self):
-        """Initialize statistics panel."""
+    def __init__(self, icon_path: str = None):
+        """Initialize statistics panel.
+
+        Args:
+            icon_path: Optional path to the project logo icon
+        """
         super().__init__()
+        self.icon_path = icon_path
         self.init_ui()
 
     @staticmethod
@@ -75,10 +80,23 @@ class StatsPanel(QWidget):
         """Initialize user interface."""
         layout = QVBoxLayout()
 
+        # Header with logo and title
+        header_layout = QHBoxLayout()
+
+        # Logo
+        if self.icon_path:
+            from PyQt5.QtSvg import QSvgWidget
+            self.logo_widget = QSvgWidget(self.icon_path)
+            self.logo_widget.setFixedSize(48, 48)
+            header_layout.addWidget(self.logo_widget)
+
         # Title
-        self.title_label = QLabel("⌨ RealTypeCoach Statistics")
+        self.title_label = QLabel("RealTypeCoach Statistics")
         self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        layout.addWidget(self.title_label)
+        header_layout.addWidget(self.title_label)
+        header_layout.addStretch()
+
+        layout.addLayout(header_layout)
 
         # Settings button
         button_layout = QHBoxLayout()

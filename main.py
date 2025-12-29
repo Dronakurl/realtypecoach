@@ -132,7 +132,7 @@ class Application(QObject):
             poll_interval=60
         )
 
-        self.stats_panel = StatsPanel()
+        self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
         self.tray_icon = TrayIcon(self.stats_panel, self.icon_path, self.icon_paused_path, self.icon_stopping_path)
 
     def connect_signals(self) -> None:

@@ -4,8 +4,9 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
                              QLabel, QSpinBox, QDoubleSpinBox,
                              QCheckBox, QPushButton, QFileDialog,
                              QGroupBox, QFormLayout, QLineEdit,
-                             QComboBox, QTabWidget, QWidget)
+                             QComboBox, QTabWidget, QWidget, QApplication)
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QPalette
 from pathlib import Path
 
 
@@ -27,6 +28,59 @@ class SettingsDialog(QDialog):
         self.init_ui()
         self.load_current_settings()
 
+    @staticmethod
+    def _create_palette_aware_icon(theme_name: str) -> QIcon:
+        """Create an icon that automatically adapts to light/dark theme.
+
+        Uses the palette's text color to colorize the icon, ensuring
+        visibility in both light and dark themes.
+
+        Args:
+            theme_name: Icon theme name (e.g., 'view-refresh')
+
+        Returns:
+            QIcon colored with palette text color
+        """
+        icon = QIcon.fromTheme(theme_name)
+        if icon.isNull():
+            return icon
+
+        # Get the application's palette text color
+        palette = QApplication.palette()
+        text_color = palette.color(QPalette.Text)
+
+        # Colorize the icon for multiple sizes
+        colorized_icon = QIcon()
+        sizes = [16, 22, 24, 32]
+
+        for size in sizes:
+            pixmap = icon.pixmap(size, size)
+            if pixmap.isNull():
+                continue
+
+            # Convert to image for pixel manipulation
+            image = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
+
+            # Colorize: replace non-transparent pixels with palette text color
+            for y in range(image.height()):
+                for x in range(image.width()):
+                    color = image.pixelColor(x, y)
+                    if color.alpha() > 0:
+                        # Keep original alpha but use palette text color
+                        new_color = QColor(text_color)
+                        new_color.setAlpha(color.alpha())
+                        image.setPixelColor(x, y, new_color)
+
+            # Create pixmap from colorized image
+            colorized_pixmap = QPixmap.fromImage(image)
+
+            # Add to icon with proper modes
+            colorized_icon.addPixmap(colorized_pixmap, QIcon.Normal, QIcon.On)
+            colorized_icon.addPixmap(colorized_pixmap, QIcon.Active, QIcon.On)
+            colorized_icon.addPixmap(colorized_pixmap, QIcon.Selected, QIcon.On)
+
+        return colorized_icon if not colorized_icon.isNull() else icon
+
     def init_ui(self) -> None:
         """Initialize user interface."""
         self.setWindowTitle("RealTypeCoach Settings")
@@ -38,13 +92,13 @@ class SettingsDialog(QDialog):
         layout.addWidget(tabs)
 
         general_tab = self.create_general_tab()
-        tabs.addTab(general_tab, "General")
+        tabs.addTab(general_tab, self._create_palette_aware_icon("preferences-system"), "General")
 
         notification_tab = self.create_notification_tab()
-        tabs.addTab(notification_tab, "Notifications")
+        tabs.addTab(notification_tab, self._create_palette_aware_icon("preferences-desktop-notification"), "Notifications")
 
         data_tab = self.create_data_tab()
-        tabs.addTab(data_tab, "Data")
+        tabs.addTab(data_tab, self._create_palette_aware_icon("database"), "Data")
 
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
