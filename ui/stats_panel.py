@@ -1,12 +1,16 @@
 """Statistics panel for RealTypeCoach."""
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTabWidget)
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTabWidget,
+                               QTableWidget, QTableWidgetItem, QHeaderView,
+                               QPushButton, QHBoxLayout)
+from PyQt5.QtCore import Qt, pyqtSignal
 from typing import List, Tuple
 
 
 class StatsPanel(QWidget):
     """Real-time statistics display panel."""
+
+    settings_requested = pyqtSignal()
 
     def __init__(self):
         """Initialize statistics panel."""
@@ -21,6 +25,16 @@ class StatsPanel(QWidget):
         self.title_label = QLabel("⌨ RealTypeCoach Statistics")
         self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(self.title_label)
+
+        # Settings button
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        settings_btn = QPushButton("⚙️ Settings")
+        settings_btn.clicked.connect(self.settings_requested.emit)
+        button_layout.addWidget(settings_btn)
+
+        layout.addLayout(button_layout)
 
         # Create tab widget
         tab_widget = QTabWidget()
@@ -66,14 +80,17 @@ class StatsPanel(QWidget):
         self.slowest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         keys_layout.addWidget(self.slowest_title)
 
-        self.slowest_keys_layout = QVBoxLayout()
-        self.slowest_key_labels: List[QLabel] = []
+        self.slowest_table = QTableWidget()
+        self.slowest_table.setColumnCount(3)
+        self.slowest_table.setHorizontalHeaderLabels(["Rank", "Key", "Avg Time (ms)"])
+        self.slowest_table.verticalHeader().setVisible(False)
+        self.slowest_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.slowest_table.setRowCount(10)
         for i in range(10):
-            label = QLabel(f"{i+1}. --")
-            label.setStyleSheet("font-family: monospace; font-size: 12px;")
-            self.slowest_key_labels.append(label)
-            self.slowest_keys_layout.addWidget(label)
-        keys_layout.addLayout(self.slowest_keys_layout)
+            self.slowest_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
+            self.slowest_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.slowest_table.setItem(i, 2, QTableWidgetItem("--"))
+        keys_layout.addWidget(self.slowest_table)
 
         keys_layout.addSpacing(10)
 
@@ -81,14 +98,17 @@ class StatsPanel(QWidget):
         self.fastest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         keys_layout.addWidget(self.fastest_title)
 
-        self.fastest_keys_layout = QVBoxLayout()
-        self.fastest_key_labels: List[QLabel] = []
+        self.fastest_table = QTableWidget()
+        self.fastest_table.setColumnCount(3)
+        self.fastest_table.setHorizontalHeaderLabels(["Rank", "Key", "Avg Time (ms)"])
+        self.fastest_table.verticalHeader().setVisible(False)
+        self.fastest_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.fastest_table.setRowCount(10)
         for i in range(10):
-            label = QLabel(f"{i+1}. --")
-            label.setStyleSheet("font-family: monospace; font-size: 12px;")
-            self.fastest_key_labels.append(label)
-            self.fastest_keys_layout.addWidget(label)
-        keys_layout.addLayout(self.fastest_keys_layout)
+            self.fastest_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
+            self.fastest_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.fastest_table.setItem(i, 2, QTableWidgetItem("--"))
+        keys_layout.addWidget(self.fastest_table)
 
         keys_layout.addStretch()
         tab_widget.addTab(keys_tab, "🔑 Keys")
@@ -101,14 +121,18 @@ class StatsPanel(QWidget):
         self.hardest_words_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         words_layout.addWidget(self.hardest_words_title)
 
-        self.hardest_words_layout = QVBoxLayout()
-        self.hardest_word_labels: List[QLabel] = []
+        self.hardest_words_table = QTableWidget()
+        self.hardest_words_table.setColumnCount(4)
+        self.hardest_words_table.setHorizontalHeaderLabels(["Rank", "Word", "Avg Speed (ms/letter)", "Duration (ms)"])
+        self.hardest_words_table.verticalHeader().setVisible(False)
+        self.hardest_words_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.hardest_words_table.setRowCount(10)
         for i in range(10):
-            label = QLabel(f"{i+1}. --")
-            label.setStyleSheet("font-family: monospace; font-size: 12px;")
-            self.hardest_word_labels.append(label)
-            self.hardest_words_layout.addWidget(label)
-        words_layout.addLayout(self.hardest_words_layout)
+            self.hardest_words_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
+            self.hardest_words_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.hardest_words_table.setItem(i, 2, QTableWidgetItem("--"))
+            self.hardest_words_table.setItem(i, 3, QTableWidgetItem("--"))
+        words_layout.addWidget(self.hardest_words_table)
 
         words_layout.addSpacing(10)
 
@@ -116,20 +140,38 @@ class StatsPanel(QWidget):
         self.fastest_words_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         words_layout.addWidget(self.fastest_words_title)
 
-        self.fastest_words_layout = QVBoxLayout()
-        self.fastest_word_labels: List[QLabel] = []
+        self.fastest_words_table = QTableWidget()
+        self.fastest_words_table.setColumnCount(4)
+        self.fastest_words_table.setHorizontalHeaderLabels(["Rank", "Word", "Avg Speed (ms/letter)", "Duration (ms)"])
+        self.fastest_words_table.verticalHeader().setVisible(False)
+        self.fastest_words_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.fastest_words_table.setRowCount(10)
         for i in range(10):
-            label = QLabel(f"{i+1}. --")
-            label.setStyleSheet("font-family: monospace; font-size: 12px;")
-            self.fastest_word_labels.append(label)
-            self.fastest_words_layout.addWidget(label)
-        words_layout.addLayout(self.fastest_words_layout)
+            self.fastest_words_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
+            self.fastest_words_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.fastest_words_table.setItem(i, 2, QTableWidgetItem("--"))
+            self.fastest_words_table.setItem(i, 3, QTableWidgetItem("--"))
+        words_layout.addWidget(self.fastest_words_table)
 
         words_layout.addStretch()
         tab_widget.addTab(words_tab, "📝 Words")
 
+        # Tab 4: Trends (NEW)
+        trends_tab = QWidget()
+        trends_layout = QVBoxLayout(trends_tab)
+
+        from ui.wpm_graph import WPMTimeSeriesGraph
+
+        self.wpm_graph = WPMTimeSeriesGraph()
+        trends_layout.addWidget(self.wpm_graph)
+
+        tab_widget.addTab(trends_tab, "📈 Trends")
+
         layout.addWidget(tab_widget)
         self.setLayout(layout)
+
+        # Set default window size (wider for better table display)
+        self.resize(700, 500)
 
     def update_wpm(self, current_wpm: float, burst_wpm: float,
                    personal_best: float) -> None:
@@ -155,11 +197,12 @@ class StatsPanel(QWidget):
             slowest_keys: List of (keycode, key_name, avg_time_ms) tuples
         """
         for i, (keycode, key_name, avg_time) in enumerate(slowest_keys):
-            label = self.slowest_key_labels[i]
-            label.setText(f"{i+1}. '{key_name}' - {avg_time:.1f}ms")
+            self.slowest_table.setItem(i, 1, QTableWidgetItem(key_name))
+            self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{avg_time:.1f}"))
 
-        for i in range(len(slowest_keys), len(self.slowest_key_labels)):
-            self.slowest_key_labels[i].setText(f"{i+1}. --")
+        for i in range(len(slowest_keys), 10):
+            self.slowest_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.slowest_table.setItem(i, 2, QTableWidgetItem("--"))
 
     def update_fastest_keys(self, fastest_keys: List[Tuple[int, str, float]]) -> None:
         """Update fastest keys display.
@@ -168,11 +211,12 @@ class StatsPanel(QWidget):
             fastest_keys: List of (keycode, key_name, avg_time_ms) tuples
         """
         for i, (keycode, key_name, avg_time) in enumerate(fastest_keys):
-            label = self.fastest_key_labels[i]
-            label.setText(f"{i+1}. '{key_name}' - {avg_time:.1f}ms")
+            self.fastest_table.setItem(i, 1, QTableWidgetItem(key_name))
+            self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{avg_time:.1f}"))
 
-        for i in range(len(fastest_keys), len(self.fastest_key_labels)):
-            self.fastest_key_labels[i].setText(f"{i+1}. --")
+        for i in range(len(fastest_keys), 10):
+            self.fastest_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.fastest_table.setItem(i, 2, QTableWidgetItem("--"))
 
     def update_today_stats(self, keystrokes: int, bursts: int,
                          typing_sec: int) -> None:
@@ -206,11 +250,14 @@ class StatsPanel(QWidget):
             words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
         """
         for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(words):
-            label = self.hardest_word_labels[i]
-            label.setText(f"{i+1}. '{word}' - {speed_ms_per_letter:.1f} ms/letter ({duration_ms} ms, {num_letters} letters)")
+            self.hardest_words_table.setItem(i, 1, QTableWidgetItem(word))
+            self.hardest_words_table.setItem(i, 2, QTableWidgetItem(f"{speed_ms_per_letter:.1f}"))
+            self.hardest_words_table.setItem(i, 3, QTableWidgetItem(str(duration_ms)))
 
-        for i in range(len(words), len(self.hardest_word_labels)):
-            self.hardest_word_labels[i].setText(f"{i+1}. --")
+        for i in range(len(words), 10):
+            self.hardest_words_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.hardest_words_table.setItem(i, 2, QTableWidgetItem("--"))
+            self.hardest_words_table.setItem(i, 3, QTableWidgetItem("--"))
 
     def update_fastest_words(self, words: List[Tuple[str, float, int, int]]) -> None:
         """Update fastest words display.
@@ -219,8 +266,27 @@ class StatsPanel(QWidget):
             words: List of (word, avg_speed_ms_per_letter, duration_ms, num_letters) tuples
         """
         for i, (word, speed_ms_per_letter, duration_ms, num_letters) in enumerate(words):
-            label = self.fastest_word_labels[i]
-            label.setText(f"{i+1}. '{word}' - {speed_ms_per_letter:.1f} ms/letter ({duration_ms} ms, {num_letters} letters)")
+            self.fastest_words_table.setItem(i, 1, QTableWidgetItem(word))
+            self.fastest_words_table.setItem(i, 2, QTableWidgetItem(f"{speed_ms_per_letter:.1f}"))
+            self.fastest_words_table.setItem(i, 3, QTableWidgetItem(str(duration_ms)))
 
-        for i in range(len(words), len(self.fastest_word_labels)):
-            self.fastest_word_labels[i].setText(f"{i+1}. --")
+        for i in range(len(words), 10):
+            self.fastest_words_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.fastest_words_table.setItem(i, 2, QTableWidgetItem("--"))
+            self.fastest_words_table.setItem(i, 3, QTableWidgetItem("--"))
+
+    def set_trend_data_callback(self, callback) -> None:
+        """Set callback for requesting trend data.
+
+        Args:
+            callback: Function to call when new data is needed
+        """
+        self.wpm_graph.set_data_callback(callback)
+
+    def update_trend_graph(self, data: List[Tuple[int, float]]) -> None:
+        """Update trend graph with new data.
+
+        Args:
+            data: List of (timestamp_ms, avg_wpm) tuples
+        """
+        self.wpm_graph.update_graph(data)

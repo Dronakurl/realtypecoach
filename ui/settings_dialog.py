@@ -79,15 +79,53 @@ class SettingsDialog(QDialog):
         burst_layout = QFormLayout()
 
         self.burst_timeout_spin = QSpinBox()
-        self.burst_timeout_spin.setRange(1000, 10000)
+        self.burst_timeout_spin.setRange(100, 10000)
         self.burst_timeout_spin.setSuffix(" ms")
-        self.burst_timeout_spin.setValue(3000)
+        self.burst_timeout_spin.setValue(1000)
+        self.burst_timeout_spin.setToolTip(
+            "Maximum pause between keystrokes before burst ends.\n"
+            "Shorter timeout = bursts split more frequently"
+        )
         burst_layout.addRow("Burst timeout:", self.burst_timeout_spin)
+
+        self.word_boundary_timeout_spin = QSpinBox()
+        self.word_boundary_timeout_spin.setRange(100, 10000)
+        self.word_boundary_timeout_spin.setSuffix(" ms")
+        self.word_boundary_timeout_spin.setValue(1000)
+        self.word_boundary_timeout_spin.setToolTip(
+            "Maximum pause between letters before word is split.\n"
+            "Example: 'br' [pause] 'own' becomes two fragments instead of 'brown'\n"
+            "Shorter timeout = more conservative word detection"
+        )
+        burst_layout.addRow("Word boundary timeout:", self.word_boundary_timeout_spin)
+
+        self.duration_method_combo = QComboBox()
+        self.duration_method_combo.addItem("Total Time (includes pauses)", "total_time")
+        self.duration_method_combo.addItem("Active Time (typing only)", "active_time")
+        self.duration_method_combo.setToolTip(
+            "How burst duration is calculated:\n"
+            "• Total Time: Includes all time from first to last keystroke\n"
+            "• Active Time: Only counts time actually spent typing"
+        )
+        burst_layout.addRow("Duration calculation:", self.duration_method_combo)
+
+        self.active_threshold_spin = QSpinBox()
+        self.active_threshold_spin.setRange(100, 2000)
+        self.active_threshold_spin.setSuffix(" ms")
+        self.active_threshold_spin.setValue(500)
+        self.active_threshold_spin.setToolTip(
+            "For 'Active Time' method: Maximum gap between keystrokes\n"
+            "to count as active typing time."
+        )
+        burst_layout.addRow("Active time threshold:", self.active_threshold_spin)
 
         self.high_score_duration_spin = QSpinBox()
         self.high_score_duration_spin.setRange(5000, 60000)
         self.high_score_duration_spin.setSuffix(" ms")
         self.high_score_duration_spin.setValue(10000)
+        self.high_score_duration_spin.setToolTip(
+            "Minimum burst duration to qualify for high score notifications"
+        )
         burst_layout.addRow("High score min duration:", self.high_score_duration_spin)
 
         burst_group.setLayout(burst_layout)
@@ -174,30 +212,17 @@ class SettingsDialog(QDialog):
         retention_group = QGroupBox("Data Retention")
         retention_layout = QFormLayout()
 
-        self.retention_days_spin = QSpinBox()
-        self.retention_days_spin.setRange(7, 365)
-        self.retention_days_spin.setSuffix(" days")
-        self.retention_days_spin.setValue(90)
-        retention_layout.addRow("Keep data for:", self.retention_days_spin)
+        self.retention_combo = QComboBox()
+        self.retention_combo.addItem("Keep forever", -1)
+        self.retention_combo.addItem("30 days", 30)
+        self.retention_combo.addItem("60 days", 60)
+        self.retention_combo.addItem("90 days", 90)
+        self.retention_combo.addItem("180 days", 180)
+        self.retention_combo.addItem("365 days", 365)
+        retention_layout.addRow("Keep data for:", self.retention_combo)
 
         retention_group.setLayout(retention_layout)
         layout.addWidget(retention_group)
-
-        password_group = QGroupBox("Privacy")
-        password_layout = QVBoxLayout()
-
-        self.password_exclusion_check = QCheckBox(
-            "Exclude password fields from monitoring"
-        )
-        self.password_exclusion_check.setChecked(True)
-        self.password_exclusion_check.setToolTip(
-            "When enabled, keystrokes in password fields are not recorded.\n"
-            "This protects your privacy."
-        )
-        password_layout.addWidget(self.password_exclusion_check)
-
-        password_group.setLayout(password_layout)
-        layout.addWidget(password_group)
 
         privacy_label = QLabel(
             "🔒 Privacy: Only keycodes and timestamps are stored.\n"
@@ -214,8 +239,22 @@ class SettingsDialog(QDialog):
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
         self.burst_timeout_spin.setValue(
-            self.current_settings.get('burst_timeout_ms', 3000) // 1000
+            self.current_settings.get('burst_timeout_ms', 1000)
         )
+        self.word_boundary_timeout_spin.setValue(
+            self.current_settings.get('word_boundary_timeout_ms', 1000)
+        )
+
+        # Load duration calculation method
+        duration_method = self.current_settings.get('burst_duration_calculation', 'total_time')
+        index = self.duration_method_combo.findData(duration_method)
+        if index >= 0:
+            self.duration_method_combo.setCurrentIndex(index)
+
+        self.active_threshold_spin.setValue(
+            self.current_settings.get('active_time_threshold_ms', 500)
+        )
+
         self.high_score_duration_spin.setValue(
             self.current_settings.get('high_score_min_duration_ms', 10000) // 1000
         )
@@ -234,12 +273,10 @@ class SettingsDialog(QDialog):
         self.slowest_keys_spin.setValue(
             self.current_settings.get('slowest_keys_count', 10)
         )
-        self.retention_days_spin.setValue(
-            self.current_settings.get('data_retention_days', 90)
-        )
-        self.password_exclusion_check.setChecked(
-            self.current_settings.get('password_exclusion', True)
-        )
+        retention_days = self.current_settings.get('data_retention_days', 90)
+        index = self.retention_combo.findData(retention_days)
+        if index >= 0:
+            self.retention_combo.setCurrentIndex(index)
 
     def get_settings(self) -> dict:
         """Get settings from UI.
@@ -248,15 +285,17 @@ class SettingsDialog(QDialog):
             Dictionary of setting key-value pairs
         """
         return {
-            'burst_timeout_ms': str(self.burst_timeout_spin.value() * 1000),
+            'burst_timeout_ms': str(self.burst_timeout_spin.value()),
+            'word_boundary_timeout_ms': str(self.word_boundary_timeout_spin.value()),
+            'burst_duration_calculation': self.duration_method_combo.currentData(),
+            'active_time_threshold_ms': str(self.active_threshold_spin.value()),
             'high_score_min_duration_ms': str(self.high_score_duration_spin.value() * 1000),
             'keyboard_layout': self.keyboard_layout_combo.currentData().lower(),
             'notifications_enabled': str(self.notifications_check.isChecked()),
             'exceptional_wpm_threshold': str(self.exceptional_wpm_spin.value()),
             'notification_time_hour': str(self.notification_hour_spin.value()),
             'slowest_keys_count': str(self.slowest_keys_spin.value()),
-            'data_retention_days': str(self.retention_days_spin.value()),
-            'password_exclusion': str(self.password_exclusion_check.isChecked()),
+            'data_retention_days': str(self.retention_combo.currentData()),
         }
 
     def export_csv(self) -> None:
