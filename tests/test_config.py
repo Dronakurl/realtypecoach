@@ -58,6 +58,10 @@ class TestConfigInit:
 
     def test_config_db_path_stored(self, temp_db):
         """Test that db_path is stored correctly."""
+        # Initialize encryption key first
+        crypto = CryptoManager(temp_db)
+        if not crypto.key_exists():
+            crypto.initialize_database_key()
         config = Config(temp_db)
         assert config.db_path == temp_db
 

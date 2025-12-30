@@ -1,5 +1,6 @@
 """Encryption key management using system keyring."""
 
+import hashlib
 import secrets
 import logging
 from pathlib import Path
@@ -44,14 +45,61 @@ class CryptoManager:
         self.db_path = db_path
         self._cached_key: Optional[bytes] = None
 
+        # Migrate legacy key for existing databases
+        self._migrate_legacy_key_if_needed()
+
+    def _get_db_key_identifiers(self) -> tuple[str, str]:
+        """Generate unique keyring identifiers for this database.
+
+        Returns:
+            Tuple of (service, username) for keyring operations
+        """
+        path_hash = hashlib.sha256(str(self.db_path.resolve()).encode()).hexdigest()[:16]
+        return f"realtypecoach_{path_hash}", f"db_key_{path_hash}"
+
+    def _get_legacy_key(self) -> Optional[bytes]:
+        """Get legacy hardcoded key if it exists.
+
+        Returns:
+            Legacy encryption key or None
+        """
+        try:
+            key_hex = keyring.get_password(KEY_SERVICE, KEY_USERNAME)
+            if key_hex:
+                return bytes.fromhex(key_hex)
+        except KeyringError:
+            pass
+        return None
+
+    def _migrate_legacy_key_if_needed(self) -> None:
+        """Migrate legacy hardcoded key to new path-based identifier."""
+        # Check if we already have a path-specific key
+        service, username = self._get_db_key_identifiers()
+        try:
+            if keyring.get_password(service, username) is not None:
+                return  # Already have a path-specific key
+        except KeyringError:
+            pass
+
+        # Try to get legacy key - only migrate if it exists
+        legacy_key = self._get_legacy_key()
+        if legacy_key:
+            try:
+                keyring.set_password(service, username, legacy_key.hex())
+                self._cached_key = legacy_key
+                log.info(f"Migrated legacy encryption key for {self.db_path}")
+            except KeyringError as e:
+                log.warning(f"Failed to migrate legacy key: {e}")
+
     def key_exists(self) -> bool:
         """Check if encryption key exists in keyring.
 
         Returns:
             True if key is stored
         """
+        service, username = self._get_db_key_identifiers()
         try:
-            key = keyring.get_password(KEY_SERVICE, KEY_USERNAME)
+            key = keyring.get_password(service, username)
             return key is not None
         except KeyringError as e:
             log.error(f"Error accessing keyring: {e}")
@@ -79,9 +127,10 @@ class CryptoManager:
 
         # Encode key as hex for storage
         key_hex = key.hex()
+        service, username = self._get_db_key_identifiers()
 
         try:
-            keyring.set_password(KEY_SERVICE, KEY_USERNAME, key_hex)
+            keyring.set_password(service, username, key_hex)
             log.info("Encryption key stored in system keyring")
             self._cached_key = key
         except KeyringError as e:
@@ -96,8 +145,9 @@ class CryptoManager:
         if self._cached_key:
             return self._cached_key
 
+        service, username = self._get_db_key_identifiers()
         try:
-            key_hex = keyring.get_password(KEY_SERVICE, KEY_USERNAME)
+            key_hex = keyring.get_password(service, username)
             if key_hex:
                 self._cached_key = bytes.fromhex(key_hex)
                 return self._cached_key
@@ -108,8 +158,9 @@ class CryptoManager:
 
     def delete_key(self) -> None:
         """Delete encryption key from keyring."""
+        service, username = self._get_db_key_identifiers()
         try:
-            keyring.delete_password(KEY_SERVICE, KEY_USERNAME)
+            keyring.delete_password(service, username)
             self._cached_key = None
             log.info("Encryption key removed from keyring")
         except KeyringError as e:
@@ -151,3 +202,15 @@ class CryptoManager:
             log.info("No encryption key found, generating new key")
             key = self.initialize_database_key()
         return key
+
+    def delete_legacy_key(self) -> None:
+        """Delete the legacy hardcoded key from keyring.
+
+        WARNING: Only call this after confirming migration succeeded.
+        This is an optional cleanup operation.
+        """
+        try:
+            keyring.delete_password(KEY_SERVICE, KEY_USERNAME)
+            log.info("Legacy encryption key removed from keyring")
+        except KeyringError as e:
+            log.error(f"Error deleting legacy key: {e}")

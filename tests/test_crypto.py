@@ -238,3 +238,145 @@ def test_encrypted_database_file_is_not_plaintext():
             assert b'sensitive' not in file_content
         finally:
             crypto.delete_key()
+
+
+def test_path_based_keys_are_unique():
+    """Different database paths get different encryption keys."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db1_path = Path(tmpdir) / "db1.db"
+        db2_path = Path(tmpdir) / "db2.db"
+
+        crypto1 = CryptoManager(db1_path)
+        crypto2 = CryptoManager(db2_path)
+
+        service1, username1 = crypto1._get_db_key_identifiers()
+        service2, username2 = crypto2._get_db_key_identifiers()
+
+        # Different paths should generate different identifiers
+        assert service1 != service2
+        assert username1 != username2
+
+
+def test_same_path_produces_same_identifiers():
+    """Same database path produces consistent key identifiers."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+
+        crypto1 = CryptoManager(db_path)
+        crypto2 = CryptoManager(db_path)
+
+        service1, username1 = crypto1._get_db_key_identifiers()
+        service2, username2 = crypto2._get_db_key_identifiers()
+
+        # Same path should produce same identifiers
+        assert service1 == service2
+        assert username1 == username2
+
+
+def test_delete_key_only_affects_specific_database():
+    """Deleting a key should only affect that specific database."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db1_path = Path(tmpdir) / "db1.db"
+        db2_path = Path(tmpdir) / "db2.db"
+
+        crypto1 = CryptoManager(db1_path)
+        crypto2 = CryptoManager(db2_path)
+
+        # Create keys for both databases
+        key1 = crypto1.generate_key()
+        key2 = crypto2.generate_key()
+
+        try:
+            crypto1.store_key(key1)
+            crypto2.store_key(key2)
+
+            assert crypto1.key_exists()
+            assert crypto2.key_exists()
+
+            # Delete key from db1 only
+            crypto1.delete_key()
+
+            # db1 key should be gone, but db2 key should still exist
+            assert not crypto1.key_exists()
+            assert crypto2.key_exists()
+
+            # Verify db2 key is still accessible
+            retrieved_key2 = crypto2.get_key()
+            assert retrieved_key2 == key2
+        finally:
+            # Clean up both keys
+            try:
+                crypto1.delete_key()
+            except Exception:
+                pass
+            try:
+                crypto2.delete_key()
+            except Exception:
+                pass
+
+
+def test_legacy_key_migration():
+    """Test that legacy keys are automatically migrated."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        crypto = CryptoManager(db_path)
+
+        # Create a legacy-style key using the old hardcoded identifiers
+        try:
+            legacy_key = secrets.token_bytes(32)
+            from utils.crypto import KEY_SERVICE, KEY_USERNAME
+            import keyring
+
+            keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())
+
+            # Create a new CryptoManager - it should auto-migrate the legacy key
+            crypto_new = CryptoManager(db_path)
+
+            # The migrated key should be accessible via get_key()
+            migrated_key = crypto_new.get_key()
+            assert migrated_key == legacy_key
+
+            # After migration, deleting the key should only remove the path-based key
+            crypto_new.delete_key()
+            assert not crypto_new.key_exists()
+
+            # The legacy key should still exist (not deleted by delete_key())
+            legacy_key_still_exists = keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
+            assert legacy_key_still_exists
+        finally:
+            # Clean up both the path-based key and the legacy key
+            try:
+                crypto.delete_key()
+            except Exception:
+                pass
+            try:
+                from utils.crypto import KEY_SERVICE, KEY_USERNAME
+                keyring.delete_password(KEY_SERVICE, KEY_USERNAME)
+            except Exception:
+                pass
+
+
+def test_delete_legacy_key_method():
+    """Test the delete_legacy_key() cleanup method."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        crypto = CryptoManager(db_path)
+
+        # Create a legacy-style key
+        try:
+            from utils.crypto import KEY_SERVICE, KEY_USERNAME
+            import keyring
+
+            legacy_key = secrets.token_bytes(32)
+            keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())
+
+            # Verify legacy key exists
+            assert keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
+
+            # Delete legacy key using the utility method
+            crypto.delete_legacy_key()
+
+            # Legacy key should now be gone
+            assert keyring.get_password(KEY_SERVICE, KEY_USERNAME) is None
+        except Exception:
+            pass
