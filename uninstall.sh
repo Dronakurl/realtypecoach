@@ -9,6 +9,12 @@ INSTALL_DIR="$HOME/.local/share/realtypecoach"
 
 echo "Uninstalling RealTypeCoach..."
 
+# Stop any running instances
+echo "Stopping any running instances of RealTypeCoach..."
+pkill -f "main.py" 2>/dev/null || true
+sleep 1
+pkill -9 -f "main.py" 2>/dev/null || true
+
 # Remove wrapper script
 if [ -f "$BIN_DIR/realtypecoach" ]; then
     echo "Removing wrapper script: $BIN_DIR/realtypecoach"
@@ -39,6 +45,23 @@ if [ -f "$DB_PATH" ] || ls "$DATA_DIR"/*.db.*.backup 2>/dev/null || ls "$DATA_DI
     else
         echo "Keeping database files in: $DATA_DIR"
     fi
+fi
+
+# Ask about encryption key
+echo ""
+echo "Remove encryption key from system keyring?"
+read -p "Remove encryption key? [Y/n]: " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    # Try to delete using the virtual environment if it exists, otherwise system python
+    if [ -f "$INSTALL_DIR/.venv/bin/python3" ]; then
+        "$INSTALL_DIR/.venv/bin/python3" -c "from utils.crypto import CryptoManager; from pathlib import Path; c = CryptoManager(Path('$INSTALL_DIR/data/realtypecoach.db')); c.delete_key()" 2>/dev/null || echo "Could not delete encryption key (may not exist)"
+    else
+        python3 -c "from utils.crypto import CryptoManager; from pathlib import Path; c = CryptoManager(Path('$INSTALL_DIR/data/realtypecoach.db')); c.delete_key()" 2>/dev/null || echo "Could not delete encryption key (may not exist)"
+    fi
+    echo "Encryption key removed"
+else
+    echo "Keeping encryption key in keyring"
 fi
 
 # Ask about remaining data directory

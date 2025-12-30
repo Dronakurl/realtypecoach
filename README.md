@@ -4,51 +4,48 @@
 
 # RealTypeCoach
 
-**Track, analyze, and improve your typing on KDE Wayland**
+**Improve your typing speed naturally by analyzing your real-world typing patterns**
+
+Unlike typing tests that measure artificial performance, RealTypeCoach tracks your daily typing to identify your slowest keys and words, giving you actionable insights to type faster in your actual work.
+
+[![Screenshot](screenshot.png)](screenshot.png)
 
 </div>
 
 ## Features
 
-- ⌨️ **Global keyboard monitoring** - Tracks typing patterns using [evdev](https://python-evdev.readthedocs.io/)
-- 🔒 **Secure data storage** - Your typing data is encrypted and protected by your system keyring
-- 📈 **Progress tracking** - Beautiful charts show your improvement over time
-- 🔤 **Word analysis** - Discover which words slow you down
-- 🎯 **Personalized insights** - Identifies your slowest keys to help you improve
-
-> [!NOTE]
-> The database at `~/.local/share/realtypecoach/typing_data.db` is encrypted with SQLCipher (AES-256).
-> Your keystroke timing data is protected at rest using your system keyring.
+- ⌨️ **Works silently in the background** - Tracks your natural typing patterns without interrupting your workflow
+- 🔒 **Privacy-first design** - Your typing data stays on your device and is encrypted
+- 📈 **Visualize your progress** - See your WPM improvement over time with interactive charts
+- 🔤 **Find your problem words** - Discover which specific words slow you down the most
+- 🎯 **Targeted improvement** - Identifies your slowest keys so you can focus practice where it counts
 
 ## Requirements
 
-- **OS**: Ubuntu 24.04+ or Debian-based Linux with KDE Plasma
-- **Display**: Wayland session
+- **Tested on**: Ubuntu 24.04+ with KDE Plasma on Wayland (likely works on other Linux desktops)
 - **Python**: 3.10 or higher
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for compatibility reports.
 
 ## Installation
 
-**Requirements**: Ubuntu 24.04+, Wayland, Python 3.10+
-
 ```bash
-# 1. Add user to input group (required for keyboard access)
-sudo usermod -aG input $USER
-# Log out and log back in
+# 0. Clone or download this repository to a folder
+git clone https://github.com/yourusername/realtypecoach.git
+cd realtypecoach
 
-# 2. Run installation script (sets up venv + dependencies)
+# 1. Add your user to the input group (required for keyboard access)
+sudo usermod -aG input $USER
+# Log out and log back in for this to take effect
+
+# 2. After logging back in, run the installation script
 ./install.sh
 ```
 
-The install script creates a launcher icon and installs RealTypeCoach to `~/.local/share/realtypecoach/`.
+The install script installs RealTypeCoach to your home directory (in `~/.local/share/realtypecoach/`) and creates an entry in your application menu. 
 
 > [!NOTE]
-> After installation, the source checkout folder can be safely removed.
-
-### Quick test (run without installing)
-
-```bash
-python3 main.py
-```
+> **Why the `input` group?** RealTypeCoach needs to read your keyboard events to analyze typing. Linux restricts this to the `input` group for security. On single-user systems (your laptop/desktop), this is safe and appropriate.
 
 ## Usage
 
@@ -74,26 +71,14 @@ The application runs in your system tray:
 2. It detects bursts of continuous typing (separated by pauses)
 3. Only keycodes and timings are stored - never actual text or passwords
 4. Statistics are calculated per-key and per-burst
-5. Daily summary notifications are sent at 18:00
+5. Optional daily summary notifications at a configurable time
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'evdev'"
-
-Install evdev:
-
-```bash
-pip install evdev --user
-```
 
 ### "Permission denied: /dev/input/eventX"
 
-Add your user to the input group:
-
-```bash
-sudo usermod -aG input $USER
-# Log out and log back in for this to take effect
-```
+Add your user to the input group as notes in the instructions for installation.
 
 ### "No keyboard events detected"
 
@@ -106,7 +91,7 @@ sudo usermod -aG input $USER
 2. List available input devices:
 
    ```bash
-   python3 -c "from evdev import list_devices; print(list_devices())"
+   .venv/bin/python3 -c "from evdev import list_devices; print(list_devices())"
    ```
 
 ### "Database encryption key not found"
@@ -114,6 +99,7 @@ sudo usermod -aG input $USER
 This error occurs when the keyring cannot access the encryption key. Possible solutions:
 
 1. **Check keyring is unlocked**:
+
    ```bash
    # For GNOME
    loginctl unlock-session
@@ -123,14 +109,16 @@ This error occurs when the keyring cannot access the encryption key. Possible so
    ```
 
 2. **Verify keyring backend**:
+
    ```bash
    python3 -c "import keyring; print(keyring.get_keyring())"
    ```
 
 3. **If all else fails**: Reinitialize (WARNING: This deletes existing data)
+
    ```bash
    rm ~/.local/share/realtypecoach/typing_data.db
-   python3 -c "from utils.crypto import CryptoManager; from pathlib import Path; c = CryptoManager(Path.home() / '.local' / 'share' / 'realtypecoach' / 'typing_data.db'); c.delete_key()"
+   .venv/bin/python3 -c "from utils.crypto import CryptoManager; from pathlib import Path; c = CryptoManager(Path.home() / '.local' / 'share' / 'realtypecoach' / 'typing_data.db'); c.delete_key()"
    ```
 
 ## Uninstallation
@@ -138,10 +126,5 @@ This error occurs when the keyring cannot access the encryption key. Possible so
 ```bash
 ./uninstall.sh
 ```
+This will ask you if you want to keep your data or not.
 
-To also remove your typing data and encryption key:
-
-```bash
-rm -rf ~/.local/share/realtypecoach
-python3 -c "from utils.crypto import CryptoManager; from pathlib import Path; c = CryptoManager(Path.home() / '.local' / 'share' / 'realtypecoach' / 'typing_data.db'); c.delete_key()"
-```
