@@ -1,7 +1,7 @@
 """Analyzer for typing statistics and high scores."""
 
 import logging
-import sqlite3
+import sqlcipher3 as sqlite3
 import time
 from typing import Optional, Dict, List, Any
 from collections import defaultdict
@@ -97,7 +97,7 @@ class Analyzer:
                 self.today_stats["slowest_key_name"] = summary.slowest_key_name
         else:
             # No daily summary yet, calculate from raw data
-            with sqlite3.connect(self.storage.db_path) as conn:
+            with self.storage._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Count today's keystrokes
@@ -311,7 +311,7 @@ class Analyzer:
         startOfDay = int(datetime.strptime(date, "%Y-%m-%d").timestamp() * 1000)
         endOfDay = startOfDay + 86400000
 
-        with sqlite3.connect(self.storage.db_path) as conn:
+        with self.storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -353,7 +353,7 @@ class Analyzer:
         )
         endOfDay = startOfDay + 86400000
 
-        with sqlite3.connect(self.storage.db_path) as conn:
+        with self.storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -395,7 +395,7 @@ class Analyzer:
         startOfDay = int(datetime.strptime(today_date, "%Y-%m-%d").timestamp() * 1000)
         endOfDay = startOfDay + 86400000
 
-        with sqlite3.connect(self.storage.db_path) as conn:
+        with self.storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -487,7 +487,7 @@ class Analyzer:
         Returns:
             Average WPM or None if no bursts recorded
         """
-        with sqlite3.connect(self.storage.db_path) as conn:
+        with self.storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -578,7 +578,7 @@ class Analyzer:
             List of WPM values (one per data point)
         """
         # Get all bursts ordered by time
-        with sqlite3.connect(self.storage.db_path) as conn:
+        with self.storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT avg_wpm FROM bursts ORDER BY start_time")
             raw_wpm = [row[0] for row in cursor.fetchall() if row[0] is not None]
