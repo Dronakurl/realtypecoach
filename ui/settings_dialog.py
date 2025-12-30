@@ -321,8 +321,17 @@ class SettingsDialog(QDialog):
             self.keyboard_layout_combo
         )
 
+        # Add detected layout hint
+        self.detected_layout_label = QLabel()
+        self.detected_layout_label.setWordWrap(True)
+        self.detected_layout_label.setStyleSheet("color: #666; font-style: italic;")
+        keyboard_layout.addRow("", self.detected_layout_label)
+
         keyboard_group.setLayout(keyboard_layout)
         layout.addWidget(keyboard_group)
+
+        # Detect and show current layout
+        self._update_detected_layout()
 
         layout.addStretch()
         widget.setLayout(layout)
@@ -564,6 +573,22 @@ class SettingsDialog(QDialog):
         self.rescan_dictionaries()
 
         return widget
+
+    def _update_detected_layout(self) -> None:
+        """Update the detected keyboard layout hint."""
+        try:
+            from utils.keyboard_detector import get_current_layout
+
+            detected_layout = get_current_layout()
+            layout_names = {
+                "us": "US (QWERTY)",
+                "de": "German (QWERTZ)",
+            }
+            layout_name = layout_names.get(detected_layout, detected_layout.upper())
+            self.detected_layout_label.setText(f"Detected: {layout_name}")
+        except Exception as e:
+            log.debug(f"Could not detect keyboard layout: {e}")
+            self.detected_layout_label.setText("Detected: Unknown")
 
     def rescan_dictionaries(self) -> None:
         """Rescan system for available dictionaries."""
