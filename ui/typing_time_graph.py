@@ -11,20 +11,9 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 from PySide6.QtCore import Qt, QTimer
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
-from matplotlib.figure import Figure
+import pyqtgraph as pg
+from pyqtgraph import GraphicsLayoutWidget, BarGraphItem
 from core.models import TypingTimeDataPoint
-
-# Configure matplotlib to use standard font
-import matplotlib
-
-matplotlib.rcParams["font.family"] = "DejaVu Sans"
-matplotlib.rcParams["font.sans-serif"] = [
-    "DejaVu Sans",
-    "Arial",
-    "Liberation Sans",
-    "sans-serif",
-]
 
 
 class TimeGranularity(Enum):
@@ -91,30 +80,38 @@ class TypingTimeGraph(QWidget):
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
 
-        # Matplotlib figure with two subplots (vertically stacked)
-        self.figure = Figure(figsize=(10, 8), dpi=100)
+        # PyQtGraph GraphicsLayoutWidget for stacked plots
+        self.plot_widget = GraphicsLayoutWidget()
 
-        # Create subplots with shared X-axis
-        self.ax_time = self.figure.add_subplot(211)  # Top: Typing time
-        self.ax_wpm = self.figure.add_subplot(
-            212, sharex=self.ax_time
-        )  # Bottom: WPM
+        # Create two plots with shared X-axis
+        self.plot_time = self.plot_widget.addPlot(row=0, col=0)
+        self.plot_time.setLabel('left', 'Typing Time (hours)')
+        self.plot_time.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_time.showButtons()
+        # Disable automatic scientific notation suffix
+        self.plot_time.getAxis('left').enableAutoSIPrefix(False)
+        # Y-axis starts at 0, auto-range enabled
+        self.plot_time.setYRange(0, 1, padding=0.1)
 
-        # Adjust subplot spacing to prevent label cutoff
-        self.figure.subplots_adjust(
-            hspace=0.15,  # Gap between plots
-            left=0.15,  # More space for y-axis labels
-            right=0.95,
-            top=0.92,
-            bottom=0.18,  # More space for x-axis labels
-        )
+        self.plot_wpm = self.plot_widget.addPlot(row=1, col=0)
+        self.plot_wpm.setLabel('left', 'Average WPM')
+        self.plot_wpm.setLabel('bottom', 'Time Period')
+        self.plot_wpm.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_wpm.showButtons()
+        # Y-axis starts at 0 for WPM as well
+        self.plot_wpm.setYRange(0, 100, padding=0.1)
 
-        self.canvas = FigureCanvasQTAgg(self.figure)
-        layout.addWidget(self.canvas)
+        # Link X-axes
+        self.plot_wpm.setXLink(self.plot_time)
 
-        # Navigation toolbar
-        self.toolbar = NavigationToolbar2QT(self.canvas, self)
-        layout.addWidget(self.toolbar)
+        # Create bar chart item for typing time (initially empty)
+        self.bar_item = BarGraphItem(x=[], height=[], width=0.6, brush=(50, 150, 200))
+        self.plot_time.addItem(self.bar_item)
+
+        # Create plot item for WPM line chart
+        self.plot_wpm_item = self.plot_wpm.plot(pen=pg.mkPen(color=(80, 200, 120), width=2), symbol='o', symbolSize=5)
+
+        layout.addWidget(self.plot_widget)
 
         # Info label
         self.info_label = QLabel("Showing: No data")
@@ -188,26 +185,10 @@ class TypingTimeGraph(QWidget):
 
             self.data = data_points
 
-            # Clear both subplots
-            self.ax_time.clear()
-            self.ax_wpm.clear()
-
             if not data_points:
                 log.warning("No data points received, showing 'No data available'")
-                # Show "No data" message on both plots
-                for ax, title in [(self.ax_time, "Typing Time"), (self.ax_wpm, "WPM")]:
-                    ax.text(
-                        0.5,
-                        0.5,
-                        "No data available",
-                        ha="center",
-                        va="center",
-                        transform=ax.transAxes,
-                        fontsize=12,
-                    )
-                    ax.set_ylabel(title)
-
-                self.canvas.draw()
+                self.bar_item.setOpts(x=[], height=[])
+                self.plot_wpm_item.setData([], [])
                 self.info_label.setText("Showing: No data")
                 return
 
@@ -218,56 +199,33 @@ class TypingTimeGraph(QWidget):
             ]  # Convert to hours
             avg_wpm = [dp.avg_wpm for dp in data_points]
 
-            # Plot 1: Typing Time (top)
-            self.ax_time.plot(
-                range(len(period_labels)),
-                typing_hours,
-                linewidth=2,
-                color="#3daee9",
-                marker="o",
-                markersize=4 if len(data_points) < 50 else 2,
-            )
-            self.ax_time.set_ylabel("Typing Time (hours)", fontsize=10)
-            self.ax_time.grid(True, alpha=0.3, linestyle="--")
-            self.ax_time.tick_params(labelbottom=False)  # Hide X labels on top plot
+            # Create x-axis indices
+            x_indices = list(range(len(period_labels)))
 
-            # Plot 2: Average WPM (bottom)
-            self.ax_wpm.plot(
-                range(len(period_labels)),
-                avg_wpm,
-                linewidth=2,
-                color="#4caf50",
-                marker="o",
-                markersize=4 if len(data_points) < 50 else 2,
-            )
-            self.ax_wpm.set_ylabel("Average WPM", fontsize=10)
-            self.ax_wpm.set_xlabel("Time Period", fontsize=10)
-            self.ax_wpm.grid(True, alpha=0.3, linestyle="--")
+            # Update bar chart for typing time
+            self.bar_item.setOpts(x=x_indices, height=typing_hours)
 
-            # Set X-axis labels (only on bottom plot)
-            # Rotate labels if many data points
-            if len(data_points) > 20:
-                self.ax_wpm.set_xticks(
-                    range(0, len(period_labels), max(1, len(period_labels) // 10))
-                )
-                self.ax_wpm.set_xticklabels(
-                    [
-                        period_labels[i]
-                        for i in range(
-                            0, len(period_labels), max(1, len(period_labels) // 10)
-                        )
-                    ],
-                    rotation=45,
-                    ha="right",
-                    fontsize=8,
-                )
+            # Auto-scale Y-axis for typing time, starting from 0
+            max_hours = max(typing_hours) if typing_hours else 1
+            self.plot_time.setYRange(0, max_hours * 1.1, padding=0)
+
+            # Update line chart for WPM
+            self.plot_wpm_item.setData(x_indices, avg_wpm)
+
+            # Auto-scale Y-axis for WPM, starting from 0
+            max_wpm = max(avg_wpm) if avg_wpm else 100
+            self.plot_wpm.setYRange(0, max_wpm * 1.1, padding=0)
+
+            # Set X-axis ticks with labels (show fewer ticks if many data points)
+            if len(data_points) > 10:
+                # Show every Nth label
+                step = max(1, len(period_labels) // 10)
+                ticks = [(i, period_labels[i]) for i in range(0, len(period_labels), step)]
+                self.plot_wpm.getAxis('bottom').setTicks([ticks])
             else:
-                self.ax_wpm.set_xticks(range(len(period_labels)))
-                self.ax_wpm.set_xticklabels(period_labels, rotation=45, ha="right", fontsize=9)
-
-            # Redraw canvas
-            self.figure.tight_layout()
-            self.canvas.draw()
+                # Show all labels
+                ticks = [(i, period_labels[i]) for i in range(len(period_labels))]
+                self.plot_wpm.getAxis('bottom').setTicks([ticks])
 
             # Update info label
             total_hours = sum(typing_hours)

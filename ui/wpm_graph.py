@@ -1,21 +1,10 @@
 """WPM burst sequence graph widget for RealTypeCoach."""
 
+import pyqtgraph as pg
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider
 from PySide6.QtCore import Qt, QTimer
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
-from matplotlib.figure import Figure
+from pyqtgraph import PlotWidget
 from typing import List, Callable, Optional
-
-# Configure matplotlib to use standard font to avoid "Sans Not-Rotated" warning
-import matplotlib
-
-matplotlib.rcParams["font.family"] = "DejaVu Sans"
-matplotlib.rcParams["font.sans-serif"] = [
-    "DejaVu Sans",
-    "Arial",
-    "Liberation Sans",
-    "sans-serif",
-]
 
 
 class WPMTimeSeriesGraph(QWidget):
@@ -27,6 +16,7 @@ class WPMTimeSeriesGraph(QWidget):
         self.current_window_size = 10  # Default 10-burst average
         self._data_callback: Optional[Callable[[int], None]] = None
         self._update_timer: Optional[QTimer] = None
+        self.plot_item = None
 
         self.init_ui()
 
@@ -39,14 +29,18 @@ class WPMTimeSeriesGraph(QWidget):
         title.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(title)
 
-        # Matplotlib figure
-        self.figure = Figure(figsize=(8, 4), dpi=100)
-        self.canvas = FigureCanvasQTAgg(self.figure)
-        layout.addWidget(self.canvas)
+        # PyQtGraph plot widget
+        self.plot_widget = PlotWidget()
+        # Let Qt theme handle background/foreground colors
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_widget.setLabel('left', 'WPM')
+        self.plot_widget.setLabel('bottom', 'Burst Number')
+        self.plot_widget.showButtons()  # Show auto-range buttons
 
-        # Navigation toolbar (zoom, pan, home)
-        self.toolbar = NavigationToolbar2QT(self.canvas, self)
-        layout.addWidget(self.toolbar)
+        # Create plot item with line and markers
+        self.plot_item = self.plot_widget.plot(pen=pg.mkPen(color=(50, 150, 200), width=2), symbol='o', symbolSize=5)
+
+        layout.addWidget(self.plot_widget)
 
         # Aggregation slider
         slider_label = QLabel("Aggregation:")
@@ -113,48 +107,17 @@ class WPMTimeSeriesGraph(QWidget):
             wpm_values: List of WPM values (one per data point)
         """
         self.data = wpm_values
-        self.figure.clear()
 
         if not wpm_values:
-            ax = self.figure.add_subplot(111)
-            ax.text(
-                0.5,
-                0.5,
-                "No data available",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-            )
-            self.canvas.draw()
+            self.plot_item.setData([], [])
             self.info_label.setText("Showing: No data")
             return
 
         # Create x-axis as burst numbers
         burst_numbers = list(range(1, len(wpm_values) + 1))
 
-        # Create plot
-        ax = self.figure.add_subplot(111)
-        ax.plot(
-            burst_numbers,
-            wpm_values,
-            linewidth=2,
-            color="#3daee9",
-            marker="o",
-            markersize=4 if len(wpm_values) < 100 else 2,
-        )
-
-        # Format axes
-        ax.set_xlabel("Burst Number", fontsize=10)
-        ax.set_ylabel("WPM", fontsize=10)
-        ax.grid(True, alpha=0.3, linestyle="--")
-
-        # Adjust layout with margins to prevent cutoff
-        self.figure.subplots_adjust(
-            left=0.12, right=0.95, top=0.92, bottom=0.15
-        )
-
-        # Redraw canvas
-        self.canvas.draw()
+        # Update plot data
+        self.plot_item.setData(burst_numbers, wpm_values)
 
         # Update info label
         self.info_label.setText(f"Showing: {len(wpm_values)} data points")

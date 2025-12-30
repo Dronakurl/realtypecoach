@@ -37,7 +37,8 @@ log = logging.getLogger("realtypecoach")
 
 from PySide6.QtWidgets import QApplication, QMessageBox, QDialog  # noqa: E402
 from PySide6.QtCore import QTimer, QObject, Signal  # noqa: E402
-from PySide6.QtGui import QFont, QIcon  # noqa: E402
+from PySide6.QtGui import QFont, QIcon, QPalette, QColor  # noqa: E402
+import pyqtgraph as pg  # noqa: E402
 
 from core.storage import Storage  # noqa: E402
 from core.dictionary_config import DictionaryConfig  # noqa: E402
@@ -728,6 +729,14 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("RealTypeCoach")
     app.setApplicationDisplayName("RealTypeCoach")
+
+    # Configure PyQtGraph to use Qt theme colors
+    palette = app.palette()
+    bg_color = palette.color(QPalette.ColorRole.Window)
+    fg_color = palette.color(QPalette.ColorRole.WindowText)
+    pg.setConfigOption('background', bg_color)
+    pg.setConfigOption('foreground', fg_color)
+    pg.setConfigOptions(antialias=True)
 
     # Set default font to avoid malformed KDE font descriptions
     font = QFont()

@@ -9,6 +9,7 @@ dependencies = [
     "PySide6",
     "pandas",
     "matplotlib",
+    "pyqtgraph",
     "evdev",
     "sqlcipher3-binary",
     "keyring",
