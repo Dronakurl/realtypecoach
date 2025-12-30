@@ -495,37 +495,65 @@ class Storage:
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
 
-    def get_all_time_typing_time(self) -> int:
+    def get_all_time_typing_time(self, exclude_today: str = None) -> int:
         """Get all-time total typing time.
+
+        Args:
+            exclude_today: Optional date string (YYYY-MM-DD) to exclude from sum.
+                          Used to avoid double-counting today's stats.
 
         Returns:
             Total typing time in seconds
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(total_typing_sec), 0) FROM daily_summaries
-            """,
-            )
+            if exclude_today:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(SUM(total_typing_sec), 0) FROM daily_summaries
+                    WHERE date != ?
+                """,
+                    (exclude_today,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(SUM(total_typing_sec), 0) FROM daily_summaries
+                """,
+                )
             result = cursor.fetchone()
             return result[0] if result else 0
 
-    def get_all_time_keystrokes_and_bursts(self) -> tuple[int, int]:
+    def get_all_time_keystrokes_and_bursts(self, exclude_today: str = None) -> tuple[int, int]:
         """Get all-time total keystrokes and bursts.
+
+        Args:
+            exclude_today: Optional date string (YYYY-MM-DD) to exclude from sum.
+                          Used to avoid double-counting today's in-memory stats.
 
         Returns:
             Tuple of (total_keystrokes, total_bursts) from daily_summaries table
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(total_keystrokes), 0),
-                       COALESCE(SUM(total_bursts), 0)
-                FROM daily_summaries
-            """,
-            )
+            if exclude_today:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(SUM(total_keystrokes), 0),
+                           COALESCE(SUM(total_bursts), 0)
+                    FROM daily_summaries
+                    WHERE date != ?
+                """,
+                    (exclude_today,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(SUM(total_keystrokes), 0),
+                           COALESCE(SUM(total_bursts), 0)
+                    FROM daily_summaries
+                """,
+                )
             result = cursor.fetchone()
             return (result[0], result[1]) if result else (0, 0)
 

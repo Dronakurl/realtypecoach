@@ -537,8 +537,10 @@ class Application(QObject):
         )
         self.signal_update_fastest_words_stats.emit(fastest_words)
 
-        # Update typing time display (today + all-time)
-        all_time_typing_sec = self.storage.get_all_time_typing_time()
+        # Update typing time display (today + all-time excluding today)
+        all_time_typing_sec = self.storage.get_all_time_typing_time(
+            exclude_today=stats["date"]
+        ) + int(stats["total_typing_sec"])
         self.signal_update_typing_time_display.emit(
             stats["total_typing_sec"], all_time_typing_sec
         )
@@ -560,10 +562,12 @@ class Application(QObject):
             worst_word = worst_words[0]
             self.signal_update_worst_word.emit(worst_word)
 
-        # Update all-time keystrokes and bursts
-        all_time_keystrokes, all_time_bursts = (
-            self.storage.get_all_time_keystrokes_and_bursts()
+        # Update all-time keystrokes and bursts (database excluding today + today's in-memory stats)
+        db_keystrokes, db_bursts = self.storage.get_all_time_keystrokes_and_bursts(
+            exclude_today=stats["date"]
         )
+        all_time_keystrokes = db_keystrokes + stats["total_keystrokes"]
+        all_time_bursts = db_bursts + stats["total_bursts"]
         self.signal_update_keystrokes_bursts.emit(all_time_keystrokes, all_time_bursts)
 
     def show_settings_dialog(self) -> None:
