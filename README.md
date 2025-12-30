@@ -11,12 +11,14 @@
 ## Features
 
 - ⌨️ **Global keyboard monitoring** - Tracks typing patterns using [evdev](https://python-evdev.readthedocs.io/)
+- 🔒 **Secure data storage** - Your typing data is encrypted and protected by your system keyring
 - 📈 **Progress tracking** - Beautiful charts show your improvement over time
 - 🔤 **Word analysis** - Discover which words slow you down
 - 🎯 **Personalized insights** - Identifies your slowest keys to help you improve
 
-> [!WARNING]
-> The database at `~/.local/share/realtypecoach/typing_data.db` contains all your keystrokes. Do not share it with anyone.
+> [!NOTE]
+> The database at `~/.local/share/realtypecoach/typing_data.db` is encrypted with SQLCipher (AES-256).
+> Your keystroke timing data is protected at rest using your system keyring.
 
 ## Requirements
 
@@ -107,14 +109,39 @@ sudo usermod -aG input $USER
    python3 -c "from evdev import list_devices; print(list_devices())"
    ```
 
+### "Database encryption key not found"
+
+This error occurs when the keyring cannot access the encryption key. Possible solutions:
+
+1. **Check keyring is unlocked**:
+   ```bash
+   # For GNOME
+   loginctl unlock-session
+
+   # For KDE/KWallet
+   kwallet-query -l kdewallet
+   ```
+
+2. **Verify keyring backend**:
+   ```bash
+   python3 -c "import keyring; print(keyring.get_keyring())"
+   ```
+
+3. **If all else fails**: Reinitialize (WARNING: This deletes existing data)
+   ```bash
+   rm ~/.local/share/realtypecoach/typing_data.db
+   python3 -c "from utils.crypto import CryptoManager; from pathlib import Path; c = CryptoManager(Path.home() / '.local' / 'share' / 'realtypecoach' / 'typing_data.db'); c.delete_key()"
+   ```
+
 ## Uninstallation
 
 ```bash
 ./uninstall.sh
 ```
 
-To also remove your typing data:
+To also remove your typing data and encryption key:
 
 ```bash
 rm -rf ~/.local/share/realtypecoach
+python3 -c "from utils.crypto import CryptoManager; from pathlib import Path; c = CryptoManager(Path.home() / '.local' / 'share' / 'realtypecoach' / 'typing_data.db'); c.delete_key()"
 ```
