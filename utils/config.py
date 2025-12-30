@@ -1,11 +1,12 @@
 """Configuration management for RealTypeCoach."""
 
 import json
-import sqlite3
+import sqlcipher3 as sqlite3
 from pathlib import Path
 from typing import Any, Optional, List
 
 from pydantic import BaseModel, Field, validator
+from utils.crypto import CryptoManager
 
 
 class AppSettings(BaseModel):
@@ -133,12 +134,44 @@ class Config:
             db_path: Path to SQLite database
         """
         self.db_path = db_path
+
+        # Initialize crypto manager
+        self.crypto = CryptoManager(db_path)
+
         self._init_settings_table()
         self._ensure_defaults()
 
+    def _get_connection(self) -> sqlite3.Connection:
+        """Create encrypted database connection."""
+        encryption_key = self.crypto.get_key()
+        if encryption_key is None:
+            raise RuntimeError(
+                "Database encryption key not found in keyring. "
+                "Cannot access configuration database."
+            )
+
+        conn = sqlite3.connect(self.db_path)
+
+        # Set encryption key (SQLCipher requires quotes around the hex literal)
+        conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
+
+        # Verify access
+        try:
+            conn.execute("SELECT count(*) FROM sqlite_master")
+        except sqlite3.DatabaseError as e:
+            conn.close()
+            raise RuntimeError(f"Cannot decrypt settings database: {e}")
+
+        # Set encryption parameters
+        conn.execute("PRAGMA cipher_memory_security = ON")
+        conn.execute("PRAGMA cipher_page_size = 4096")
+        conn.execute("PRAGMA cipher_kdf_iter = 256000")
+
+        return conn
+
     def _init_settings_table(self) -> None:
         """Create settings table if not exists."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
@@ -151,7 +184,7 @@ class Config:
         """Ensure all default settings exist in database."""
         defaults = AppSettings().dict()
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             for key, value in defaults.items():
                 cursor.execute(
@@ -211,7 +244,7 @@ class Config:
         Returns:
             Setting value
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
             result = cursor.fetchone()
@@ -293,7 +326,7 @@ class Config:
                 raise ValueError(f"Invalid value for {key}: {e}")
 
         # Store value (validated or custom)
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO settings (key, value)
@@ -305,7 +338,7 @@ class Config:
 
     def get_all(self) -> dict[str, Any]:
         """Get all settings as dictionary."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM settings")
             settings = {row[0]: self._simple_parse(row[1]) for row in cursor.fetchall()}
