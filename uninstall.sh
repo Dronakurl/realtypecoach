@@ -25,9 +25,25 @@ fi
 echo "Updating desktop database..."
 update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null || true
 
-# Ask about data directory
+# Ask about database and related files
+DATA_DIR="$INSTALL_DIR/data"
+DB_PATH="$DATA_DIR/realtypecoach.db"
+if [ -f "$DB_PATH" ] || ls "$DATA_DIR"/*.db.*.backup 2>/dev/null || ls "$DATA_DIR"/test*.db 2>/dev/null; then
+    echo ""
+    echo "Remove database files? (contains all typing history, statistics, backups, and test files)"
+    read -p "Remove all database files from $DATA_DIR? [y/N]: " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "Removing database files from: $DATA_DIR"
+        rm -f "$DATA_DIR"/*.db "$DATA_DIR"/*.db.*.backup "$DATA_DIR"/test*.db 2>/dev/null || true
+    else
+        echo "Keeping database files in: $DATA_DIR"
+    fi
+fi
+
+# Ask about remaining data directory
 echo ""
-echo "Keep application data in $INSTALL_DIR? (statistics, database, settings)"
+echo "Keep remaining application data in $INSTALL_DIR? (settings, logs)"
 read -p "Remove data directory? [y/N]: " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then

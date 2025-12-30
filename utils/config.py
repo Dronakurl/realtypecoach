@@ -49,9 +49,6 @@ class AppSettings(BaseModel):
     )
 
     # Data management
-    slowest_keys_count: int = Field(
-        default=10, ge=1, le=100, description="Number of slowest keys to track"
-    )
     data_retention_days: int = Field(
         default=-1, ge=-1, description="Days to keep data (-1 = keep forever)"
     )

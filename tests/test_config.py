@@ -140,10 +140,10 @@ class TestConfigTypeGetters:
         """Test get_int falls back to AppSettings defaults."""
         # Remove from database
         with config._get_connection() as conn:
-            conn.execute("DELETE FROM settings WHERE key = 'slowest_keys_count'")
+            conn.execute("DELETE FROM settings WHERE key = 'burst_timeout_ms'")
 
-        value = config.get_int("slowest_keys_count")
-        expected = AppSettings.model_fields["slowest_keys_count"].default
+        value = config.get_int("burst_timeout_ms")
+        expected = AppSettings.model_fields["burst_timeout_ms"].default
         assert value == expected
         assert isinstance(value, int)
 

@@ -24,16 +24,15 @@ class StatsPanel(QWidget):
 
     settings_requested = Signal()
 
-    def __init__(self, icon_path: str = None, slowest_keys_count: int = 10):
+    def __init__(self, icon_path: str = None):
         """Initialize statistics panel.
 
         Args:
             icon_path: Optional path to the project logo icon
-            slowest_keys_count: Number of slowest/fastest keys to display
         """
         super().__init__()
         self.icon_path = icon_path
-        self.slowest_keys_count = slowest_keys_count
+        self.slowest_keys_count = 10
         self.init_ui()
 
     @staticmethod

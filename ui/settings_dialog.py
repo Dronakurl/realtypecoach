@@ -89,29 +89,42 @@ class SettingsDialog(QDialog):
         Returns:
             QIcon colored with palette text color
         """
-        icon = QIcon.fromTheme(theme_name)
+        # Direct mapping to Qt standard icons for all tabs
+        style = QApplication.style()
+        icon_map = {
+            "preferences-system": QStyle.SP_BrowserReload,  # Settings/configure
+            "preferences-desktop-notification": QStyle.SP_DialogApplyButton,  # Notify/alert
+            "database": QStyle.SP_DriveHDIcon,  # Storage/database
+            "accessories-dictionary": QStyle.SP_FileDialogDetailedView,  # Language/list
+        }
 
-        # Fallback to Qt standard icons if theme icon is not available
-        if icon.isNull():
-            style = QApplication.style()
-            fallback_map = {
-                "preferences-system": QStyle.SP_DialogApplyButton,
-                "preferences-desktop-notification": QStyle.SP_DialogHelpButton,
-                "database": QStyle.SP_FileIcon,
-                "accessories-dictionary": QStyle.SP_FileIcon,
-            }
-            if theme_name in fallback_map:
-                icon = style.standardIcon(fallback_map[theme_name])
+        if theme_name in icon_map:
+            icon = style.standardIcon(icon_map[theme_name])
+        else:
+            icon = QIcon.fromTheme(theme_name)
+
+            # Fallback to Qt standard icons if theme icon is not available
             if icon.isNull():
-                return icon
+                fallback_map = {
+                    "preferences-desktop-notification": QStyle.SP_DialogHelpButton,
+                    "database": QStyle.SP_FileIcon,
+                    "accessories-dictionary": QStyle.SP_FileIcon,
+                }
+                if theme_name in fallback_map:
+                    icon = style.standardIcon(fallback_map[theme_name])
+                if icon.isNull():
+                    # Last resort: create text-based icon
+                    return SettingsDialog._create_text_icon(theme_name)
 
-        # Get the application's palette text color
+        # Get the application's palette text color for colorization
         palette = QApplication.palette()
-        text_color = palette.color(QPalette.Text)
+        # Use WindowText instead of Text for tab bar visibility
+        text_color = palette.color(QPalette.WindowText)
 
         # Colorize the icon for multiple sizes
         colorized_icon = QIcon()
         sizes = [16, 22, 24, 32]
+        has_valid_pixmap = False
 
         for size in sizes:
             pixmap = icon.pixmap(size, size)
@@ -138,8 +151,56 @@ class SettingsDialog(QDialog):
             colorized_icon.addPixmap(colorized_pixmap, QIcon.Normal, QIcon.On)
             colorized_icon.addPixmap(colorized_pixmap, QIcon.Active, QIcon.On)
             colorized_icon.addPixmap(colorized_pixmap, QIcon.Selected, QIcon.On)
+            has_valid_pixmap = True
 
-        return colorized_icon if not colorized_icon.isNull() else icon
+        # If colorization failed, create text-based icon
+        if not has_valid_pixmap:
+            return SettingsDialog._create_text_icon(theme_name)
+
+        return colorized_icon
+
+    @staticmethod
+    def _create_text_icon(theme_name: str) -> QIcon:
+        """Create a text-based icon as last resort fallback.
+
+        Args:
+            theme_name: Icon theme name to map to text symbol
+
+        Returns:
+            QIcon with text symbol
+        """
+        # Map theme names to emoji/text symbols
+        symbol_map = {
+            "preferences-system": "⚙",
+            "preferences-desktop-notification": "🔔",
+            "database": "🗁",
+            "accessories-dictionary": "📖",
+        }
+        symbol = symbol_map.get(theme_name, "•")
+
+        # Use window text color which should be visible in the tab bar
+        palette = QApplication.palette()
+        text_color = palette.color(QPalette.WindowText)
+        if text_color.lightness() > 200:
+            # If color is too light (white on light theme), use a darker color
+            text_color = QColor(60, 60, 60)
+
+        # Create pixmap with text symbol
+        pixmap = QPixmap(22, 22)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setPen(text_color)
+        font = painter.font()
+        font.setPixelSize(16)
+        painter.setFont(font)
+
+        # Center text
+        rect = pixmap.rect()
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, symbol)
+        painter.end()
+
+        return QIcon(pixmap)
 
     @staticmethod
     def _create_labeled_icon_widget(
@@ -185,28 +246,20 @@ class SettingsDialog(QDialog):
         layout.addWidget(tabs)
 
         general_tab = self.create_general_tab()
-        tabs.addTab(
-            general_tab,
-            self._create_palette_aware_icon("preferences-system"),
-            "General",
-        )
+        tabs.addTab(general_tab, "General")
+        tabs.setTabIcon(0, self._create_palette_aware_icon("preferences-system"))
 
         notification_tab = self.create_notification_tab()
-        tabs.addTab(
-            notification_tab,
-            self._create_palette_aware_icon("preferences-desktop-notification"),
-            "Notifications",
-        )
+        tabs.addTab(notification_tab, "Notifications")
+        tabs.setTabIcon(1, self._create_palette_aware_icon("preferences-desktop-notification"))
 
         data_tab = self.create_data_tab()
-        tabs.addTab(data_tab, self._create_palette_aware_icon("database"), "Data")
+        tabs.addTab(data_tab, "Data")
+        tabs.setTabIcon(2, self._create_palette_aware_icon("database"))
 
         language_tab = self.create_language_tab()
-        tabs.addTab(
-            language_tab,
-            self._create_palette_aware_icon("accessories-dictionary"),
-            "Language",
-        )
+        tabs.addTab(language_tab, "Language")
+        tabs.setTabIcon(3, self._create_palette_aware_icon("accessories-dictionary"))
 
         dialog_buttons = QHBoxLayout()
         ok_btn = QPushButton("OK")
@@ -462,23 +515,6 @@ class SettingsDialog(QDialog):
         """Create data management tab."""
         widget = QWidget()
         layout = QVBoxLayout()
-
-        display_group = QGroupBox("Statistics Display")
-        display_layout = QFormLayout()
-
-        self.slowest_keys_spin = QSpinBox()
-        self.slowest_keys_spin.setRange(1, 50)
-        self.slowest_keys_spin.setSuffix(" keys")
-        self.slowest_keys_spin.setValue(10)
-        display_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Show slowest keys:", "Number of slowest keys to display in statistics."
-            ),
-            self.slowest_keys_spin,
-        )
-
-        display_group.setLayout(display_layout)
-        layout.addWidget(display_group)
 
         retention_group = QGroupBox("Data Retention")
         retention_layout = QFormLayout()
@@ -777,9 +813,6 @@ class SettingsDialog(QDialog):
         self.worst_letter_debounce_spin.setValue(
             self.current_settings.get("worst_letter_notification_debounce_min", 5)
         )
-        self.slowest_keys_spin.setValue(
-            self.current_settings.get("slowest_keys_count", 10)
-        )
         retention_days = self.current_settings.get("data_retention_days", -1)
         index = self.retention_combo.findData(retention_days)
         if index >= 0:
@@ -842,7 +875,6 @@ class SettingsDialog(QDialog):
             "worst_letter_notification_debounce_min": str(
                 self.worst_letter_debounce_spin.value()
             ),
-            "slowest_keys_count": str(self.slowest_keys_spin.value()),
             "data_retention_days": str(self.retention_combo.currentData()),
             "dictionary_mode": "validate"
             if self.validate_mode_radio.isChecked()
