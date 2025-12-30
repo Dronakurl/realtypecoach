@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QFont
 from typing import List, Tuple
-from core.models import KeyPerformance, WordStatisticsLite
+from core.models import KeyPerformance, WordStatisticsLite, TypingTimeDataPoint
 
 
 class StatsPanel(QWidget):
@@ -87,6 +87,63 @@ class StatsPanel(QWidget):
 
         return colorized_icon if not colorized_icon.isNull() else icon
 
+    def _create_metric_card(self, label_text: str, color: str) -> QGroupBox:
+        """Create a large metric display card.
+
+        Args:
+            label_text: Label for the metric
+            color: Accent color for the metric value
+
+        Returns:
+            QGroupBox configured as a metric card
+        """
+        card = QGroupBox()
+        card.setStyleSheet("QGroupBox { border: none; }")
+        layout = QVBoxLayout()
+        layout.setSpacing(8)
+
+        # Label
+        label = QLabel(label_text)
+        label.setStyleSheet("font-size: 16px; font-weight: bold; color: #666;")
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+
+        # Value
+        value = QLabel("--")
+        value.setStyleSheet(f"font-size: 40px; font-weight: bold; color: {color};")
+        value.setAlignment(Qt.AlignCenter)
+        layout.addWidget(value)
+
+        # Subtitle
+        subtitle = QLabel("")
+        subtitle.setStyleSheet("font-size: 14px; color: #888;")
+        subtitle.setAlignment(Qt.AlignCenter)
+        layout.addWidget(subtitle)
+
+        card.setLayout(layout)
+
+        # Store references to update later
+        if "Current Burst" in label_text:
+            self.burst_wpm_value_label = value
+            self.burst_wpm_subtitle_label = subtitle
+        elif "Long-term Average" in label_text:
+            self.avg_wpm_value_label = value
+            self.avg_wpm_subtitle_label = subtitle
+        elif "Worst Letter" in label_text:
+            self.worst_letter_value_label = value
+            self.worst_letter_subtitle_label = subtitle
+        elif "Worst Word" in label_text:
+            self.worst_word_value_label = value
+            self.worst_word_subtitle_label = subtitle
+        elif "Keystrokes" in label_text:
+            self.keystrokes_bursts_value_label = value
+            self.keystrokes_bursts_subtitle_label = subtitle
+        elif "Typing Time" in label_text:
+            self.typing_time_value_label = value
+            self.typing_time_subtitle_label = subtitle
+
+        return card
+
     def init_ui(self) -> None:
         """Initialize user interface."""
         # Enable font antialiasing
@@ -114,17 +171,12 @@ class StatsPanel(QWidget):
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
 
-        layout.addLayout(header_layout)
-
         # Settings button
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
         settings_btn = QPushButton("⚙️ Settings")
         settings_btn.clicked.connect(self.settings_requested.emit)
-        button_layout.addWidget(settings_btn)
+        header_layout.addWidget(settings_btn)
 
-        layout.addLayout(button_layout)
+        layout.addLayout(header_layout)
 
         # Create tab widget
         tab_widget = QTabWidget()
@@ -134,44 +186,56 @@ class StatsPanel(QWidget):
         # Tab 1: Overview (WPM + Today's Stats)
         overview_tab = QWidget()
         overview_layout = QVBoxLayout(overview_tab)
+        overview_layout.setSpacing(20)
 
-        # Performance section
-        performance_group = QGroupBox("Performance")
-        performance_layout = QVBoxLayout(performance_group)
+        # Performance Dashboard with large metric cards
+        dashboard_widget = QWidget()
+        dashboard_layout = QVBoxLayout(dashboard_widget)
+        dashboard_layout.setSpacing(15)
 
-        self.wpm_label = QLabel("Current WPM: --")
-        self.wpm_label.setStyleSheet(
-            "font-size: 24px; color: #3daee9; font-weight: bold;"
-        )
-        performance_layout.addWidget(self.wpm_label)
+        # Row 1: WPM metrics
+        first_row = QHBoxLayout()
+        first_row.setSpacing(30)
 
-        self.burst_wpm_label = QLabel("Burst WPM: --")
-        self.burst_wpm_label.setStyleSheet("font-size: 16px;")
-        performance_layout.addWidget(self.burst_wpm_label)
+        # Current Burst WPM Card
+        burst_wpm_card = self._create_metric_card("Current Burst WPM", "#3daee9")
+        first_row.addWidget(burst_wpm_card)
 
-        self.personal_best_label = QLabel("Personal Best Today: --")
-        self.personal_best_label.setStyleSheet("font-size: 16px; color: #ff6b6b;")
-        performance_layout.addWidget(self.personal_best_label)
+        # Long-term Average WPM Card
+        avg_wpm_card = self._create_metric_card("Long-term Average WPM", "#4caf50")
+        first_row.addWidget(avg_wpm_card)
 
-        overview_layout.addWidget(performance_group)
+        dashboard_layout.addLayout(first_row)
 
-        # Activity summary section
-        activity_group = QGroupBox("Activity Summary")
-        activity_layout = QVBoxLayout(activity_group)
+        # Row 2: Letter and Word performance
+        second_row = QHBoxLayout()
+        second_row.setSpacing(30)
 
-        self.keystrokes_label = QLabel("Keystrokes: 0")
-        self.keystrokes_label.setStyleSheet("font-size: 14px;")
-        activity_layout.addWidget(self.keystrokes_label)
+        # Worst Letter Card
+        worst_letter_card = self._create_metric_card("Worst Letter", "#ff6b6b")
+        second_row.addWidget(worst_letter_card)
 
-        self.bursts_label = QLabel("Bursts: 0")
-        self.bursts_label.setStyleSheet("font-size: 14px;")
-        activity_layout.addWidget(self.bursts_label)
+        # Worst Word Card
+        worst_word_card = self._create_metric_card("Worst Word", "#e67e22")
+        second_row.addWidget(worst_word_card)
 
-        self.typing_time_label = QLabel("Typing time: 0m 0s")
-        self.typing_time_label.setStyleSheet("font-size: 14px;")
-        activity_layout.addWidget(self.typing_time_label)
+        dashboard_layout.addLayout(second_row)
 
-        overview_layout.addWidget(activity_group)
+        # Row 3: Totals
+        third_row = QHBoxLayout()
+        third_row.setSpacing(30)
+
+        # Keystrokes & Bursts Card
+        keystrokes_bursts_card = self._create_metric_card("Keystrokes & Bursts", "#3498db")
+        third_row.addWidget(keystrokes_bursts_card)
+
+        # Typing Time Card
+        typing_time_card = self._create_metric_card("Typing Time", "#9b59b6")
+        third_row.addWidget(typing_time_card)
+
+        dashboard_layout.addLayout(third_row)
+
+        overview_layout.addWidget(dashboard_widget)
 
         overview_layout.addStretch()
         tab_widget.addTab(
@@ -291,6 +355,19 @@ class StatsPanel(QWidget):
             trends_tab, self._create_palette_aware_icon("go-up"), "Trends"
         )
 
+        # Tab 5: Typing Time
+        typing_time_tab = QWidget()
+        typing_time_layout = QVBoxLayout(typing_time_tab)
+
+        from ui.typing_time_graph import TypingTimeGraph
+
+        self.typing_time_graph = TypingTimeGraph()
+        typing_time_layout.addWidget(self.typing_time_graph)
+
+        tab_widget.addTab(
+            typing_time_tab, self._create_palette_aware_icon("x-office-calendar"), "Typing Time"
+        )
+
         layout.addWidget(tab_widget)
         self.setLayout(layout)
 
@@ -298,39 +375,43 @@ class StatsPanel(QWidget):
         self.resize(700, 500)
 
     def update_wpm(
-        self, current_wpm: float, burst_wpm: float, personal_best: float, avg_wpm: float
+        self,
+        burst_wpm: float,
+        today_best: float,
+        long_term_avg: float,
+        all_time_best: float,
     ) -> None:
         """Update WPM display.
 
         Args:
-            current_wpm: Current overall WPM
             burst_wpm: Current burst WPM
-            personal_best: Personal best WPM today
-            avg_wpm: Long-term average WPM for comparison
+            today_best: Personal best WPM today
+            long_term_avg: Long-term average WPM
+            all_time_best: All-time best WPM
         """
-        self.wpm_label.setText(f"Current WPM: {current_wpm:.1f}")
-
-        # Calculate percentage difference for burst WPM
-        if avg_wpm > 0:
-            percent_diff = ((burst_wpm - avg_wpm) / avg_wpm) * 100
-            if burst_wpm > avg_wpm:
-                color = "#4caf50"  # green
-                symbol = "+"
+        # Update Current Burst WPM card
+        if hasattr(self, "burst_wpm_value_label"):
+            self.burst_wpm_value_label.setText(f"{burst_wpm:.1f}")
+            if today_best > 0:
+                self.burst_wpm_subtitle_label.setText(
+                    f"today's best: {today_best:.1f}"
+                )
             else:
-                color = "#f44336"  # red
-                symbol = "-"
-            self.burst_wpm_label.setText(
-                f"Burst WPM: {burst_wpm:.1f} <span style='color:{color}'>({symbol}{abs(percent_diff):.0f}% vs avg)</span>"
-            )
-        else:
-            self.burst_wpm_label.setText(f"Burst WPM: {burst_wpm:.1f}")
+                self.burst_wpm_subtitle_label.setText("today's best: --")
 
-        if personal_best > 0:
-            self.personal_best_label.setText(
-                f"Personal Best Today: {personal_best:.1f}"
-            )
-        else:
-            self.personal_best_label.setText("Personal Best Today: --")
+        # Update Long-term Average WPM card
+        if hasattr(self, "avg_wpm_value_label"):
+            if long_term_avg is not None and long_term_avg > 0:
+                self.avg_wpm_value_label.setText(f"{long_term_avg:.1f}")
+            else:
+                self.avg_wpm_value_label.setText("--")
+
+            if all_time_best is not None and all_time_best > 0:
+                self.avg_wpm_subtitle_label.setText(
+                    f"all-time best: {all_time_best:.1f}"
+                )
+            else:
+                self.avg_wpm_subtitle_label.setText("all-time best: --")
 
     def update_slowest_keys(self, slowest_keys: List[KeyPerformance]) -> None:
         """Update slowest keys display.
@@ -340,9 +421,9 @@ class StatsPanel(QWidget):
         """
         for i, key_perf in enumerate(slowest_keys):
             avg_time = key_perf.avg_press_time
-            projected_wpm = 60000 / (avg_time * 5) if avg_time > 0 else 0
+            wpm = 12000 / avg_time if avg_time > 0 else 0
             self.slowest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
-            self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
+            self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{wpm:.1f}"))
 
         for i in range(len(slowest_keys), 10):
             self.slowest_table.setItem(i, 1, QTableWidgetItem("--"))
@@ -356,39 +437,124 @@ class StatsPanel(QWidget):
         """
         for i, key_perf in enumerate(fastest_keys):
             avg_time = key_perf.avg_press_time
-            projected_wpm = 60000 / (avg_time * 5) if avg_time > 0 else 0
+            wpm = 12000 / avg_time if avg_time > 0 else 0
             self.fastest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
-            self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{projected_wpm:.1f}"))
+            self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{wpm:.1f}"))
 
         for i in range(len(fastest_keys), 10):
             self.fastest_table.setItem(i, 1, QTableWidgetItem("--"))
             self.fastest_table.setItem(i, 2, QTableWidgetItem("--"))
 
-    def update_today_stats(
-        self, keystrokes: int, bursts: int, typing_sec: float
-    ) -> None:
-        """Update today's statistics.
+    def update_worst_letter(self, key_name: str, avg_time_ms: float) -> None:
+        """Update worst letter display.
 
         Args:
-            keystrokes: Total keystrokes today
-            bursts: Total bursts today
-            typing_sec: Total typing time in seconds
+            key_name: Worst letter key name
+            avg_time_ms: Average press time in milliseconds
         """
-        self.keystrokes_label.setText(f"Keystrokes: {keystrokes:,}")
-        self.bursts_label.setText(f"Bursts: {bursts:,}")
+        if hasattr(self, "worst_letter_value_label"):
+            self.worst_letter_value_label.setText(f"'{key_name}'")
 
-        hours = int(typing_sec) // 3600
-        minutes = (int(typing_sec) % 3600) // 60
-        seconds = int(typing_sec) % 60
+            # Calculate equivalent WPM
+            wpm = 12000 / avg_time_ms if avg_time_ms > 0 else 0
+            self.worst_letter_subtitle_label.setText(
+                f"{avg_time_ms:.0f}ms avg ({wpm:.0f} WPM)"
+            )
 
+    def update_worst_word(self, word_stat: WordStatisticsLite) -> None:
+        """Update worst word display.
+
+        Args:
+            word_stat: WordStatisticsLite model with worst word data
+        """
+        if hasattr(self, "worst_word_value_label"):
+            self.worst_word_value_label.setText(word_stat.word)
+
+            # Calculate projected WPM
+            wpm = (
+                12000 / word_stat.avg_speed_ms_per_letter
+                if word_stat.avg_speed_ms_per_letter > 0
+                else 0
+            )
+            self.worst_word_subtitle_label.setText(
+                f"{word_stat.avg_speed_ms_per_letter:.0f}ms/letter ({wpm:.0f} WPM)"
+            )
+
+    def update_typing_time_display(self, today_sec: float, all_time_sec: float) -> None:
+        """Update typing time display.
+
+        Args:
+            today_sec: Today's typing time in seconds
+            all_time_sec: All-time typing time in seconds
+        """
+        if hasattr(self, "typing_time_value_label"):
+            # Format today's typing time
+            self.typing_time_value_label.setText(self._format_duration(today_sec))
+
+            # Format all-time typing time
+            self.typing_time_subtitle_label.setText(f"all-time: {self._format_duration(all_time_sec)}")
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        """Format duration in seconds to human-readable string.
+
+        Args:
+            seconds: Duration in seconds
+
+        Returns:
+            Formatted duration string (e.g., "2d 5h 30m" or "45m 20s")
+        """
+        total_seconds = int(seconds)
+        days = total_seconds // 86400
+        hours = (total_seconds % 86400) // 3600
+        minutes = (total_seconds % 3600) // 60
+        secs = total_seconds % 60
+
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
         if hours > 0:
-            time_str = f"{hours}h {minutes}m {seconds}s"
-        elif minutes > 0:
-            time_str = f"{minutes}m {seconds}s"
-        else:
-            time_str = f"{seconds}s"
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+        if secs > 0 or not parts:
+            parts.append(f"{secs}s")
 
-        self.typing_time_label.setText(f"Typing time: {time_str}")
+        return " ".join(parts)
+
+    def update_keystrokes_bursts(self, keystrokes: int, bursts: int) -> None:
+        """Update all-time keystrokes and bursts display.
+
+        Args:
+            keystrokes: All-time total keystrokes
+            bursts: All-time total bursts
+        """
+        if hasattr(self, "keystrokes_bursts_value_label"):
+            self.keystrokes_bursts_value_label.setText(
+                self._format_large_number(keystrokes)
+            )
+            self.keystrokes_bursts_subtitle_label.setText(
+                f"{self._format_large_number(bursts)} bursts"
+            )
+
+    @staticmethod
+    def _format_large_number(count: int) -> str:
+        """Format large numbers with K/M/B suffixes.
+
+        Args:
+            count: Number to format
+
+        Returns:
+            Formatted string (e.g., "1.5M", "234K")
+        """
+        if count >= 1_000_000_000:
+            return f"{count / 1_000_000_000:.1f}B"
+        elif count >= 1_000_000:
+            return f"{count / 1_000_000:.1f}M"
+        elif count >= 1_000:
+            return f"{count / 1_000:.1f}K"
+        else:
+            return str(count)
 
     def update_hardest_words(self, words: List[WordStatisticsLite]) -> None:
         """Update hardest words display.
@@ -449,3 +615,19 @@ class StatsPanel(QWidget):
             data: List of (timestamp_ms, avg_wpm) tuples
         """
         self.wpm_graph.update_graph(data)
+
+    def set_typing_time_data_callback(self, callback) -> None:
+        """Set callback for requesting typing time data.
+
+        Args:
+            callback: Function to call when new data is needed
+        """
+        self.typing_time_graph.set_data_callback(callback)
+
+    def update_typing_time_graph(self, data: List[TypingTimeDataPoint]) -> None:
+        """Update typing time graph with new data.
+
+        Args:
+            data: List of TypingTimeDataPoint models
+        """
+        self.typing_time_graph.update_graph(data)

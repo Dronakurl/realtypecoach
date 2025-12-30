@@ -62,7 +62,12 @@ class Application(QObject):
     signal_update_hardest_words = Signal(list)
     signal_update_fastest_words_stats = Signal(list)
     signal_update_today_stats = Signal(int, int, float)
+    signal_update_typing_time_display = Signal(float, float)
     signal_update_trend_data = Signal(list)
+    signal_update_typing_time_graph = Signal(list)
+    signal_update_worst_letter = Signal(str, float)
+    signal_update_worst_word = Signal(object)
+    signal_update_keystrokes_bursts = Signal(int, int)
     signal_settings_changed = Signal(dict)
 
     def __init__(self) -> None:
@@ -197,8 +202,16 @@ class Application(QObject):
         self.signal_update_fastest_words_stats.connect(
             self.stats_panel.update_fastest_words
         )
-        self.signal_update_today_stats.connect(self.stats_panel.update_today_stats)
+        self.signal_update_typing_time_display.connect(self.stats_panel.update_typing_time_display)
+        self.signal_update_worst_word.connect(self.stats_panel.update_worst_word)
+        self.signal_update_keystrokes_bursts.connect(self.stats_panel.update_keystrokes_bursts)
         self.signal_update_trend_data.connect(self.stats_panel.update_trend_graph)
+        # Use Qt.QueuedConnection to ensure signal crosses thread boundaries properly
+        from PySide6.QtCore import Qt
+        self.signal_update_typing_time_graph.connect(
+            self.stats_panel.update_typing_time_graph,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         self.notification_handler.signal_daily_summary.connect(
             self.show_daily_notification
@@ -206,12 +219,17 @@ class Application(QObject):
         self.notification_handler.signal_exceptional_burst.connect(
             self.show_exceptional_notification
         )
+        self.notification_handler.signal_worst_letter_changed.connect(
+            self.show_worst_letter_notification
+        )
+        self.signal_update_worst_letter.connect(self.stats_panel.update_worst_letter)
 
         self.tray_icon.settings_changed.connect(self.apply_settings)
         self.tray_icon.stats_requested.connect(self.update_statistics)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
+        self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
@@ -262,6 +280,33 @@ class Application(QObject):
             "info",
         )
 
+    def show_worst_letter_notification(self, change) -> None:
+        """Show worst letter change notification.
+
+        Args:
+            change: WorstLetterChange pydantic model
+        """
+        from core.models import WorstLetterChange
+
+        if change.improvement:
+            message = (
+                f"Previous worst: '{change.previous_key}' ({change.previous_time_ms:.0f}ms)\n"
+                f"New worst: '{change.new_key}' ({change.new_time_ms:.0f}ms)\n"
+                f"Great progress!"
+            )
+            icon_type = "info"
+        else:
+            message = (
+                f"Previous worst: '{change.previous_key}' ({change.previous_time_ms:.0f}ms)\n"
+                f"New worst: '{change.new_key}' ({change.new_time_ms:.0f}ms)\n"
+                f"Focus on this key!"
+            )
+            icon_type = "warning"
+
+        self.tray_icon.show_notification(
+            "🔤 Worst Letter Changed", message, icon_type
+        )
+
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
         # Special keys that should not be saved to config
@@ -281,6 +326,21 @@ class Application(QObject):
                 "Dictionary configuration changed, storage will reload on next restart"
             )
 
+        # Update worst letter notification settings
+        if "worst_letter_notifications_enabled" in new_settings:
+            self.notification_handler.worst_letter_notifications_enabled = self.config.get_bool(
+                "worst_letter_notifications_enabled", False
+            )
+        if "worst_letter_notification_debounce_min" in new_settings:
+            debounce_min = self.config.get_int("worst_letter_notification_debounce_min", 5)
+            self.analyzer.worst_letter_debounce_ms = debounce_min * 60 * 1000
+
+        # Update daily summary settings
+        if "daily_summary_enabled" in new_settings:
+            self.notification_handler.daily_summary_enabled = self.config.get_bool(
+                "daily_summary_enabled", True
+            )
+
         if "__clear_database__" in new_settings:
             self.storage.clear_database()
             # Refresh statistics panel with empty data
@@ -289,8 +349,10 @@ class Application(QObject):
             self.signal_update_fastest_keys.emit([])
             self.signal_update_hardest_words.emit([])
             self.signal_update_fastest_words_stats.emit([])
-            self.signal_update_today_stats.emit(0, 0, 0)
+            self.signal_update_keystrokes_bursts.emit(0, 0)
+            self.signal_update_typing_time_display.emit(0, 0)
             self.signal_update_trend_data.emit([])
+            self.signal_update_typing_time_graph.emit([])
             QMessageBox.information(
                 None, "Data Cleared", "All typing data has been deleted."
             )
@@ -315,7 +377,7 @@ class Application(QObject):
         """Provide trend data to stats panel.
 
         Args:
-            window_size: Number of bursts to aggregate (1-50)
+            window_size: Number of bursts to aggregate (1-200)
         """
         import threading
 
@@ -325,6 +387,28 @@ class Application(QObject):
                 self.signal_update_trend_data.emit(data)
             except Exception as e:
                 log.error(f"Error fetching trend data: {e}")
+
+        # Fetch in background thread to avoid blocking UI
+        thread = threading.Thread(target=fetch_data, daemon=True)
+        thread.start()
+
+    def provide_typing_time_data(self, granularity: str) -> None:
+        """Provide typing time data to stats panel.
+
+        Args:
+            granularity: Time granularity ("day", "week", "month", "quarter")
+        """
+        import threading
+
+        def fetch_data():
+            try:
+                log.info(f"Fetching typing time data with granularity: {granularity}")
+                data = self.analyzer.get_typing_time_data(granularity=granularity)
+                log.info(f"Got {len(data)} data points, emitting signal")
+                self.signal_update_typing_time_graph.emit(data)
+                log.info("Signal emitted successfully")
+            except Exception as e:
+                log.error(f"Error fetching typing time data: {e}")
 
         # Fetch in background thread to avoid blocking UI
         thread = threading.Thread(target=fetch_data, daemon=True)
@@ -368,9 +452,14 @@ class Application(QObject):
     def update_statistics(self) -> None:
         """Update statistics display."""
         stats = self.analyzer.get_statistics()
+        long_term_avg = self.analyzer.get_long_term_average_wpm() or 0
+        all_time_best = self.analyzer.get_all_time_high_score() or 0
 
         self.signal_update_stats.emit(
-            stats["avg_wpm"], stats["burst_wpm"], stats["personal_best_today"] or 0, stats["avg_wpm"]
+            stats["burst_wpm"],
+            stats["personal_best_today"] or 0,
+            long_term_avg,
+            all_time_best,
         )
 
         slowest_keys = self.analyzer.get_slowest_keys(
@@ -395,9 +484,34 @@ class Application(QObject):
         )
         self.signal_update_fastest_words_stats.emit(fastest_words)
 
-        self.signal_update_today_stats.emit(
-            stats["total_keystrokes"], stats["total_bursts"], stats["total_typing_sec"]
+        # Update typing time display (today + all-time)
+        all_time_typing_sec = self.storage.get_all_time_typing_time()
+        self.signal_update_typing_time_display.emit(
+            stats["total_typing_sec"], all_time_typing_sec
         )
+
+        # Get worst letter and update display
+        slowest_keys = self.storage.get_slowest_keys(limit=1)
+        if slowest_keys:
+            worst = slowest_keys[0]
+            self.signal_update_worst_letter.emit(worst.key_name, worst.avg_press_time)
+
+            # Check for worst letter change
+            change = self.analyzer._check_worst_letter_change()
+            if change:
+                self.notification_handler.check_and_notify_worst_letter_change(change)
+
+        # Get worst word and update display
+        worst_words = self.storage.get_slowest_words(limit=1)
+        if worst_words:
+            worst_word = worst_words[0]
+            self.signal_update_worst_word.emit(worst_word)
+
+        # Update all-time keystrokes and bursts
+        all_time_keystrokes, all_time_bursts = (
+            self.storage.get_all_time_keystrokes_and_bursts()
+        )
+        self.signal_update_keystrokes_bursts.emit(all_time_keystrokes, all_time_bursts)
 
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""
@@ -420,10 +534,17 @@ class Application(QObject):
                 "exceptional_wpm_threshold", 120
             ),
             "notification_time_hour": self.config.get_int("notification_time_hour", 18),
+            "worst_letter_notifications_enabled": self.config.get_bool(
+                "worst_letter_notifications_enabled", False
+            ),
+            "worst_letter_notification_debounce_min": self.config.get_int(
+                "worst_letter_notification_debounce_min", 5
+            ),
             "slowest_keys_count": self.config.get_int("slowest_keys_count", 10),
             "data_retention_days": self.config.get_int("data_retention_days", -1),
             "dictionary_mode": self.config.get("dictionary_mode", "validate"),
             "enabled_languages": self.config.get("enabled_languages", "en,de"),
+            "enabled_dictionaries": self.config.get("enabled_dictionaries", ""),
             "custom_dict_paths": self.config.get("custom_dict_paths", ""),
         }
         dialog = SettingsDialog(current_settings)

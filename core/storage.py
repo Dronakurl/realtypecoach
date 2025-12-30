@@ -18,6 +18,7 @@ from core.models import (
     WordStatisticsLite,
     BurstTimeSeries,
     WordInfo,
+    TypingTimeDataPoint,
 )
 from utils.keycodes import is_letter_key
 from utils.config import Config
@@ -425,6 +426,56 @@ class Storage:
             )
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
+
+    def get_all_time_high_score(self) -> Optional[float]:
+        """Get all-time highest WPM.
+
+        Returns:
+            WPM or None if no bursts recorded
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT MAX(fastest_burst_wpm) FROM high_scores
+            """,
+            )
+            result = cursor.fetchone()
+            return result[0] if result and result[0] else None
+
+    def get_all_time_typing_time(self) -> int:
+        """Get all-time total typing time.
+
+        Returns:
+            Total typing time in seconds
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_typing_sec), 0) FROM daily_summaries
+            """,
+            )
+            result = cursor.fetchone()
+            return result[0] if result else 0
+
+    def get_all_time_keystrokes_and_bursts(self) -> tuple[int, int]:
+        """Get all-time total keystrokes and bursts.
+
+        Returns:
+            Tuple of (total_keystrokes, total_bursts) from daily_summaries table
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(total_keystrokes), 0),
+                       COALESCE(SUM(total_bursts), 0)
+                FROM daily_summaries
+            """,
+            )
+            result = cursor.fetchone()
+            return (result[0], result[1]) if result else (0, 0)
 
     def update_daily_summary(
         self,
@@ -1130,3 +1181,185 @@ class Storage:
             )
             rows = cursor.fetchall()
             return [BurstTimeSeries(timestamp_ms=r[0], avg_wpm=r[1]) for r in rows]
+
+    def get_typing_time_by_granularity(
+        self,
+        granularity: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        limit: int = 90,
+    ) -> List[TypingTimeDataPoint]:
+        """Get typing time aggregated by time granularity.
+
+        Args:
+            granularity: Time period granularity ("day", "week", "month", "quarter")
+            start_date: Optional start date (defaults to limit periods ago)
+            end_date: Optional end date (defaults to now)
+            limit: Maximum number of periods to return
+
+        Returns:
+            List of TypingTimeDataPoint models ordered by period_start
+        """
+        # Calculate date range
+        if end_date:
+            end_ms = int(
+                (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                * 1000
+            )
+        else:
+            end_ms = int(time.time() * 1000)
+
+        if start_date:
+            start_ms = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp() * 1000)
+        else:
+            # Default to showing limit periods
+            if granularity == "day":
+                start_ms = end_ms - (limit * 86400000)
+            elif granularity == "week":
+                start_ms = end_ms - (limit * 7 * 86400000)
+            elif granularity == "month":
+                start_ms = end_ms - (limit * 30 * 86400000)
+            elif granularity == "quarter":
+                start_ms = end_ms - (limit * 90 * 86400000)
+            else:
+                start_ms = end_ms - (limit * 86400000)
+
+        # Build query based on granularity
+        if granularity == "day":
+            # Extract start of day in milliseconds
+            group_by = "strftime('%Y-%m-%d', (start_time / 1000), 'unixepoch')"
+        elif granularity == "week":
+            # Extract start of week (Monday) in milliseconds
+            group_by = "strftime('%Y-%W', (start_time / 1000), 'unixepoch')"
+        elif granularity == "month":
+            # Extract start of month
+            group_by = "strftime('%Y-%m', (start_time / 1000), 'unixepoch')"
+        elif granularity == "quarter":
+            # Extract year and quarter
+            group_by = "strftime('%Y-', (start_time / 1000), 'unixepoch') || ((CAST(strftime('%m', (start_time / 1000), 'unixepoch') AS INTEGER) - 1) / 3 + 1)"
+        else:
+            log.warning(f"Unknown granularity: {granularity}, defaulting to day")
+            group_by = "strftime('%Y-%m-%d', (start_time / 1000), 'unixepoch')"
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT
+                    {group_by} AS period_key,
+                    MIN(start_time) AS period_start_ms,
+                    SUM(duration_ms) AS total_typing_ms,
+                    COUNT(*) AS total_bursts,
+                    AVG(avg_wpm) AS avg_wpm
+                FROM bursts
+                WHERE start_time >= ? AND start_time < ?
+                GROUP BY period_key
+                ORDER BY period_start_ms
+                LIMIT ?
+                """,
+                (start_ms, end_ms, limit),
+            )
+            rows = cursor.fetchall()
+
+            results = []
+            for r in rows:
+                period_key = r[0]
+                period_start_ms = int(r[1])
+                total_typing_ms = int(r[2])
+                total_bursts = int(r[3])
+                avg_wpm = float(r[4]) if r[4] else 0.0
+
+                # Calculate period end based on granularity
+                period_end_ms = self._calculate_period_end(period_start_ms, granularity)
+
+                # Format period label from period_key
+                if granularity == "day":
+                    period_label = period_key  # Already in YYYY-MM-DD format
+                elif granularity == "week":
+                    # period_key is YYYY-WW format
+                    year, week = period_key.split("-")
+                    period_label = f"{year}-W{week}"
+                elif granularity == "month":
+                    period_label = period_key  # Already in YYYY-MM format
+                elif granularity == "quarter":
+                    year, quarter = period_key.split("-")
+                    period_label = f"{year}-Q{quarter}"
+                else:
+                    period_label = period_key
+
+                results.append(
+                    TypingTimeDataPoint(
+                        period_start=period_start_ms,
+                        period_end=period_end_ms,
+                        period_label=period_label,
+                        total_typing_ms=total_typing_ms,
+                        total_bursts=total_bursts,
+                        avg_wpm=avg_wpm,
+                    )
+                )
+
+            return results
+
+    def _calculate_period_end(self, period_start_ms: int, granularity: str) -> int:
+        """Calculate the end timestamp for a period.
+
+        Args:
+            period_start_ms: Period start timestamp in milliseconds
+            granularity: Time period granularity
+
+        Returns:
+            Period end timestamp in milliseconds
+        """
+        start_dt = datetime.fromtimestamp(period_start_ms / 1000)
+
+        if granularity == "day":
+            end_dt = start_dt + timedelta(days=1)
+        elif granularity == "week":
+            end_dt = start_dt + timedelta(weeks=1)
+        elif granularity == "month":
+            # Add 1 month
+            if start_dt.month == 12:
+                end_dt = start_dt.replace(year=start_dt.year + 1, month=1)
+            else:
+                end_dt = start_dt.replace(month=start_dt.month + 1)
+        elif granularity == "quarter":
+            # Add 3 months
+            month = start_dt.month
+            year = start_dt.year
+            if month <= 9:
+                new_month = month + 3
+                new_year = year
+            else:
+                new_month = month - 9
+                new_year = year + 1
+            end_dt = start_dt.replace(year=new_year, month=new_month)
+        else:
+            end_dt = start_dt + timedelta(days=1)
+
+        return int(end_dt.timestamp() * 1000)
+
+    def _format_period_label(self, period_start_ms: int, granularity: str) -> str:
+        """Format period timestamp into human-readable label.
+
+        Args:
+            period_start_ms: Period start timestamp in milliseconds
+            granularity: Time period granularity
+
+        Returns:
+            Formatted period label
+        """
+        dt = datetime.fromtimestamp(period_start_ms / 1000)
+
+        if granularity == "day":
+            return dt.strftime("%Y-%m-%d")
+        elif granularity == "week":
+            # ISO week number
+            iso_week = dt.isocalendar()[1]
+            return f"{dt.year}-W{iso_week:02d}"
+        elif granularity == "month":
+            return dt.strftime("%Y-%m")
+        elif granularity == "quarter":
+            quarter = (dt.month - 1) // 3 + 1
+            return f"{dt.year}-Q{quarter}"
+        else:
+            return dt.strftime("%Y-%m-%d")
