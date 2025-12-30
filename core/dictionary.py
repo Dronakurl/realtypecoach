@@ -225,8 +225,12 @@ class Dictionary:
         # Check specific language if requested
         if language:
             if language in self.words:
-                return word_lower in self.words[language]
-            return False
+                # Found in specific language dictionary
+                if word_lower in self.words[language]:
+                    return True
+                # Not found in specific language, fall through to check all dictionaries
+                # This allows validation when the word exists in other loaded dictionaries
+            # Language not loaded or word not found, fall through to check all
 
         # Check all loaded dictionaries
         for word_set in self.words.values():
