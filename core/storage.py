@@ -2,7 +2,7 @@
 
 import csv
 import re
-import sqlite3
+import sqlcipher3 as sqlite3
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -22,6 +22,7 @@ from core.models import (
 )
 from utils.keycodes import is_letter_key
 from utils.config import Config
+from utils.crypto import CryptoManager
 
 log = logging.getLogger("realtypecoach.storage")
 
@@ -54,7 +55,14 @@ class Storage:
         self.db_path = db_path
         self.word_boundary_timeout_ms = word_boundary_timeout_ms
         self.config = config
-        self._init_database()
+
+        # Initialize crypto manager BEFORE _init_database()
+        self.crypto = CryptoManager(db_path)
+
+        # Check if this is a fresh database (no file exists)
+        is_fresh_install = not db_path.exists()
+
+        self._init_database(is_fresh_install)
 
         # Initialize dictionary with config (use default if not provided)
         dict_config = dictionary_config or DictionaryConfig()
@@ -66,17 +74,61 @@ class Storage:
         self._add_word_statistics_columns()
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Create a database connection with REGEXP function enabled."""
+        """Create a database connection with encryption and REGEXP function enabled."""
+        # Get encryption key from keyring
+        encryption_key = self.crypto.get_key()
+        if encryption_key is None:
+            raise RuntimeError(
+                "Database encryption key not found in keyring. "
+                "This may indicate a corrupted installation or data migration issue."
+            )
+
+        # Connect with SQLCipher
         conn = sqlite3.connect(self.db_path)
 
+        # Set encryption key (must be done IMMEDIATELY after connection)
+        # SQLCipher requires quotes around the hex literal
+        conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
+
+        # Verify database is accessible (wrong key will cause error)
+        try:
+            conn.execute("SELECT count(*) FROM sqlite_master")
+        except sqlite3.DatabaseError as e:
+            conn.close()
+            raise RuntimeError(
+                f"Cannot decrypt database. Wrong encryption key or corrupted database. "
+                f"Error: {e}"
+            )
+
+        # Set encryption parameters
+        conn.execute("PRAGMA cipher_memory_security = ON")
+        conn.execute("PRAGMA cipher_page_size = 4096")
+        conn.execute("PRAGMA cipher_kdf_iter = 256000")
+
+        # Enable REGEXP function
         def regexp(expr, item):
             return re.search(expr, item) is not None if item else False
 
         conn.create_function("REGEXP", 2, regexp)
         return conn
 
-    def _init_database(self) -> None:
-        """Create all database tables if they don't exist."""
+    def _init_database(self, is_fresh_install: bool = False) -> None:
+        """Create all database tables if they don't exist.
+
+        Args:
+            is_fresh_install: True if this is a new database creation
+        """
+        # For fresh install, generate encryption key first
+        if is_fresh_install:
+            try:
+                self.crypto.initialize_database_key()
+                log.info("Generated new encryption key for database")
+            except RuntimeError as e:
+                # If key already exists, that's fine - user is doing a reinstall
+                if "already exists" not in str(e):
+                    raise
+                log.info("Using existing encryption key from keyring")
+
         with self._get_connection() as conn:
             self._create_key_events_table(conn)
             self._create_bursts_table(conn)
