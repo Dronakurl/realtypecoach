@@ -3,7 +3,7 @@
 import pyqtgraph as pg
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider
 from PySide6.QtCore import Qt, QTimer
-from pyqtgraph import PlotWidget
+from pyqtgraph import GraphicsLayoutWidget
 from typing import List, Callable, Optional
 
 
@@ -23,25 +23,28 @@ class WPMTimeSeriesGraph(QWidget):
     def init_ui(self) -> None:
         """Initialize user interface."""
         layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
 
         # Title
         title = QLabel("📈 WPM over Bursts")
         title.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(title)
 
-        # PyQtGraph plot widget
-        self.plot_widget = PlotWidget()
-        # Let Qt theme handle background/foreground colors
-        self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.setLabel("left", "WPM")
-        self.plot_widget.setLabel("bottom", "Burst Number")
-        self.plot_widget.showButtons()  # Show auto-range buttons
+        # PyQtGraph GraphicsLayoutWidget for plot
+        self.plot_widget = GraphicsLayoutWidget()
 
-        # Add padding to prevent cut-off at top
-        self.plot_widget.getViewBox().setContentsMargins(10, 20, 10, 10)
+        # Create plot
+        self.plot = self.plot_widget.addPlot(row=0, col=0)
+        self.plot.setLabel("left", "WPM")
+        self.plot.setLabel("bottom", "Burst Number")
+        self.plot.showGrid(x=True, y=True, alpha=0.3)
+        self.plot.showButtons()
+
+        # Enable auto-range for both axes
+        self.plot.enableAutoRange()
 
         # Create plot item with line and markers
-        self.plot_item = self.plot_widget.plot(
+        self.plot_item = self.plot.plot(
             pen=pg.mkPen(color=(50, 150, 200), width=2), symbol="o", symbolSize=5
         )
 
@@ -123,6 +126,9 @@ class WPMTimeSeriesGraph(QWidget):
 
         # Update plot data
         self.plot_item.setData(burst_numbers, wpm_values)
+
+        # Enable auto-range with padding after data update
+        self.plot.enableAutoRange(axis='xy', enable=True)
 
         # Update info label
         self.info_label.setText(f"Showing: {len(wpm_values)} data points")
