@@ -1,12 +1,12 @@
 """Tests for Storage class."""
 
 import pytest
-import sqlite3
 import tempfile
 from pathlib import Path
 
 from core.storage import Storage
 from utils.config import Config
+from utils.crypto import CryptoManager
 
 
 @pytest.fixture
@@ -21,6 +21,11 @@ def temp_db():
 @pytest.fixture
 def storage(temp_db):
     """Create storage with temporary database."""
+    # Initialize encryption key first
+    crypto = CryptoManager(temp_db)
+    if not crypto.key_exists():
+        crypto.initialize_database_key()
+
     config = Config(temp_db)
     return Storage(temp_db, config=config)
 
@@ -31,7 +36,7 @@ class TestStorage:
     def test_init_database(self, storage):
         """Test database initialization."""
         # Check that tables exist
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cursor.fetchall()]
@@ -47,7 +52,7 @@ class TestStorage:
         """Test storing key events."""
         storage.store_key_event(30, "KEY_A", 1234567890)
 
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM key_events")
             count = cursor.fetchone()[0]
@@ -58,7 +63,7 @@ class TestStorage:
         """Test storing bursts."""
         storage.store_burst(1234567890, 1234568890, 50, 5000, 60.0, True)
 
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM bursts")
             count = cursor.fetchone()[0]
@@ -88,7 +93,7 @@ class TestStorage:
             total_typing_sec,
         )
 
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT total_typing_sec FROM daily_summaries WHERE date = ?", (date,)

@@ -9,6 +9,7 @@ from core.storage import Storage
 from core.analyzer import Analyzer
 from core.burst_detector import Burst
 from utils.config import Config
+from utils.crypto import CryptoManager
 
 
 def get_today_timestamp_ms(offset_seconds=0):
@@ -28,6 +29,11 @@ def temp_db():
 @pytest.fixture
 def storage(temp_db):
     """Create storage with temporary database."""
+    # Initialize encryption key first
+    crypto = CryptoManager(temp_db)
+    if not crypto.key_exists():
+        crypto.initialize_database_key()
+
     config = Config(temp_db)
     return Storage(temp_db, config=config)
 

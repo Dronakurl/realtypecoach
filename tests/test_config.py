@@ -2,10 +2,10 @@
 
 import pytest
 import tempfile
-import sqlite3
 from pathlib import Path
 
 from utils.config import Config, AppSettings
+from utils.crypto import CryptoManager
 
 
 @pytest.fixture
@@ -20,6 +20,10 @@ def temp_db():
 @pytest.fixture
 def config(temp_db):
     """Create Config instance with temporary database."""
+    # Initialize encryption key first
+    crypto = CryptoManager(temp_db)
+    if not crypto.key_exists():
+        crypto.initialize_database_key()
     return Config(temp_db)
 
 
@@ -28,7 +32,7 @@ class TestConfigInit:
 
     def test_config_initialization_creates_settings_table(self, config):
         """Test that settings table is created on initialization."""
-        with sqlite3.connect(config.db_path) as conn:
+        with config._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='settings'"
@@ -38,7 +42,7 @@ class TestConfigInit:
 
     def test_config_initialization_inserts_default_settings(self, config):
         """Test that all default settings are inserted."""
-        with sqlite3.connect(config.db_path) as conn:
+        with config._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM settings")
             count = cursor.fetchone()[0]
@@ -81,7 +85,7 @@ class TestConfigGet:
     def test_get_nonexistent_key_returns_default_from_defaults(self, config):
         """Test that nonexistent key returns value from AppSettings."""
         # Delete a key
-        with sqlite3.connect(config.db_path) as conn:
+        with config._get_connection() as conn:
             conn.execute("DELETE FROM settings WHERE key = 'min_burst_key_count'")
 
         # get() returns from AppSettings default (typed as int)
@@ -131,7 +135,7 @@ class TestConfigTypeGetters:
     def test_get_int_uses_default_setting_fallback(self, config):
         """Test get_int falls back to AppSettings defaults."""
         # Remove from database
-        with sqlite3.connect(config.db_path) as conn:
+        with config._get_connection() as conn:
             conn.execute("DELETE FROM settings WHERE key = 'slowest_keys_count'")
 
         value = config.get_int("slowest_keys_count")
@@ -235,7 +239,7 @@ class TestConfigSet:
     def test_set_converts_int_to_string(self, config):
         """Test that set() converts int to string."""
         config.set("test_int", 12345)
-        with sqlite3.connect(config.db_path) as conn:
+        with config._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM settings WHERE key = 'test_int'")
             result = cursor.fetchone()
@@ -244,7 +248,7 @@ class TestConfigSet:
     def test_set_converts_bool_to_string(self, config):
         """Test that set() converts bool to string."""
         config.set("test_bool", True)
-        with sqlite3.connect(config.db_path) as conn:
+        with config._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM settings WHERE key = 'test_bool'")
             result = cursor.fetchone()
@@ -253,7 +257,7 @@ class TestConfigSet:
     def test_set_converts_float_to_string(self, config):
         """Test that set() converts float to string."""
         config.set("test_float", 3.14159)
-        with sqlite3.connect(config.db_path) as conn:
+        with config._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM settings WHERE key = 'test_float'")
             result = cursor.fetchone()

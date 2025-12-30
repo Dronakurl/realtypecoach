@@ -10,6 +10,7 @@ from core.notification_handler import NotificationHandler
 from core.models import DailySummary, DailySummaryDB
 from core.storage import Storage
 from utils.config import Config
+from utils.crypto import CryptoManager
 
 
 @pytest.fixture
@@ -24,6 +25,11 @@ def temp_db():
 @pytest.fixture
 def storage(temp_db):
     """Create storage for notification handler."""
+    # Initialize encryption key first
+    crypto = CryptoManager(temp_db)
+    if not crypto.key_exists():
+        crypto.initialize_database_key()
+
     config = Config(temp_db)
     return Storage(temp_db, config=config)
 

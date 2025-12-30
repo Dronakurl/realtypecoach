@@ -1,7 +1,6 @@
 """Tests for word detection with backspace editing and dictionary validation."""
 
 import pytest
-import sqlite3
 import tempfile
 from pathlib import Path
 import time
@@ -11,6 +10,7 @@ from core.dictionary import Dictionary
 from core.dictionary_config import DictionaryConfig
 from core.storage import Storage
 from utils.config import Config
+from utils.crypto import CryptoManager
 
 
 @pytest.fixture
@@ -25,6 +25,11 @@ def temp_db():
 @pytest.fixture
 def storage_with_dict(temp_db):
     """Create storage with dictionary validation."""
+    # Initialize encryption key first
+    crypto = CryptoManager(temp_db)
+    if not crypto.key_exists():
+        crypto.initialize_database_key()
+
     config = Config(temp_db)
     dict_config = DictionaryConfig(
         enabled_languages=["en", "de"], accept_all_mode=False
@@ -253,7 +258,7 @@ class TestWordStorageWithDictionary:
         )
         assert processed == 6
 
-        with sqlite3.connect(storage_with_dict.db_path) as conn:
+        with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT word, backspace_count, editing_time_ms FROM word_statistics WHERE word = ?",
@@ -286,7 +291,7 @@ class TestWordStorageWithDictionary:
         )
         assert processed == 4
 
-        with sqlite3.connect(storage_with_dict.db_path) as conn:
+        with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT COUNT(*) FROM word_statistics WHERE word = ?", ("xyz",)
@@ -322,7 +327,7 @@ class TestWordStorageWithDictionary:
         )
         assert processed == 12
 
-        with sqlite3.connect(storage_with_dict.db_path) as conn:
+        with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT word, backspace_count, editing_time_ms, total_duration_ms FROM word_statistics WHERE word = ?",
@@ -364,7 +369,7 @@ class TestWordStorageWithDictionary:
         )
         assert processed == 12
 
-        with sqlite3.connect(storage_with_dict.db_path) as conn:
+        with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT word FROM word_statistics ORDER BY word")
             words = [row[0] for row in cursor.fetchall()]
@@ -399,7 +404,7 @@ class TestWordStorageWithDictionary:
         )
         assert processed == 12
 
-        with sqlite3.connect(storage_with_dict.db_path) as conn:
+        with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT word FROM word_statistics")
             words = [row[0] for row in cursor.fetchall()]

@@ -1,12 +1,12 @@
 """Tests for word statistics functionality (updated for dictionary validation)."""
 
 import pytest
-import sqlite3
 import tempfile
 from pathlib import Path
 
 from core.storage import Storage
 from utils.config import Config
+from utils.crypto import CryptoManager
 
 
 @pytest.fixture
@@ -21,6 +21,11 @@ def temp_db():
 @pytest.fixture
 def storage(temp_db):
     """Create storage with temporary database."""
+    # Initialize encryption key first
+    crypto = CryptoManager(temp_db)
+    if not crypto.key_exists():
+        crypto.initialize_database_key()
+
     config = Config(temp_db)
     return Storage(temp_db, config=config)
 
@@ -30,7 +35,7 @@ class TestWordStatistics:
 
     def test_word_statistics_table_created(self, storage):
         """Test that word_statistics table is created."""
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='word_statistics'"
@@ -41,7 +46,7 @@ class TestWordStatistics:
 
     def test_new_columns_exist(self, storage):
         """Test that new columns were added to word_statistics table."""
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(word_statistics)")
             columns = {row[1] for row in cursor.fetchall()}
@@ -53,7 +58,7 @@ class TestWordStatistics:
         """Test adding a new word to statistics."""
         storage.update_word_statistics("hello", "us", 500, 5)
 
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT * FROM word_statistics WHERE word = ? AND layout = ?",
@@ -88,7 +93,7 @@ class TestWordStatistics:
             "shoes", "us", 550, 5, backspace_count=2, editing_time_ms=100
         )
 
-        with sqlite3.connect(storage.db_path) as conn:
+        with storage._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT * FROM word_statistics WHERE word = ? AND layout = ?",
