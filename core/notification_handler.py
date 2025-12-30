@@ -1,6 +1,6 @@
 """Notification handler for daily summaries and exceptional bursts."""
 
-import sqlite3
+import sqlcipher3 as sqlite3
 import time
 import threading
 import logging
@@ -142,7 +142,7 @@ class NotificationHandler(QObject):
             return
 
         try:
-            with sqlite3.connect(self.storage.db_path) as conn:
+            with self.storage._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Get bursts from the configured lookback period
