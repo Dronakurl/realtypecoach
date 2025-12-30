@@ -116,9 +116,10 @@ class Application(QObject):
         print(f"Data directory: {DATA_DIR}")
         print(f"Database: {self.db_path}")
 
-        # Delete old unencrypted database if it exists
+        # Backup old unencrypted/undecryptable database if it exists
         if self.db_path.exists():
             import sqlcipher3 as sqlite3
+            import uuid
             crypto = CryptoManager(self.db_path)
 
             # Check if database is actually encrypted
@@ -136,18 +137,19 @@ class Application(QObject):
                     # If opening with encryption fails, it's not an encrypted DB
                     is_encrypted = False
 
-            # If database exists but is not encrypted, delete it
+            # If database exists but cannot be decrypted, backup and create new
             if not is_encrypted:
-                log.info("Old unencrypted database detected, deleting...")
+                backup_path = self.db_path.with_suffix(f'.db.{uuid.uuid4()}.backup')
+                log.info(f"Old undecryptable database detected, backing up to {backup_path.name}")
                 try:
-                    self.db_path.unlink()
-                    log.info("Deleted old unencrypted database")
+                    self.db_path.rename(backup_path)
+                    log.info(f"Backed up old database to {backup_path}")
                 except Exception as e:
-                    log.error(f"Failed to delete old database: {e}")
+                    log.error(f"Failed to backup old database: {e}")
                     QMessageBox.critical(
                         None,
                         "Initialization Failed",
-                        f"Failed to remove old unencrypted database:\n{e}",
+                        f"Failed to backup old database:\n{e}",
                     )
                     sys.exit(1)
 
