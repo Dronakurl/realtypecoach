@@ -1,19 +1,19 @@
 """System tray icon for RealTypeCoach."""
 
-from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication, QDialog
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import pyqtSignal, QTimer
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+from PySide6.QtGui import QIcon, QAction
+from PySide6.QtCore import Signal, QTimer
 from pathlib import Path
 
 from ui.stats_panel import StatsPanel
-from ui.settings_dialog import SettingsDialog
 
 
 class TrayIcon(QSystemTrayIcon):
     """System tray icon for RealTypeCoach."""
 
-    settings_changed = pyqtSignal(dict)
-    stats_requested = pyqtSignal()  # Emitted when stats panel is requested
+    settings_changed = Signal(dict)
+    settings_requested = Signal()  # Emitted when settings dialog is requested
+    stats_requested = Signal()  # Emitted when stats panel is requested
 
     def __init__(
         self,
@@ -58,17 +58,15 @@ class TrayIcon(QSystemTrayIcon):
         show_stats_action.triggered.connect(self.show_stats)
         menu.addAction(show_stats_action)
 
+        settings_action = QAction("⚙️ Settings", self)
+        settings_action.triggered.connect(self.show_settings_dialog)
+        menu.addAction(settings_action)
+
         menu.addSeparator()
 
         self.pause_action = QAction("⏸ Pause Monitoring", self)
         self.pause_action.triggered.connect(self.toggle_monitoring)
         menu.addAction(self.pause_action)
-
-        menu.addSeparator()
-
-        settings_action = QAction("⚙️ Settings", self)
-        settings_action.triggered.connect(self.show_settings_dialog)
-        menu.addAction(settings_action)
 
         menu.addSeparator()
 
@@ -132,11 +130,8 @@ class TrayIcon(QSystemTrayIcon):
             sys.exit(0)
 
     def show_settings_dialog(self) -> None:
-        """Show settings dialog."""
-        dialog = SettingsDialog({})
-        if dialog.exec_() == QDialog.Accepted:
-            new_settings = dialog.get_settings()
-            self.settings_changed.emit(new_settings)
+        """Request settings dialog to be shown."""
+        self.settings_requested.emit()
 
     def show_notification(
         self, title: str, message: str, message_type: str = "info"

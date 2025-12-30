@@ -225,6 +225,7 @@ class Application(QObject):
         self.signal_update_worst_letter.connect(self.stats_panel.update_worst_letter)
 
         self.tray_icon.settings_changed.connect(self.apply_settings)
+        self.tray_icon.settings_requested.connect(self.show_settings_dialog)
         self.tray_icon.stats_requested.connect(self.update_statistics)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
@@ -311,6 +312,9 @@ class Application(QObject):
         """Apply new settings."""
         # Special keys that should not be saved to config
         special_keys = {"__clear_database__", "export_csv_path"}
+
+        if "enabled_dictionaries" in new_settings:
+            log.info(f"Saving enabled_dictionaries: {new_settings['enabled_dictionaries']!r}")
 
         for key, value in new_settings.items():
             if key not in special_keys:
@@ -515,6 +519,8 @@ class Application(QObject):
 
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""
+        enabled_dicts_value = self.config.get("enabled_dictionaries", "")
+        log.info(f"show_settings_dialog: loaded enabled_dictionaries from config: {enabled_dicts_value!r}")
         current_settings = {
             "burst_timeout_ms": self.config.get_int("burst_timeout_ms", 1000),
             "burst_duration_calculation": self.config.get(
@@ -544,7 +550,7 @@ class Application(QObject):
             "data_retention_days": self.config.get_int("data_retention_days", -1),
             "dictionary_mode": self.config.get("dictionary_mode", "validate"),
             "enabled_languages": self.config.get("enabled_languages", "en,de"),
-            "enabled_dictionaries": self.config.get("enabled_dictionaries", ""),
+            "enabled_dictionaries": enabled_dicts_value,
             "custom_dict_paths": self.config.get("custom_dict_paths", ""),
         }
         dialog = SettingsDialog(current_settings)

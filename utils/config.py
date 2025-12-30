@@ -89,6 +89,12 @@ class AppSettings(BaseModel):
     notification_threshold_update_sec: int = Field(
         default=300, ge=60, description="Update interval for notification (sec)"
     )
+    worst_letter_notifications_enabled: bool = Field(
+        default=True, description="Enable worst letter change notifications"
+    )
+    worst_letter_notification_debounce_min: int = Field(
+        default=5, ge=1, le=60, description="Debounce time for worst letter notifications (minutes)"
+    )
 
     # Dictionary settings
     dictionary_mode: str = Field(
