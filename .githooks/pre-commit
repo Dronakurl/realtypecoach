@@ -1,0 +1,24 @@
+#!/bin/bash
+# Pre-commit hook to prevent large files from being committed
+
+MAX_FILE_SIZE_MB=5
+MAX_FILE_SIZE_BYTES=$((MAX_FILE_SIZE_MB * 1024 * 1024))
+
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# Check each staged file
+for FILE in $STAGED_FILES; do
+    if [ -f "$FILE" ]; then
+        FILE_SIZE=$(stat -f%z "$FILE" 2>/dev/null || stat -c%s "$FILE" 2>/dev/null)
+        
+        if [ "$FILE_SIZE" -gt "$MAX_FILE_SIZE_BYTES" ]; then
+            FILE_SIZE_MB=$(echo "scale=2; $FILE_SIZE / (1024 * 1024)" | bc)
+            echo "Error: File '$FILE' is ${FILE_SIZE_MB}MB, which exceeds the limit of ${MAX_FILE_SIZE_MB}MB."
+            echo "Please remove this file from the commit or add it to .gitignore."
+            exit 1
+        fi
+    fi
+done
+
+exit 0
