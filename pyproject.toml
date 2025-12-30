@@ -10,6 +10,8 @@ dependencies = [
     "pandas",
     "matplotlib",
     "evdev",
+    "sqlcipher3-binary",
+    "keyring",
 ]
 
 [build-system]
