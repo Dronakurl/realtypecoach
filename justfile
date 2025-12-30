@@ -1,10 +1,15 @@
 # RealTypeCoach Development Commands
 
 # Running
-# Run the application
+# Sync dependencies and run the application
 run:
+    @just sync-deps
     @bash ./kill.sh 2>/dev/null || true
-    @python3 main.py
+    @.venv/bin/python3 main.py
+
+# Install/sync dependencies from pyproject.toml
+sync-deps:
+    bash -c 'if [ ! -d ".venv" ]; then python3 -m venv .venv; fi && .venv/bin/python3 -m pip install -e .'
 
 # Run and show first 50 lines
 watch:
@@ -58,17 +63,17 @@ reset:
 # Testing
 # Run all Python tests
 test-all:
-    @python3 -m pytest tests/ -v
+    @.venv/bin/python3 -m pytest tests/ -v
 
 # Test Python module imports
 test-imports:
-    @python3 -c 'import sys; sys.path.insert(0, "."); \
+    @.venv/bin/python3 -c 'import sys; sys.path.insert(0, "."); \
         from core.storage import Storage; \
         from core.burst_detector import BurstDetector; \
         from core.analyzer import Analyzer; \
         from utils.config import Config; \
         from utils.keycodes import get_key_name; \
-        from PyQt5.QtWidgets import QApplication; \
+        from PySide6.QtWidgets import QApplication; \
         print("✓ All imports successful")'
 
 # Diagnostic: Test keyboard event capture

@@ -1,8 +1,8 @@
 """WPM burst sequence graph widget for RealTypeCoach."""
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider
-from PyQt5.QtCore import Qt, QTimer
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider
+from PySide6.QtCore import Qt, QTimer
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 from typing import List, Callable, Optional
 
@@ -24,7 +24,7 @@ class WPMTimeSeriesGraph(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.data: List[float] = []
-        self.current_window_size = 10
+        self.current_window_size = 10  # Default 10-burst average
         self._data_callback: Optional[Callable[[int], None]] = None
         self._update_timer: Optional[QTimer] = None
 
@@ -55,15 +55,15 @@ class WPMTimeSeriesGraph(QWidget):
         slider_control_layout = QHBoxLayout()
 
         left_label = QLabel("Per Burst")
-        left_label.setStyleSheet("font-size: 11px; color: #666;")
+        left_label.setStyleSheet("font-size: 11px; color: palette(text);")
 
         self.resolution_slider = QSlider(Qt.Horizontal)
         self.resolution_slider.setRange(0, 100)
-        self.resolution_slider.setValue(20)  # Default to ~10 burst average
+        self.resolution_slider.setValue(5)  # Default to ~10 burst average
         self.resolution_slider.valueChanged.connect(self.on_resolution_changed)
 
-        right_label = QLabel("50-Burst Avg")
-        right_label.setStyleSheet("font-size: 11px; color: #666;")
+        right_label = QLabel("200-Burst Avg")
+        right_label.setStyleSheet("font-size: 11px; color: palette(text);")
 
         slider_control_layout.addWidget(left_label)
         slider_control_layout.addWidget(self.resolution_slider, 1)
@@ -90,8 +90,8 @@ class WPMTimeSeriesGraph(QWidget):
 
     def _update_resolution(self, value: int) -> None:
         """Update graph with new window size."""
-        # Map slider value (0-100) to window size (1-50)
-        window_size = max(1, int((value / 100) * 50))
+        # Map slider value (0-100) to window size (1-200)
+        window_size = max(1, int((value / 100) * 200))
 
         self.current_window_size = window_size
 
@@ -148,8 +148,10 @@ class WPMTimeSeriesGraph(QWidget):
         ax.set_ylabel("WPM", fontsize=10)
         ax.grid(True, alpha=0.3, linestyle="--")
 
-        # Adjust layout
-        self.figure.tight_layout()
+        # Adjust layout with margins to prevent cutoff
+        self.figure.subplots_adjust(
+            left=0.12, right=0.95, top=0.92, bottom=0.15
+        )
 
         # Redraw canvas
         self.canvas.draw()

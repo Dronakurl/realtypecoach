@@ -7,7 +7,7 @@ import logging
 from typing import Callable, Optional
 from datetime import datetime, timedelta
 
-from PyQt5.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 from core.models import DailySummary
 
@@ -18,8 +18,9 @@ log = logging.getLogger("realtypecoach.notification")
 class NotificationHandler(QObject):
     """Handles notifications for bursts and daily summaries."""
 
-    signal_daily_summary = pyqtSignal(object)  # DailySummary object
-    signal_exceptional_burst = pyqtSignal(float)
+    signal_daily_summary = Signal(object)  # DailySummary object
+    signal_exceptional_burst = Signal(float)
+    signal_worst_letter_changed = Signal(object)  # WorstLetterChange object
 
     def __init__(
         self,
@@ -58,6 +59,12 @@ class NotificationHandler(QObject):
         self.percentile_95_threshold = 60.0  # Default starting threshold
         self.last_threshold_update = 0
         self._lock = threading.Lock()
+
+        # Worst letter notification config
+        self.worst_letter_notifications_enabled = True
+
+        # Daily summary config
+        self.daily_summary_enabled = True
 
     def start(self) -> None:
         """Start notification scheduler."""
@@ -113,6 +120,21 @@ class NotificationHandler(QObject):
                 return
 
         self.signal_exceptional_burst.emit(wpm)
+
+    def check_and_notify_worst_letter_change(
+        self, change: "WorstLetterChange"
+    ) -> None:
+        """Check if worst letter notification should be sent and emit signal.
+
+        Args:
+            change: WorstLetterChange object with change data
+        """
+        from core.models import WorstLetterChange
+
+        if not self.worst_letter_notifications_enabled:
+            return
+
+        self.signal_worst_letter_changed.emit(change)
 
     def _update_threshold(self) -> None:
         """Update the 95th percentile threshold from burst history."""
@@ -172,7 +194,8 @@ class NotificationHandler(QObject):
             now = datetime.now()
 
             if (
-                now.hour == self.notification_hour
+                self.daily_summary_enabled
+                and now.hour == self.notification_hour
                 and now.minute == self.notification_minute
             ):
                 self._send_daily_summary(now.strftime("%Y-%m-%d"))

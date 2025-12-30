@@ -68,48 +68,38 @@ fi
 print_status "OK" "Python version is 3.10+"
 
 echo ""
-echo "Step 2: Checking required Python packages..."
-echo "--------------------------------------------"
+echo "Step 2: Setting up virtual environment..."
+echo "------------------------------------------"
 
-# Check PyQt5
-if python_package_exists PyQt5; then
-    print_status "OK" "PyQt5 is installed"
+# Create virtual environment if not exists
+if [ -d ".venv" ]; then
+    print_status "OK" "Virtual environment already exists"
 else
-    print_status "FAIL" "PyQt5 is not installed"
-    echo ""
-    echo "To install PyQt5, run:"
-    echo "  sudo apt install python3-pyqt5"
-    echo "  sudo dnf install python3-qt5"
-    echo "  sudo pacman -S python-pyqt5"
-    exit 1
+    echo "Creating virtual environment..."
+    python3 -m venv .venv
+    print_status "OK" "Virtual environment created"
 fi
 
-# Check PyQt5.QtSvg
-if python_package_exists PyQt5.QtSvg; then
-    print_status "OK" "PyQt5.QtSvg is installed"
-else
-    print_status "FAIL" "PyQt5.QtSvg is not installed"
-    echo ""
-    echo "To install PyQt5.QtSvg, run:"
-    echo "  sudo apt install python3-pyqt5.qtsvg"
-    echo "  sudo dnf install python3-qt5"
-    echo "  sudo pacman -S python-pyqt5"
-    exit 1
+# Install dependencies from pyproject.toml
+echo "Installing dependencies..."
+.venv/bin/pip install -e .
+
+# Verify installation
+if .venv/bin/python3 -c "import PySide6" 2>/dev/null; then
+    PYSIDE6_VERSION=$(.venv/bin/python3 -c "import PySide6; print(PySide6.__version__)")
+    print_status "OK" "PySide6 $PYSIDE6_VERSION installed"
 fi
 
-# Check evdev
-if python_package_exists evdev; then
-    print_status "OK" "evdev is installed"
-else
-    print_status "FAIL" "evdev is not installed"
-    echo ""
-    echo "To install evdev, run:"
-    echo "  pip install evdev --user"
-    exit 1
+if .venv/bin/python3 -c "import pandas" 2>/dev/null; then
+    print_status "OK" "pandas installed"
+fi
+
+if .venv/bin/python3 -c "import matplotlib" 2>/dev/null; then
+    print_status "OK" "matplotlib installed"
 fi
 
 echo ""
-echo "Step 3: Creating data directory..."
+echo "Step 4: Creating data directory..."
 echo "-----------------------------------"
 
 INSTALL_DIR="$HOME/.local/share/realtypecoach"
@@ -117,7 +107,7 @@ mkdir -p "$INSTALL_DIR"
 print_status "OK" "Data directory created: $INSTALL_DIR"
 
 echo ""
-echo "Step 4: Copying application files..."
+echo "Step 6: Copying application files..."
 echo "------------------------------------"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -131,31 +121,42 @@ cp -r "$SCRIPT_DIR"/tests "$INSTALL_DIR/"
 print_status "OK" "Application files copied to: $INSTALL_DIR"
 
 echo ""
-echo "Step 5: Generating icons..."
+echo "Step 7: Generating icons..."
 echo "---------------------------"
 
-python3 -c "from utils.icon_generator import save_icon; save_icon('$INSTALL_DIR/icon.svg', active=True)"
-python3 -c "from utils.icon_generator import save_icon; save_icon('$INSTALL_DIR/icon_paused.svg', active=False)"
-python3 -c "from utils.icon_generator import save_icon; save_icon('$INSTALL_DIR/icon_stopping.svg', stopping=True)"
+.venv/bin/python3 -c "from utils.icon_generator import save_icon; save_icon('$INSTALL_DIR/icon.svg', active=True)"
+.venv/bin/python3 -c "from utils.icon_generator import save_icon; save_icon('$INSTALL_DIR/icon_paused.svg', active=False)"
+.venv/bin/python3 -c "from utils.icon_generator import save_icon; save_icon('$INSTALL_DIR/icon_stopping.svg', stopping=True)"
 print_status "OK" "Icons generated"
 
 echo ""
-echo "Step 6: Installing to system..."
+echo "Step 8: Installing to system..."
 echo "-------------------------------"
 
 BIN_DIR="$HOME/.local/bin"
 APPLICATIONS_DIR="$HOME/.local/share/applications"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Create production virtual environment at install location
+echo "Creating production virtual environment..."
+python3 -m venv "$INSTALL_DIR/.venv"
+print_status "OK" "Virtual environment created at: $INSTALL_DIR/.venv"
+
+# Install dependencies in production venv
+echo "Installing dependencies..."
+"$INSTALL_DIR/.venv/bin/pip" install -e "$SCRIPT_DIR" --quiet
+print_status "OK" "Dependencies installed"
+
 # Create wrapper script
 mkdir -p "$BIN_DIR"
-cat > "$BIN_DIR/realtypecoach" << EOF
-#!/usr/bin/env python3
-import sys
-sys.path.insert(0, '$INSTALL_DIR')
-from main import main
-if __name__ == '__main__':
-    main()
+cat > "$BIN_DIR/realtypecoach" << 'EOF'
+#!/usr/bin/env bash
+INSTALL_DIR="$HOME/.local/share/realtypecoach"
+if [ -d "$INSTALL_DIR/.venv/bin" ]; then
+    exec "$INSTALL_DIR/.venv/bin/python3" "$INSTALL_DIR/main.py" "$@"
+else
+    exec python3 "$INSTALL_DIR/main.py" "$@"
+fi
 EOF
 
 chmod +x "$BIN_DIR/realtypecoach"
