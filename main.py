@@ -329,10 +329,14 @@ class Application(QObject):
         Args:
             summary: DailySummary pydantic model with notification data
         """
+        if not self.tray_icon.monitoring_active:
+            return
         self.tray_icon.show_notification(summary.title, summary.message, "info")
 
     def show_exceptional_notification(self, wpm: float) -> None:
         """Show exceptional burst notification."""
+        if not self.tray_icon.monitoring_active:
+            return
         self.tray_icon.show_notification(
             "🚀 Exceptional Typing Speed!",
             f"{wpm:.1f} WPM - New personal best!",
@@ -345,6 +349,8 @@ class Application(QObject):
         Args:
             change: WorstLetterChange pydantic model
         """
+        if not self.tray_icon.monitoring_active:
+            return
 
         if change.improvement:
             message = (

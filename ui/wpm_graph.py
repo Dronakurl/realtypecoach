@@ -128,7 +128,7 @@ class WPMTimeSeriesGraph(QWidget):
         self.plot_item.setData(burst_numbers, wpm_values)
 
         # Enable auto-range with padding after data update
-        self.plot.enableAutoRange(axis='xy', enable=True)
+        self.plot.enableAutoRange(axis="xy", enable=True)
 
         # Update info label
         self.info_label.setText(f"Showing: {len(wpm_values)} data points")

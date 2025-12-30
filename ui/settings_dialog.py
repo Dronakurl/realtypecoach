@@ -251,7 +251,9 @@ class SettingsDialog(QDialog):
 
         notification_tab = self.create_notification_tab()
         tabs.addTab(notification_tab, "Notifications")
-        tabs.setTabIcon(1, self._create_palette_aware_icon("preferences-desktop-notification"))
+        tabs.setTabIcon(
+            1, self._create_palette_aware_icon("preferences-desktop-notification")
+        )
 
         data_tab = self.create_data_tab()
         tabs.addTab(data_tab, "Data")
