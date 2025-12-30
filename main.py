@@ -48,6 +48,7 @@ from core.analyzer import Analyzer  # noqa: E402
 from core.notification_handler import NotificationHandler  # noqa: E402
 from utils.keyboard_detector import LayoutMonitor, get_current_layout  # noqa: E402
 from utils.config import Config  # noqa: E402
+from utils.crypto import CryptoManager  # noqa: E402
 from ui.stats_panel import StatsPanel  # noqa: E402
 from ui.tray_icon import TrayIcon  # noqa: E402
 from ui.settings_dialog import SettingsDialog  # noqa: E402
@@ -115,9 +116,55 @@ class Application(QObject):
         print(f"Data directory: {DATA_DIR}")
         print(f"Database: {self.db_path}")
 
+        # Delete old unencrypted database if it exists
+        if self.db_path.exists():
+            import sqlcipher3 as sqlite3
+            crypto = CryptoManager(self.db_path)
+
+            # Check if database is actually encrypted
+            is_encrypted = False
+            if crypto.key_exists():
+                try:
+                    # Try to open with encryption
+                    test_key = crypto.get_key()
+                    conn = sqlite3.connect(self.db_path)
+                    conn.execute(f"PRAGMA key = \"x'{test_key.hex()}'\"")
+                    conn.execute("SELECT count(*) FROM sqlite_master")
+                    conn.close()
+                    is_encrypted = True
+                except Exception:
+                    # If opening with encryption fails, it's not an encrypted DB
+                    is_encrypted = False
+
+            # If database exists but is not encrypted, delete it
+            if not is_encrypted:
+                log.info("Old unencrypted database detected, deleting...")
+                try:
+                    self.db_path.unlink()
+                    log.info("Deleted old unencrypted database")
+                except Exception as e:
+                    log.error(f"Failed to delete old database: {e}")
+                    QMessageBox.critical(
+                        None,
+                        "Initialization Failed",
+                        f"Failed to remove old unencrypted database:\n{e}",
+                    )
+                    sys.exit(1)
+
     def init_components(self) -> None:
         """Initialize all components."""
-        self.config = Config(self.db_path)
+        try:
+            self.config = Config(self.db_path)
+        except RuntimeError as e:
+            if "keyring" in str(e).lower():
+                QMessageBox.critical(
+                    None,
+                    "Keyring Not Available",
+                    f"{e}\n\n"
+                    "A system keyring is required to encrypt your typing data securely.",
+                )
+                sys.exit(1)
+            raise
 
         # Build dictionary configuration
         enabled_languages = self.config.get_list("enabled_languages")
