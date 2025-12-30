@@ -24,16 +24,17 @@ class WordState:
     editing_time_ms: int = field(default=0)
     layout: str = field(default="us")
 
-    def add_keystroke(self, key_name: str, timestamp_ms: int) -> None:
+    def add_keystroke(self, key_name: str, timestamp_ms: int, keycode: int | None = None) -> None:
         """Add a letter keystroke to current word.
 
         Args:
             key_name: Letter key name
             timestamp_ms: Timestamp of keystroke
+            keycode: Linux evdev keycode (optional)
         """
         self.word += key_name
         self.keystrokes.append(
-            KeystrokeInfo(key=key_name, time=timestamp_ms, type="letter")
+            KeystrokeInfo(key=key_name, time=timestamp_ms, type="letter", keycode=keycode)
         )
         self.last_keystroke_time_ms = timestamp_ms
 
@@ -103,6 +104,7 @@ class WordDetector:
         timestamp_ms: int,
         layout: str = "us",
         is_letter: bool = False,
+        keycode: int | None = None,
     ) -> Optional[WordInfo]:
         """Process a keystroke and return word info if finalized.
 
@@ -111,19 +113,20 @@ class WordDetector:
             timestamp_ms: Timestamp in milliseconds
             layout: Keyboard layout
             is_letter: Whether key is a letter key
+            keycode: Linux evdev keycode (optional)
 
         Returns:
             WordInfo if word was finalized, None otherwise
         """
         if is_letter:
-            return self._process_letter(key_name, timestamp_ms, layout)
+            return self._process_letter(key_name, timestamp_ms, layout, keycode)
         elif key_name == "BACKSPACE":
             return self._process_backspace(timestamp_ms)
         else:
             return self._process_boundary(key_name, timestamp_ms)
 
     def _process_letter(
-        self, key_name: str, timestamp_ms: int, layout: str
+        self, key_name: str, timestamp_ms: int, layout: str, keycode: int | None = None
     ) -> Optional[WordInfo]:
         """Process letter keystroke.
 
@@ -131,13 +134,14 @@ class WordDetector:
             key_name: Letter key name
             timestamp_ms: Timestamp
             layout: Keyboard layout
+            keycode: Linux evdev keycode (optional)
 
         Returns:
             WordInfo if timeout triggered and existing word finalized, None otherwise
         """
         if not self.current_state:
             self.current_state = WordState(start_time_ms=timestamp_ms, layout=layout)
-            self.current_state.add_keystroke(key_name, timestamp_ms)
+            self.current_state.add_keystroke(key_name, timestamp_ms, keycode)
             return None
 
         state = self.current_state
@@ -150,10 +154,10 @@ class WordDetector:
                 self.current_state = WordState(
                     start_time_ms=timestamp_ms, layout=layout
                 )
-                self.current_state.add_keystroke(key_name, timestamp_ms)
+                self.current_state.add_keystroke(key_name, timestamp_ms, keycode)
                 return finalized
 
-        state.add_keystroke(key_name, timestamp_ms)
+        state.add_keystroke(key_name, timestamp_ms, keycode)
         return None
 
     def _process_backspace(self, timestamp_ms: int) -> Optional[WordInfo]:
@@ -223,6 +227,7 @@ class WordDetector:
             editing_time_ms=state.editing_time_ms,
             backspace_count=state.backspace_count,
             num_letters=len(state.word),
+            keystrokes=list(state.keystrokes),  # Include keystroke list
         )
 
     def reset(self) -> None:

@@ -162,25 +162,13 @@ class Analyzer:
 
         with self._lock:
             self.today_stats["total_keystrokes"] += 1
-            last_press = self.today_stats["last_press_time"]
 
-        if last_press > 0:
-            time_between = press_time_ms - last_press
-            # Skip recording if gap is too large (first keystroke after a pause)
-            if time_between <= BURST_TIMEOUT_MS:
-                with self._lock:
-                    self.today_stats["keypress_times"][keycode].append(time_between)
-
-                    if time_between > self.today_stats["slowest_ms"]:
-                        self.today_stats["slowest_ms"] = time_between
-                        self.today_stats["slowest_keycode"] = keycode
-                        self.today_stats["slowest_key_name"] = key_name
-
-                self._update_key_statistics(keycode, key_name, time_between, layout)
-
-        # Store current press time for next comparison
-        with self._lock:
-            self.today_stats["last_press_time"] = press_time_ms
+        # Note: Key statistics are NO longer updated immediately here.
+        # Instead, they are updated ONLY when processing valid dictionary words
+        # in storage._process_keystroke_timings(). This ensures that letter speed
+        # statistics only include keystrokes that are:
+        # 1. Part of valid dictionary words
+        # 2. Typed in bursts (within BURST_TIMEOUT_MS of each other)
 
     def process_burst(self, burst: Burst) -> None:
         """Process a completed burst.
@@ -229,26 +217,6 @@ class Analyzer:
         words = key_count / 5.0
         minutes = duration_ms / 60000.0
         return words / minutes if minutes > 0 else 0.0
-
-    def _update_key_statistics(
-        self, keycode: int, key_name: str, press_time_ms: float, layout: str = "us"
-    ) -> None:
-        """Update per-key statistics.
-
-        Args:
-            keycode: Linux evdev keycode
-            key_name: Human-readable key name
-            press_time_ms: Time since last press
-            layout: Keyboard layout (default: 'us')
-        """
-        times = self.today_stats["keypress_times"].get(keycode, [])
-
-        if not times:
-            return
-
-        avg_time = sum(times) / len(times)
-
-        self.storage.update_key_statistics(keycode, key_name, layout, avg_time)
 
     def _check_high_score(self, wpm: float, duration_ms: int, key_count: int) -> None:
         """Check if burst is a high score.

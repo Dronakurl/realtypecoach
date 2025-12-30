@@ -108,6 +108,7 @@ class KeystrokeInfo(BaseModel):
     key: str = Field(..., description="Key character")
     time: int = Field(..., description="Timestamp in milliseconds")
     type: str = Field(..., description="Type: 'letter' or 'backspace'")
+    keycode: int | None = Field(default=None, description="Linux evdev keycode")
 
     class Config:
         extra = "ignore"
@@ -122,6 +123,9 @@ class WordInfo(BaseModel):
     editing_time_ms: int = Field(..., description="Time spent editing with backspace")
     backspace_count: int = Field(..., description="Number of backspaces used")
     num_letters: int = Field(..., description="Number of letters in word")
+    keystrokes: list[KeystrokeInfo] = Field(
+        default_factory=list, description="List of keystrokes in this word"
+    )
 
     class Config:
         extra = "ignore"

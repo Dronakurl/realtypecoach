@@ -980,7 +980,7 @@ class Storage:
 
             cursor.execute(
                 """
-                SELECT id, key_name, timestamp_ms
+                SELECT id, keycode, key_name, timestamp_ms
                 FROM key_events
                 WHERE id > ?
                 ORDER BY id
@@ -996,12 +996,12 @@ class Storage:
 
             last_event_id = last_processed_id
 
-            for event_id, key_name, timestamp_ms in events:
+            for event_id, keycode, key_name, timestamp_ms in events:
                 last_event_id = event_id
 
                 is_letter = is_letter_key(key_name)
                 word_info = self.word_detector.process_keystroke(
-                    key_name, timestamp_ms, layout, is_letter
+                    key_name, timestamp_ms, layout, is_letter, keycode
                 )
 
                 if word_info:
@@ -1137,6 +1137,108 @@ class Storage:
                 editing_time_ms,
             ),
         )
+
+        # Update key statistics for keystrokes in this valid dictionary word
+        self._process_keystroke_timings(conn, word_info)
+
+    def _process_keystroke_timings(self, conn: sqlite3.Connection, word_info: WordInfo) -> None:
+        """Update key statistics from keystrokes in a valid dictionary word.
+
+        Only processes letter keystrokes that are part of valid dictionary words.
+        Only includes keystrokes that are within bursts (gaps <= BURST_TIMEOUT_MS).
+
+        Args:
+            conn: Database connection to use
+            word_info: Word info from WordDetector with keystroke list
+        """
+        from core.analyzer import BURST_TIMEOUT_MS
+
+        letter_keystrokes = [
+            ks for ks in word_info.keystrokes if ks.type == "letter" and ks.keycode is not None
+        ]
+
+        for i in range(len(letter_keystrokes)):
+            current = letter_keystrokes[i]
+
+            if i > 0:
+                prev = letter_keystrokes[i - 1]
+                time_between = current.time - prev.time
+
+                # Only count if within burst timeout (this ensures we only count
+                # keystrokes typed in bursts, not isolated keystrokes)
+                if time_between <= BURST_TIMEOUT_MS:
+                    # Update key statistics inline to avoid opening a new connection
+                    self._update_key_statistics_inline(
+                        conn, int(current.keycode), current.key, word_info.layout, time_between
+                    )
+
+    def _update_key_statistics_inline(
+        self, conn: sqlite3.Connection, keycode: int, key_name: str, layout: str, press_time_ms: float
+    ) -> None:
+        """Update statistics for a key using an existing connection.
+
+        Args:
+            conn: Database connection to use
+            keycode: Linux evdev keycode
+            key_name: Human-readable key name
+            layout: Keyboard layout identifier
+            press_time_ms: Time since last press
+        """
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT avg_press_time, total_presses, slowest_ms, fastest_ms
+            FROM statistics WHERE keycode = ? AND layout = ?
+        """,
+            (keycode, layout),
+        )
+
+        result = cursor.fetchone()
+        now_ms = int(time.time() * 1000)
+
+        if result:
+            avg_press, total_presses, slowest_ms, fastest_ms = result
+            new_total = total_presses + 1
+
+            new_avg = (avg_press * total_presses + press_time_ms) / new_total
+            new_slowest = min(slowest_ms, press_time_ms)
+            new_fastest = max(fastest_ms, press_time_ms)
+
+            cursor.execute(
+                """
+                UPDATE statistics SET
+                    avg_press_time = ?, total_presses = ?, slowest_ms = ?,
+                    fastest_ms = ?, last_updated = ?
+                WHERE keycode = ? AND layout = ?
+            """,
+                (
+                    new_avg,
+                    new_total,
+                    new_slowest,
+                    new_fastest,
+                    now_ms,
+                    keycode,
+                    layout,
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO statistics
+                (keycode, key_name, layout, avg_press_time, total_presses,
+                 slowest_ms, fastest_ms, last_updated)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            """,
+                (
+                    keycode,
+                    key_name,
+                    layout,
+                    press_time_ms,
+                    press_time_ms,
+                    press_time_ms,
+                    now_ms,
+                ),
+            )
 
     def get_slowest_words(
         self, limit: int = 10, layout: Optional[str] = None
