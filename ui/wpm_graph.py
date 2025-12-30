@@ -33,12 +33,17 @@ class WPMTimeSeriesGraph(QWidget):
         self.plot_widget = PlotWidget()
         # Let Qt theme handle background/foreground colors
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.setLabel('left', 'WPM')
-        self.plot_widget.setLabel('bottom', 'Burst Number')
+        self.plot_widget.setLabel("left", "WPM")
+        self.plot_widget.setLabel("bottom", "Burst Number")
         self.plot_widget.showButtons()  # Show auto-range buttons
 
+        # Add padding to prevent cut-off at top
+        self.plot_widget.getViewBox().setContentsMargins(10, 20, 10, 10)
+
         # Create plot item with line and markers
-        self.plot_item = self.plot_widget.plot(pen=pg.mkPen(color=(50, 150, 200), width=2), symbol='o', symbolSize=5)
+        self.plot_item = self.plot_widget.plot(
+            pen=pg.mkPen(color=(50, 150, 200), width=2), symbol="o", symbolSize=5
+        )
 
         layout.addWidget(self.plot_widget)
 

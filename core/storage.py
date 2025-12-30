@@ -324,7 +324,7 @@ class Storage:
                 (keycode, key_name, timestamp_ms, event_type)
                 VALUES (?, ?, ?, ?)
             """,
-                (keycode, key_name, timestamp_ms, 'press'),
+                (keycode, key_name, timestamp_ms, "press"),
             )
             conn.commit()
 
@@ -524,7 +524,9 @@ class Storage:
             result = cursor.fetchone()
             return result[0] if result else 0
 
-    def get_all_time_keystrokes_and_bursts(self, exclude_today: str = None) -> tuple[int, int]:
+    def get_all_time_keystrokes_and_bursts(
+        self, exclude_today: str = None
+    ) -> tuple[int, int]:
         """Get all-time total keystrokes and bursts.
 
         Args:
@@ -1141,7 +1143,9 @@ class Storage:
         # Update key statistics for keystrokes in this valid dictionary word
         self._process_keystroke_timings(conn, word_info)
 
-    def _process_keystroke_timings(self, conn: sqlite3.Connection, word_info: WordInfo) -> None:
+    def _process_keystroke_timings(
+        self, conn: sqlite3.Connection, word_info: WordInfo
+    ) -> None:
         """Update key statistics from keystrokes in a valid dictionary word.
 
         Only processes letter keystrokes that are part of valid dictionary words.
@@ -1154,7 +1158,9 @@ class Storage:
         from core.analyzer import BURST_TIMEOUT_MS
 
         letter_keystrokes = [
-            ks for ks in word_info.keystrokes if ks.type == "letter" and ks.keycode is not None
+            ks
+            for ks in word_info.keystrokes
+            if ks.type == "letter" and ks.keycode is not None
         ]
 
         for i in range(len(letter_keystrokes)):
@@ -1169,11 +1175,20 @@ class Storage:
                 if time_between <= BURST_TIMEOUT_MS:
                     # Update key statistics inline to avoid opening a new connection
                     self._update_key_statistics_inline(
-                        conn, int(current.keycode), current.key, word_info.layout, time_between
+                        conn,
+                        int(current.keycode),
+                        current.key,
+                        word_info.layout,
+                        time_between,
                     )
 
     def _update_key_statistics_inline(
-        self, conn: sqlite3.Connection, keycode: int, key_name: str, layout: str, press_time_ms: float
+        self,
+        conn: sqlite3.Connection,
+        keycode: int,
+        key_name: str,
+        layout: str,
+        press_time_ms: float,
     ) -> None:
         """Update statistics for a key using an existing connection.
 
@@ -1385,7 +1400,9 @@ class Storage:
         # Calculate date range
         if end_date:
             end_ms = int(
-                (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+                (
+                    datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+                ).timestamp()
                 * 1000
             )
         else:

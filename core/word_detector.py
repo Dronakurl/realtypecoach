@@ -24,7 +24,9 @@ class WordState:
     editing_time_ms: int = field(default=0)
     layout: str = field(default="us")
 
-    def add_keystroke(self, key_name: str, timestamp_ms: int, keycode: int | None = None) -> None:
+    def add_keystroke(
+        self, key_name: str, timestamp_ms: int, keycode: int | None = None
+    ) -> None:
         """Add a letter keystroke to current word.
 
         Args:
@@ -34,7 +36,9 @@ class WordState:
         """
         self.word += key_name
         self.keystrokes.append(
-            KeystrokeInfo(key=key_name, time=timestamp_ms, type="letter", keycode=keycode)
+            KeystrokeInfo(
+                key=key_name, time=timestamp_ms, type="letter", keycode=keycode
+            )
         )
         self.last_keystroke_time_ms = timestamp_ms
 

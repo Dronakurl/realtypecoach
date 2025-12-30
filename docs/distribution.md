@@ -172,7 +172,7 @@ dependencies = [
     "pydantic>=2.0",
     "PySide6",           # Qt bindings
     "pandas",            # Data analysis
-    "matplotlib",        # Graphing
+    "pyqtgraph",         # Graphing
     "evdev",             # Keyboard access (system package)
 ]
 ```

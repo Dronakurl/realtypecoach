@@ -229,13 +229,13 @@ def test_encrypted_database_file_is_not_plaintext():
             conn.close()
 
             # Read the raw file bytes
-            with open(db_path, 'rb') as f:
+            with open(db_path, "rb") as f:
                 file_content = f.read()
 
             # The plaintext string should NOT appear in the encrypted file
             # (SQLCipher encrypts the data, so it won't be readable)
-            assert b'TOP_SECRET_DATA_12345' not in file_content
-            assert b'sensitive' not in file_content
+            assert b"TOP_SECRET_DATA_12345" not in file_content
+            assert b"sensitive" not in file_content
         finally:
             crypto.delete_key()
 
@@ -341,7 +341,9 @@ def test_legacy_key_migration():
             assert not crypto_new.key_exists()
 
             # The legacy key should still exist (not deleted by delete_key())
-            legacy_key_still_exists = keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
+            legacy_key_still_exists = (
+                keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
+            )
             assert legacy_key_still_exists
         finally:
             # Clean up both the path-based key and the legacy key
@@ -351,6 +353,7 @@ def test_legacy_key_migration():
                 pass
             try:
                 from utils.crypto import KEY_SERVICE, KEY_USERNAME
+
                 keyring.delete_password(KEY_SERVICE, KEY_USERNAME)
             except Exception:
                 pass

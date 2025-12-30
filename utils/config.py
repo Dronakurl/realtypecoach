@@ -48,19 +48,6 @@ class AppSettings(BaseModel):
         description="Minimum duration required for burst to be recorded (ms)",
     )
 
-    # Performance thresholds
-    exceptional_wpm_threshold: int = Field(
-        default=120, gt=0, description="WPM threshold for exceptional performance"
-    )
-
-    # Feature flags
-    password_exclusion: bool = Field(
-        default=True, description="Exclude password fields from tracking"
-    )
-    notifications_enabled: bool = Field(
-        default=True, description="Enable notifications"
-    )
-
     # Data management
     slowest_keys_count: int = Field(
         default=10, ge=1, le=100, description="Number of slowest keys to track"
@@ -78,9 +65,6 @@ class AppSettings(BaseModel):
     notification_time_hour: int = Field(
         default=18, ge=0, le=23, description="Daily notification hour (0-23)"
     )
-    notification_time_minute: int = Field(
-        default=0, ge=0, le=59, description="Daily notification minute (0-59)"
-    )
     notification_min_burst_ms: int = Field(
         default=10000, gt=0, description="Min burst duration for notification (ms)"
     )
@@ -94,7 +78,10 @@ class AppSettings(BaseModel):
         default=True, description="Enable worst letter change notifications"
     )
     worst_letter_notification_debounce_min: int = Field(
-        default=5, ge=1, le=60, description="Debounce time for worst letter notifications (minutes)"
+        default=5,
+        ge=1,
+        le=60,
+        description="Debounce time for worst letter notifications (minutes)",
     )
 
     # Dictionary settings
@@ -105,7 +92,6 @@ class AppSettings(BaseModel):
     enabled_languages: str = Field(
         default="en,de", description="Comma-separated language codes"
     )
-    custom_dict_paths: str = Field(default="", description="Custom dictionary paths")
 
     class Config:
         """Pydantic model configuration."""
@@ -137,6 +123,16 @@ class Config:
 
         # Initialize crypto manager
         self.crypto = CryptoManager(db_path)
+
+        # For fresh installs, initialize encryption key first
+        is_fresh_install = not db_path.exists()
+        if is_fresh_install:
+            try:
+                self.crypto.initialize_database_key()
+            except RuntimeError as e:
+                # If key already exists, that's fine - user is doing a reinstall
+                if "already exists" not in str(e):
+                    raise
 
         self._init_settings_table()
         self._ensure_defaults()

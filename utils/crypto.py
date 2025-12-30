@@ -54,7 +54,9 @@ class CryptoManager:
         Returns:
             Tuple of (service, username) for keyring operations
         """
-        path_hash = hashlib.sha256(str(self.db_path.resolve()).encode()).hexdigest()[:16]
+        path_hash = hashlib.sha256(str(self.db_path.resolve()).encode()).hexdigest()[
+            :16
+        ]
         return f"realtypecoach_{path_hash}", f"db_key_{path_hash}"
 
     def _get_legacy_key(self) -> Optional[bytes]:

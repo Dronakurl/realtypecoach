@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QPushButton,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 import pyqtgraph as pg
 from pyqtgraph import GraphicsLayoutWidget, BarGraphItem
 from core.models import TypingTimeDataPoint
@@ -67,9 +67,7 @@ class TypingTimeGraph(QWidget):
         self.granularity_combo.addItem("Month", TimeGranularity.MONTH)
         self.granularity_combo.addItem("Quarter", TimeGranularity.QUARTER)
         self.granularity_combo.setCurrentIndex(0)  # Default to Day
-        self.granularity_combo.currentIndexChanged.connect(
-            self.on_granularity_changed
-        )
+        self.granularity_combo.currentIndexChanged.connect(self.on_granularity_changed)
         controls_layout.addWidget(self.granularity_combo)
 
         # Refresh button
@@ -85,17 +83,17 @@ class TypingTimeGraph(QWidget):
 
         # Create two plots with shared X-axis
         self.plot_time = self.plot_widget.addPlot(row=0, col=0)
-        self.plot_time.setLabel('left', 'Typing Time (hours)')
+        self.plot_time.setLabel("left", "Typing Time (hours)")
         self.plot_time.showGrid(x=True, y=True, alpha=0.3)
         self.plot_time.showButtons()
         # Disable automatic scientific notation suffix
-        self.plot_time.getAxis('left').enableAutoSIPrefix(False)
+        self.plot_time.getAxis("left").enableAutoSIPrefix(False)
         # Y-axis starts at 0, auto-range enabled
         self.plot_time.setYRange(0, 1, padding=0.1)
 
         self.plot_wpm = self.plot_widget.addPlot(row=1, col=0)
-        self.plot_wpm.setLabel('left', 'Average WPM')
-        self.plot_wpm.setLabel('bottom', 'Time Period')
+        self.plot_wpm.setLabel("left", "Average WPM")
+        self.plot_wpm.setLabel("bottom", "Time Period")
         self.plot_wpm.showGrid(x=True, y=True, alpha=0.3)
         self.plot_wpm.showButtons()
         # Y-axis starts at 0 for WPM as well
@@ -109,7 +107,9 @@ class TypingTimeGraph(QWidget):
         self.plot_time.addItem(self.bar_item)
 
         # Create plot item for WPM line chart
-        self.plot_wpm_item = self.plot_wpm.plot(pen=pg.mkPen(color=(80, 200, 120), width=2), symbol='o', symbolSize=5)
+        self.plot_wpm_item = self.plot_wpm.plot(
+            pen=pg.mkPen(color=(80, 200, 120), width=2), symbol="o", symbolSize=5
+        )
 
         layout.addWidget(self.plot_widget)
 
@@ -135,7 +135,9 @@ class TypingTimeGraph(QWidget):
         # Debounce to avoid excessive queries during rapid selection
         self._update_timer = QTimer()
         self._update_timer.setSingleShot(True)
-        self._update_timer.timeout.connect(lambda: self._update_granularity(granularity))
+        self._update_timer.timeout.connect(
+            lambda: self._update_granularity(granularity)
+        )
         self._update_timer.start(300)  # 300ms debounce
 
     def _update_granularity(self, granularity: TimeGranularity) -> None:
@@ -162,8 +164,11 @@ class TypingTimeGraph(QWidget):
         # Load initial data after event loop is running
         if self._data_callback:
             from PySide6.QtCore import QTimer
+
             # Use QTimer to schedule callback for next event loop iteration
-            QTimer.singleShot(0, lambda: self._data_callback(self.current_granularity.value))
+            QTimer.singleShot(
+                0, lambda: self._data_callback(self.current_granularity.value)
+            )
 
     def request_data(self) -> None:
         """Request data update using callback."""
@@ -178,6 +183,7 @@ class TypingTimeGraph(QWidget):
         """
         import logging
         import traceback
+
         log = logging.getLogger("realtypecoach.typing_time_graph")
 
         try:
@@ -220,12 +226,14 @@ class TypingTimeGraph(QWidget):
             if len(data_points) > 10:
                 # Show every Nth label
                 step = max(1, len(period_labels) // 10)
-                ticks = [(i, period_labels[i]) for i in range(0, len(period_labels), step)]
-                self.plot_wpm.getAxis('bottom').setTicks([ticks])
+                ticks = [
+                    (i, period_labels[i]) for i in range(0, len(period_labels), step)
+                ]
+                self.plot_wpm.getAxis("bottom").setTicks([ticks])
             else:
                 # Show all labels
                 ticks = [(i, period_labels[i]) for i in range(len(period_labels))]
-                self.plot_wpm.getAxis('bottom').setTicks([ticks])
+                self.plot_wpm.getAxis("bottom").setTicks([ticks])
 
             # Update info label
             total_hours = sum(typing_hours)

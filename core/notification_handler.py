@@ -1,6 +1,5 @@
 """Notification handler for daily summaries and exceptional bursts."""
 
-import sqlcipher3 as sqlite3
 import time
 import threading
 import logging
@@ -9,7 +8,7 @@ from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, Signal
 
-from core.models import DailySummary
+from core.models import DailySummary, WorstLetterChange
 
 
 log = logging.getLogger("realtypecoach.notification")
@@ -121,15 +120,12 @@ class NotificationHandler(QObject):
 
         self.signal_exceptional_burst.emit(wpm)
 
-    def check_and_notify_worst_letter_change(
-        self, change: "WorstLetterChange"
-    ) -> None:
+    def check_and_notify_worst_letter_change(self, change: WorstLetterChange) -> None:
         """Check if worst letter notification should be sent and emit signal.
 
         Args:
             change: WorstLetterChange object with change data
         """
-        from core.models import WorstLetterChange
 
         if not self.worst_letter_notifications_enabled:
             return

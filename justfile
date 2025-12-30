@@ -60,9 +60,27 @@ reset:
     @rm -f ~/.local/share/realtypecoach/typing_data.db-wal
     @echo "Database reset"
 
+# Seed database with realistic typing data
+seed-database days:
+    @.venv/bin/python3 scripts/seed_database.py --days {{days}}
+
 # Testing
+# Format code with ruff and remove unused imports
+ruff-format:
+    @echo "=== Formatting with ruff ==="
+    @ruff format .
+    @ruff check --fix .
+
 # Run all Python tests
-test-all:
+test-all: ruff-format
+    @echo "=== Checking Python syntax ==="
+    @python3 -m py_compile main.py
+    @python3 -m py_compile ui/settings_dialog.py
+    @python3 -m py_compile ui/stats_panel.py
+    @python3 -m py_compile ui/tray_icon.py
+    @python3 -m py_compile ui/typing_time_graph.py
+    @python3 -m py_compile ui/wpm_graph.py
+    @echo "=== Running pytest ==="
     @.venv/bin/python3 -m pytest tests/ -v
 
 # Test Python module imports

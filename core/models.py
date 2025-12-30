@@ -93,7 +93,9 @@ class TypingTimeDataPoint(BaseModel):
 
     period_start: int = Field(..., description="Period start timestamp (ms)")
     period_end: int = Field(..., description="Period end timestamp (ms)")
-    period_label: str = Field(..., description="Human-readable period label (e.g., '2025-01-15')")
+    period_label: str = Field(
+        ..., description="Human-readable period label (e.g., '2025-01-15')"
+    )
     total_typing_ms: int = Field(..., description="Total typing time in milliseconds")
     total_bursts: int = Field(..., description="Number of bursts in period")
     avg_wpm: float = Field(..., description="Average WPM for the period")

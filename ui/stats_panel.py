@@ -226,7 +226,9 @@ class StatsPanel(QWidget):
         third_row.setSpacing(30)
 
         # Keystrokes & Bursts Card
-        keystrokes_bursts_card = self._create_metric_card("Keystrokes & Bursts", "#3498db")
+        keystrokes_bursts_card = self._create_metric_card(
+            "Keystrokes & Bursts", "#3498db"
+        )
         third_row.addWidget(keystrokes_bursts_card)
 
         # Typing Time Card
@@ -365,7 +367,9 @@ class StatsPanel(QWidget):
         typing_time_layout.addWidget(self.typing_time_graph)
 
         tab_widget.addTab(
-            typing_time_tab, self._create_palette_aware_icon("x-office-calendar"), "Typing Time"
+            typing_time_tab,
+            self._create_palette_aware_icon("x-office-calendar"),
+            "Typing Time",
         )
 
         layout.addWidget(tab_widget)
@@ -393,9 +397,7 @@ class StatsPanel(QWidget):
         if hasattr(self, "burst_wpm_value_label"):
             self.burst_wpm_value_label.setText(f"{burst_wpm:.1f}")
             if today_best > 0:
-                self.burst_wpm_subtitle_label.setText(
-                    f"today's best: {today_best:.1f}"
-                )
+                self.burst_wpm_subtitle_label.setText(f"today's best: {today_best:.1f}")
             else:
                 self.burst_wpm_subtitle_label.setText("today's best: --")
 
@@ -453,32 +455,40 @@ class StatsPanel(QWidget):
             avg_time_ms: Average press time in milliseconds
         """
         if hasattr(self, "worst_letter_value_label"):
-            self.worst_letter_value_label.setText(f"'{key_name}'")
+            if not key_name:
+                self.worst_letter_value_label.setText("-")
+                self.worst_letter_subtitle_label.setText("no data")
+            else:
+                self.worst_letter_value_label.setText(f"'{key_name}'")
 
-            # Calculate equivalent WPM
-            wpm = 12000 / avg_time_ms if avg_time_ms > 0 else 0
-            self.worst_letter_subtitle_label.setText(
-                f"{avg_time_ms:.0f}ms avg ({wpm:.0f} WPM)"
-            )
+                # Calculate equivalent WPM
+                wpm = 12000 / avg_time_ms if avg_time_ms > 0 else 0
+                self.worst_letter_subtitle_label.setText(
+                    f"{avg_time_ms:.0f}ms avg ({wpm:.0f} WPM)"
+                )
 
-    def update_worst_word(self, word_stat: WordStatisticsLite) -> None:
+    def update_worst_word(self, word_stat: WordStatisticsLite | None) -> None:
         """Update worst word display.
 
         Args:
-            word_stat: WordStatisticsLite model with worst word data
+            word_stat: WordStatisticsLite model with worst word data, or None if no data
         """
         if hasattr(self, "worst_word_value_label"):
-            self.worst_word_value_label.setText(word_stat.word)
+            if word_stat is None:
+                self.worst_word_value_label.setText("-")
+                self.worst_word_subtitle_label.setText("no data")
+            else:
+                self.worst_word_value_label.setText(word_stat.word)
 
-            # Calculate projected WPM
-            wpm = (
-                12000 / word_stat.avg_speed_ms_per_letter
-                if word_stat.avg_speed_ms_per_letter > 0
-                else 0
-            )
-            self.worst_word_subtitle_label.setText(
-                f"{word_stat.avg_speed_ms_per_letter:.0f}ms/letter ({wpm:.0f} WPM)"
-            )
+                # Calculate projected WPM
+                wpm = (
+                    12000 / word_stat.avg_speed_ms_per_letter
+                    if word_stat.avg_speed_ms_per_letter > 0
+                    else 0
+                )
+                self.worst_word_subtitle_label.setText(
+                    f"{word_stat.avg_speed_ms_per_letter:.0f}ms/letter ({wpm:.0f} WPM)"
+                )
 
     def update_typing_time_display(self, today_sec: float, all_time_sec: float) -> None:
         """Update typing time display.
@@ -492,7 +502,9 @@ class StatsPanel(QWidget):
             self.typing_time_value_label.setText(self._format_duration(today_sec))
 
             # Format all-time typing time
-            self.typing_time_subtitle_label.setText(f"all-time: {self._format_duration(all_time_sec)}")
+            self.typing_time_subtitle_label.setText(
+                f"all-time: {self._format_duration(all_time_sec)}"
+            )
 
     @staticmethod
     def _format_duration(seconds: float) -> str:
@@ -571,7 +583,9 @@ class StatsPanel(QWidget):
             self.hardest_words_table.setItem(
                 i, 2, QTableWidgetItem(f"{projected_wpm:.1f}")
             )
-            self.hardest_words_table.setItem(i, 3, QTableWidgetItem(str(word_stat.total_duration_ms)))
+            self.hardest_words_table.setItem(
+                i, 3, QTableWidgetItem(str(word_stat.total_duration_ms))
+            )
 
         for i in range(len(words), 10):
             self.hardest_words_table.setItem(i, 1, QTableWidgetItem("--"))
@@ -593,7 +607,9 @@ class StatsPanel(QWidget):
             self.fastest_words_table.setItem(
                 i, 2, QTableWidgetItem(f"{projected_wpm:.1f}")
             )
-            self.fastest_words_table.setItem(i, 3, QTableWidgetItem(str(word_stat.total_duration_ms)))
+            self.fastest_words_table.setItem(
+                i, 3, QTableWidgetItem(str(word_stat.total_duration_ms))
+            )
 
         for i in range(len(words), 10):
             self.fastest_words_table.setItem(i, 1, QTableWidgetItem("--"))

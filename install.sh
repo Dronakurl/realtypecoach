@@ -94,10 +94,6 @@ if .venv/bin/python3 -c "import pandas" 2>/dev/null; then
     print_status "OK" "pandas installed"
 fi
 
-if .venv/bin/python3 -c "import matplotlib" 2>/dev/null; then
-    print_status "OK" "matplotlib installed"
-fi
-
 echo ""
 echo "Step 4: Creating data directory..."
 echo "-----------------------------------"

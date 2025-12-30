@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSpinBox,
-    QDoubleSpinBox,
     QCheckBox,
     QPushButton,
     QFileDialog,
@@ -21,11 +20,42 @@ from PySide6.QtWidgets import (
     QListWidget,
     QApplication,
     QStyle,
+    QToolTip,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QPainter
 
 log = logging.getLogger("realtypecoach.settings_dialog")
+
+
+class ClickableInfoLabel(QLabel):
+    """A label that shows its tooltip on both hover and click."""
+
+    def __init__(self, text: str, tooltip_text: str, parent=None):
+        """Initialize clickable info label.
+
+        Args:
+            text: Label text (e.g., " ⓘ")
+            tooltip_text: Tooltip text to show on hover/click
+            parent: Parent widget
+        """
+        super().__init__(text, parent)
+        self._tooltip_text = tooltip_text
+        self.setToolTip(tooltip_text)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        """Show tooltip on click.
+
+        Shows the tooltip at the click position when the info icon is clicked.
+        """
+        if event.button() == Qt.LeftButton:
+            QToolTip.showText(
+                event.globalPosition().toPoint(),
+                self._tooltip_text,
+                self,
+            )
+        super().mousePressEvent(event)
 
 
 class SettingsDialog(QDialog):
@@ -112,7 +142,9 @@ class SettingsDialog(QDialog):
         return colorized_icon if not colorized_icon.isNull() else icon
 
     @staticmethod
-    def _create_labeled_icon_widget(label_text: str, tooltip_text: str, parent=None) -> QWidget:
+    def _create_labeled_icon_widget(
+        label_text: str, tooltip_text: str, parent=None
+    ) -> QWidget:
         """Create a label with integrated info icon and tooltip.
 
         Args:
@@ -135,9 +167,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(text_label)
 
         # Create the info icon label using Unicode circled i (standard info icon)
-        info_label = QLabel(" ⓘ", parent)
-        info_label.setToolTip(tooltip_text)
-        info_label.setCursor(Qt.PointingHandCursor)
+        info_label = ClickableInfoLabel(" ⓘ", tooltip_text, parent)
         info_label.setStyleSheet("font-size: 14px; color: palette(text);")
         layout.addWidget(info_label)
 
@@ -219,9 +249,9 @@ class SettingsDialog(QDialog):
             self._create_labeled_icon_widget(
                 "Burst timeout:",
                 "Maximum pause between keystrokes before burst ends.\n"
-                "Shorter timeout = bursts split more frequently"
+                "Shorter timeout = bursts split more frequently",
             ),
-            self.burst_timeout_spin
+            self.burst_timeout_spin,
         )
 
         self.word_boundary_timeout_spin = QSpinBox()
@@ -233,9 +263,9 @@ class SettingsDialog(QDialog):
                 "Word boundary timeout:",
                 "Maximum pause between letters before word is split.\n"
                 "Example: 'br' [pause] 'own' becomes two fragments instead of 'brown'\n"
-                "Shorter timeout = more conservative word detection"
+                "Shorter timeout = more conservative word detection",
             ),
-            self.word_boundary_timeout_spin
+            self.word_boundary_timeout_spin,
         )
 
         self.duration_method_combo = QComboBox()
@@ -246,9 +276,9 @@ class SettingsDialog(QDialog):
                 "Duration calculation:",
                 "How burst duration is calculated:\n"
                 "• Total Time: Includes all time from first to last keystroke\n"
-                "• Active Time: Only counts time actually spent typing"
+                "• Active Time: Only counts time actually spent typing",
             ),
-            self.duration_method_combo
+            self.duration_method_combo,
         )
 
         self.active_threshold_spin = QSpinBox()
@@ -259,9 +289,9 @@ class SettingsDialog(QDialog):
             self._create_labeled_icon_widget(
                 "Active time threshold:",
                 "For 'Active Time' method: Maximum gap between keystrokes\n"
-                "to count as active typing time."
+                "to count as active typing time.",
             ),
-            self.active_threshold_spin
+            self.active_threshold_spin,
         )
 
         self.high_score_duration_spin = QSpinBox()
@@ -271,9 +301,9 @@ class SettingsDialog(QDialog):
         burst_layout.addRow(
             self._create_labeled_icon_widget(
                 "High score min duration:",
-                "Minimum burst duration to qualify for high score notifications"
+                "Minimum burst duration to qualify for high score notifications",
             ),
-            self.high_score_duration_spin
+            self.high_score_duration_spin,
         )
 
         self.min_key_count_spin = QSpinBox()
@@ -284,9 +314,9 @@ class SettingsDialog(QDialog):
             self._create_labeled_icon_widget(
                 "Min burst key count:",
                 "Minimum keystrokes required for a burst to be recorded.\n"
-                "Prevents keyboard shortcuts and brief typing from being counted."
+                "Prevents keyboard shortcuts and brief typing from being counted.",
             ),
-            self.min_key_count_spin
+            self.min_key_count_spin,
         )
 
         self.min_burst_duration_spin = QSpinBox()
@@ -297,9 +327,9 @@ class SettingsDialog(QDialog):
             self._create_labeled_icon_widget(
                 "Min burst duration:",
                 "Minimum duration for a burst to be recorded.\n"
-                "Prevents very short typing sessions from being counted."
+                "Prevents very short typing sessions from being counted.",
             ),
-            self.min_burst_duration_spin
+            self.min_burst_duration_spin,
         )
 
         burst_group.setLayout(burst_layout)
@@ -316,9 +346,9 @@ class SettingsDialog(QDialog):
             self._create_labeled_icon_widget(
                 "Layout:",
                 "Choose your keyboard layout for accurate key mapping.\n"
-                "Auto-detect uses system locale."
+                "Auto-detect uses system locale.",
             ),
-            self.keyboard_layout_combo
+            self.keyboard_layout_combo,
         )
 
         # Add detected layout hint
@@ -345,26 +375,6 @@ class SettingsDialog(QDialog):
         enabled_group = QGroupBox("Notification Settings")
         enabled_layout = QFormLayout()
 
-        self.notifications_check = QCheckBox("Enable notifications")
-        self.notifications_check.setChecked(True)
-        self.notifications_check.setToolTip(
-            "Show desktop notifications for typing achievements and daily summaries."
-        )
-        enabled_layout.addRow(self.notifications_check)
-
-        self.exceptional_wpm_spin = QDoubleSpinBox()
-        self.exceptional_wpm_spin.setRange(50, 300)
-        self.exceptional_wpm_spin.setDecimals(1)
-        self.exceptional_wpm_spin.setSuffix(" WPM")
-        self.exceptional_wpm_spin.setValue(120)
-        enabled_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Exceptional burst WPM threshold:",
-                "WPM threshold for 'exceptional performance' notifications."
-            ),
-            self.exceptional_wpm_spin
-        )
-
         self.notification_min_burst_spin = QSpinBox()
         self.notification_min_burst_spin.setRange(1, 60)
         self.notification_min_burst_spin.setSuffix(" s")
@@ -372,9 +382,9 @@ class SettingsDialog(QDialog):
         enabled_layout.addRow(
             self._create_labeled_icon_widget(
                 "Minimum burst duration for notification:",
-                "Minimum typing session length to qualify for notifications."
+                "Minimum typing session length to qualify for notifications.",
             ),
-            self.notification_min_burst_spin
+            self.notification_min_burst_spin,
         )
 
         self.notification_threshold_days_spin = QSpinBox()
@@ -384,9 +394,9 @@ class SettingsDialog(QDialog):
         enabled_layout.addRow(
             self._create_labeled_icon_widget(
                 "Threshold calculation lookback period:",
-                "How many days of history to calculate thresholds from."
+                "How many days of history to calculate thresholds from.",
             ),
-            self.notification_threshold_days_spin
+            self.notification_threshold_days_spin,
         )
 
         self.notification_threshold_update_spin = QSpinBox()
@@ -396,9 +406,9 @@ class SettingsDialog(QDialog):
         enabled_layout.addRow(
             self._create_labeled_icon_widget(
                 "Threshold update interval:",
-                "How often to recalculate performance thresholds."
+                "How often to recalculate performance thresholds.",
             ),
-            self.notification_threshold_update_spin
+            self.notification_threshold_update_spin,
         )
 
         enabled_group.setLayout(enabled_layout)
@@ -420,10 +430,9 @@ class SettingsDialog(QDialog):
         self.notification_hour_spin.setValue(18)
         time_layout.addRow(
             self._create_labeled_icon_widget(
-                "Hour:",
-                "Time (24h) when daily typing summary is sent."
+                "Hour:", "Time (24h) when daily typing summary is sent."
             ),
-            self.notification_hour_spin
+            self.notification_hour_spin,
         )
 
         time_group.setLayout(time_layout)
@@ -450,7 +459,7 @@ class SettingsDialog(QDialog):
         worst_letter_layout.addRow(
             self._create_labeled_icon_widget(
                 "Worst letter notification debounce:",
-                "Minimum time between worst letter change notifications."
+                "Minimum time between worst letter change notifications.",
             ),
             self.worst_letter_debounce_spin,
         )
@@ -476,10 +485,9 @@ class SettingsDialog(QDialog):
         self.slowest_keys_spin.setValue(10)
         display_layout.addRow(
             self._create_labeled_icon_widget(
-                "Show slowest keys:",
-                "Number of slowest keys to display in statistics."
+                "Show slowest keys:", "Number of slowest keys to display in statistics."
             ),
-            self.slowest_keys_spin
+            self.slowest_keys_spin,
         )
 
         display_group.setLayout(display_layout)
@@ -498,9 +506,9 @@ class SettingsDialog(QDialog):
         retention_layout.addRow(
             self._create_labeled_icon_widget(
                 "Keep data for:",
-                "How long to keep typing history. 'Keep forever' never deletes data."
+                "How long to keep typing history. 'Keep forever' never deletes data.",
             ),
-            self.retention_combo
+            self.retention_combo,
         )
 
         retention_group.setLayout(retention_layout)
@@ -537,7 +545,7 @@ class SettingsDialog(QDialog):
         lang_label_container = self._create_labeled_icon_widget(
             "Select languages to validate:",
             "Choose which dictionaries to use for word validation.\n"
-            "Only words found in these dictionaries will be tracked."
+            "Only words found in these dictionaries will be tracked.",
         )
         lang_layout.addWidget(lang_label_container)
 
@@ -611,17 +619,27 @@ class SettingsDialog(QDialog):
             self.language_list_widget.setSelectionMode(QListWidget.NoSelection)
 
             # Prioritize UI selections over settings (for rescanning while dialog is open)
-            enabled_dicts_setting = self.current_settings.get("enabled_dictionaries", "")
-            log.info(f"rescan: self.current_settings.get('enabled_dictionaries', '') returned: {enabled_dicts_setting!r}")
+            enabled_dicts_setting = self.current_settings.get(
+                "enabled_dictionaries", ""
+            )
+            log.info(
+                f"rescan: self.current_settings.get('enabled_dictionaries', '') returned: {enabled_dicts_setting!r}"
+            )
             if current_ui_selections:
                 selected_set = current_ui_selections
                 log.info(f"rescan: using current UI selections: {selected_set}")
             elif enabled_dicts_setting and enabled_dicts_setting.strip():
-                selected_set = set(p.strip() for p in enabled_dicts_setting.split(",") if p.strip())
-                log.info(f"rescan: loaded {len(selected_set)} dictionaries from settings: {selected_set}")
+                selected_set = set(
+                    p.strip() for p in enabled_dicts_setting.split(",") if p.strip()
+                )
+                log.info(
+                    f"rescan: loaded {len(selected_set)} dictionaries from settings: {selected_set}"
+                )
             else:
                 selected_set = set()
-                log.info("rescan: using default selections (enabled_dicts_setting is empty or whitespace-only)")
+                log.info(
+                    "rescan: using default selections (enabled_dicts_setting is empty or whitespace-only)"
+                )
 
             for dict_info in available:
                 item_text = f"{dict_info.language_name}"
@@ -630,6 +648,7 @@ class SettingsDialog(QDialog):
 
                 # Create item with checkbox
                 from PySide6.QtWidgets import QListWidgetItem
+
                 item = QListWidgetItem(item_text)
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked)
@@ -646,15 +665,28 @@ class SettingsDialog(QDialog):
                         should_check = True
                         log.info(f"Checking {dict_info.path} (matched saved selection)")
                     else:
-                        log.debug(f"Not checking {dict_info.path} (not in selected_set)")
+                        log.debug(
+                            f"Not checking {dict_info.path} (not in selected_set)"
+                        )
                 else:
                     # Default selections
-                    if (dict_info.language_code == "de" and dict_info.variant and "reform" in dict_info.variant and "pre-reform" not in dict_info.variant):
+                    if (
+                        dict_info.language_code == "de"
+                        and dict_info.variant
+                        and "reform" in dict_info.variant
+                        and "pre-reform" not in dict_info.variant
+                    ):
                         should_check = True
                         log.info(f"Checking {dict_info.path} (default German reform)")
-                    elif (dict_info.language_code == "en" and dict_info.variant and "American" in dict_info.variant):
+                    elif (
+                        dict_info.language_code == "en"
+                        and dict_info.variant
+                        and "American" in dict_info.variant
+                    ):
                         should_check = True
-                        log.info(f"Checking {dict_info.path} (default American English)")
+                        log.info(
+                            f"Checking {dict_info.path} (default American English)"
+                        )
 
                 if should_check:
                     item.setCheckState(Qt.Checked)
@@ -721,12 +753,6 @@ class SettingsDialog(QDialog):
         self.keyboard_layout_combo.setCurrentText(
             self.current_settings.get("keyboard_layout", "Auto-detect").capitalize()
         )
-        self.notifications_check.setChecked(
-            self.current_settings.get("notifications_enabled", True)
-        )
-        self.exceptional_wpm_spin.setValue(
-            self.current_settings.get("exceptional_wpm_threshold", 120)
-        )
         self.notification_min_burst_spin.setValue(
             self.current_settings.get("notification_min_burst_ms", 10000) // 1000
         )
@@ -769,16 +795,21 @@ class SettingsDialog(QDialog):
         # Get enabled dictionary paths
         enabled_dict_paths = self.get_enabled_languages()
         enabled_dicts_str = ",".join(enabled_dict_paths) if enabled_dict_paths else ""
-        log.debug(f"get_settings: enabled_dict_paths={enabled_dict_paths}, enabled_dicts_str={enabled_dicts_str!r}")
+        log.debug(
+            f"get_settings: enabled_dict_paths={enabled_dict_paths}, enabled_dicts_str={enabled_dicts_str!r}"
+        )
 
         # Also update enabled_languages for backward compatibility
         from utils.dict_detector import DictionaryDetector
+
         enabled_lang_codes = set()
         for path in enabled_dict_paths:
             dict_info = DictionaryDetector.identify_dictionary(path)
             if dict_info:
                 enabled_lang_codes.add(dict_info.language_code)
-        enabled_langs_str = ",".join(sorted(enabled_lang_codes)) if enabled_lang_codes else "en,de"
+        enabled_langs_str = (
+            ",".join(sorted(enabled_lang_codes)) if enabled_lang_codes else "en,de"
+        )
 
         return {
             "burst_timeout_ms": str(self.burst_timeout_spin.value()),
@@ -791,8 +822,6 @@ class SettingsDialog(QDialog):
             "min_burst_key_count": str(self.min_key_count_spin.value()),
             "min_burst_duration_ms": str(self.min_burst_duration_spin.value()),
             "keyboard_layout": self.keyboard_layout_combo.currentData().lower(),
-            "notifications_enabled": str(self.notifications_check.isChecked()),
-            "exceptional_wpm_threshold": str(int(self.exceptional_wpm_spin.value())),
             "notification_min_burst_ms": str(
                 self.notification_min_burst_spin.value() * 1000
             ),
@@ -817,7 +846,6 @@ class SettingsDialog(QDialog):
             else "accept_all",
             "enabled_languages": enabled_langs_str,
             "enabled_dictionaries": enabled_dicts_str,
-            "custom_dict_paths": "",
         }
 
     def export_csv(self) -> None:
@@ -864,7 +892,9 @@ class SettingsDialog(QDialog):
                 pixmap = icon.pixmap(button.iconSize())
                 painter = QPainter(pixmap)
                 painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-                painter.fillRect(pixmap.rect(), button.palette().color(QPalette.ButtonText))
+                painter.fillRect(
+                    pixmap.rect(), button.palette().color(QPalette.ButtonText)
+                )
                 painter.end()
                 button.setIcon(QIcon(pixmap))
 

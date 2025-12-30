@@ -117,29 +117,40 @@ class Dictionary:
             for path in config.enabled_dictionary_paths:
                 # Detect language code from the dictionary file
                 from utils.dict_detector import DictionaryDetector
+
                 dict_info = DictionaryDetector.identify_dictionary(path)
                 if dict_info:
                     resolved_paths[dict_info.language_code] = path
                 else:
                     # Fallback: try to guess from filename
-                    import re
                     from pathlib import Path
+
                     filename = Path(path).name.lower()
-                    if 'ngerman' in filename or 'german' in filename:
-                        resolved_paths['de'] = path
-                    elif 'american' in filename or 'english' in filename or 'words' in filename:
-                        resolved_paths['en'] = path
+                    if "ngerman" in filename or "german" in filename:
+                        resolved_paths["de"] = path
+                    elif (
+                        "american" in filename
+                        or "english" in filename
+                        or "words" in filename
+                    ):
+                        resolved_paths["en"] = path
                     else:
                         log.warning(f"Could not detect language for {path}")
 
             if resolved_paths:
-                log.info(f"Loading specific dictionaries: {list(resolved_paths.keys())}")
+                log.info(
+                    f"Loading specific dictionaries: {list(resolved_paths.keys())}"
+                )
                 return resolved_paths, False
             elif config.auto_fallback:
-                log.warning("No valid specific dictionaries found, enabling accept-all mode")
+                log.warning(
+                    "No valid specific dictionaries found, enabling accept-all mode"
+                )
                 return {}, True
             else:
-                log.error("No valid specific dictionaries found and auto_fallback is disabled")
+                log.error(
+                    "No valid specific dictionaries found and auto_fallback is disabled"
+                )
                 return {}, False
 
         # Legacy behavior: use enabled_languages

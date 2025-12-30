@@ -83,7 +83,7 @@ class TestConfigGet:
 
     def test_get_existing_key_bool_value(self, config):
         """Test getting a key with boolean value."""
-        value = config.get("notifications_enabled")
+        value = config.get("worst_letter_notifications_enabled")
         assert value is True
 
     def test_get_nonexistent_key_returns_default_from_defaults(self, config):
@@ -149,8 +149,8 @@ class TestConfigTypeGetters:
 
     def test_get_float_returns_float(self, config):
         """Test get_float returns float value."""
-        value = config.get_float("exceptional_wpm_threshold")
-        expected = AppSettings.__fields__["exceptional_wpm_threshold"].default
+        value = config.get_float("burst_timeout_ms")
+        expected = AppSettings.model_fields["burst_timeout_ms"].default
         assert isinstance(value, float)
         assert value == expected
 
@@ -219,7 +219,7 @@ class TestConfigTypeGetters:
 
     def test_get_bool_fallback_to_default_settings(self, config):
         """Test get_bool falls back to DEFAULT_SETTINGS."""
-        value = config.get_bool("password_exclusion")
+        value = config.get_bool("worst_letter_notifications_enabled")
         assert value is True
 
 
@@ -306,11 +306,9 @@ class TestConfigGetAll:
         all_settings = config.get_all()
         # Check that numeric values are parsed
         assert isinstance(all_settings["burst_timeout_ms"], int)
-        assert isinstance(
-            all_settings["exceptional_wpm_threshold"], int
-        )  # int, not float
+        assert isinstance(all_settings["notification_threshold_days"], int)
         # Check that boolean values are parsed
-        assert isinstance(all_settings["notifications_enabled"], bool)
+        assert isinstance(all_settings["worst_letter_notifications_enabled"], bool)
 
 
 class TestConfigValueParsing:
@@ -434,13 +432,6 @@ class TestConfigValidation:
         ):
             config.set("notification_time_hour", 24)
 
-    def test_set_rejects_invalid_minute(self, config):
-        """Test that set() rejects invalid minute values."""
-        with pytest.raises(
-            ValueError, match="Invalid value for notification_time_minute"
-        ):
-            config.set("notification_time_minute", 60)
-
     def test_cross_field_validation_active_threshold_too_high(self, config):
         """Test that active_time_threshold_ms < burst_timeout_ms is enforced."""
         # First set burst_timeout_ms
@@ -462,6 +453,7 @@ class TestDefaultSettings:
     def test_app_settings_is_model(self):
         """Test that AppSettings is a pydantic BaseModel."""
         from pydantic import BaseModel
+
         assert isinstance(AppSettings(), BaseModel)
 
     def test_app_settings_has_expected_defaults(self):
@@ -469,16 +461,13 @@ class TestDefaultSettings:
         settings = AppSettings()
         # Check that key fields have expected default values
         assert settings.burst_timeout_ms > 0
-        assert isinstance(settings.notifications_enabled, bool)
         assert isinstance(settings.keyboard_layout, str)
 
     def test_app_settings_expected_keys_present(self):
         """Test that expected keys are accessible on AppSettings."""
         expected_keys = [
             "burst_timeout_ms",
-            "notifications_enabled",
             "keyboard_layout",
-            "exceptional_wpm_threshold",
         ]
         settings = AppSettings()
         for key in expected_keys:
@@ -490,5 +479,4 @@ class TestDefaultSettings:
         # Check that fields exist and have proper types
         settings = AppSettings()
         assert isinstance(settings.burst_timeout_ms, int)
-        assert isinstance(settings.notifications_enabled, bool)
         assert isinstance(settings.keyboard_layout, str)

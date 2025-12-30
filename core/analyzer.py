@@ -1,7 +1,6 @@
 """Analyzer for typing statistics and high scores."""
 
 import logging
-import sqlcipher3 as sqlite3
 import time
 from typing import Optional, Dict, List, Any
 from collections import defaultdict
@@ -157,8 +156,6 @@ class Analyzer:
 
         # Store key event to database
         self.storage.store_key_event(keycode, key_name, timestamp_ms)
-
-        press_time_ms = timestamp_ms
 
         with self._lock:
             self.today_stats["total_keystrokes"] += 1
@@ -491,7 +488,10 @@ class Analyzer:
             current_time_ms = int(time.time() * 1000)
 
             # Check if debounce period has elapsed
-            if current_time_ms - self.last_worst_letter_notification < self.worst_letter_debounce_ms:
+            if (
+                current_time_ms - self.last_worst_letter_notification
+                < self.worst_letter_debounce_ms
+            ):
                 return None
 
             # Initialize on first run
@@ -510,7 +510,8 @@ class Analyzer:
                     previous_time_ms=self.worst_letter_avg_time,
                     new_time_ms=current_worst.avg_press_time,
                     timestamp=current_time_ms,
-                    improvement=current_worst.avg_press_time < self.worst_letter_avg_time,
+                    improvement=current_worst.avg_press_time
+                    < self.worst_letter_avg_time,
                 )
 
                 # Update state

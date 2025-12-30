@@ -35,9 +35,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("realtypecoach")
 
-from PySide6.QtWidgets import QApplication, QMessageBox, QDialog  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QPushButton  # noqa: E402
 from PySide6.QtCore import QTimer, QObject, Signal  # noqa: E402
-from PySide6.QtGui import QFont, QIcon, QPalette, QColor  # noqa: E402
+from PySide6.QtGui import QFont, QIcon, QPalette, QPainter  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 
 from core.storage import Storage  # noqa: E402
@@ -121,6 +121,7 @@ class Application(QObject):
         if self.db_path.exists():
             import sqlcipher3 as sqlite3
             import uuid
+
             crypto = CryptoManager(self.db_path)
 
             # Check if database is actually encrypted
@@ -140,8 +141,10 @@ class Application(QObject):
 
             # If database exists but cannot be decrypted, backup and create new
             if not is_encrypted:
-                backup_path = self.db_path.with_suffix(f'.db.{uuid.uuid4()}.backup')
-                log.info(f"Old undecryptable database detected, backing up to {backup_path.name}")
+                backup_path = self.db_path.with_suffix(f".db.{uuid.uuid4()}.backup")
+                log.info(
+                    f"Old undecryptable database detected, backing up to {backup_path.name}"
+                )
                 try:
                     self.db_path.rename(backup_path)
                     log.info(f"Backed up old database to {backup_path}")
@@ -252,12 +255,17 @@ class Application(QObject):
         self.signal_update_fastest_words_stats.connect(
             self.stats_panel.update_fastest_words
         )
-        self.signal_update_typing_time_display.connect(self.stats_panel.update_typing_time_display)
+        self.signal_update_typing_time_display.connect(
+            self.stats_panel.update_typing_time_display
+        )
         self.signal_update_worst_word.connect(self.stats_panel.update_worst_word)
-        self.signal_update_keystrokes_bursts.connect(self.stats_panel.update_keystrokes_bursts)
+        self.signal_update_keystrokes_bursts.connect(
+            self.stats_panel.update_keystrokes_bursts
+        )
         self.signal_update_trend_data.connect(self.stats_panel.update_trend_graph)
         # Use Qt.QueuedConnection to ensure signal crosses thread boundaries properly
         from PySide6.QtCore import Qt
+
         self.signal_update_typing_time_graph.connect(
             self.stats_panel.update_typing_time_graph,
             Qt.ConnectionType.QueuedConnection,
@@ -337,7 +345,6 @@ class Application(QObject):
         Args:
             change: WorstLetterChange pydantic model
         """
-        from core.models import WorstLetterChange
 
         if change.improvement:
             message = (
@@ -354,9 +361,7 @@ class Application(QObject):
             )
             icon_type = "warning"
 
-        self.tray_icon.show_notification(
-            "🔤 Worst Letter Changed", message, icon_type
-        )
+        self.tray_icon.show_notification("🔤 Worst Letter Changed", message, icon_type)
 
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
@@ -364,7 +369,9 @@ class Application(QObject):
         special_keys = {"__clear_database__", "export_csv_path"}
 
         if "enabled_dictionaries" in new_settings:
-            log.info(f"Saving enabled_dictionaries: {new_settings['enabled_dictionaries']!r}")
+            log.info(
+                f"Saving enabled_dictionaries: {new_settings['enabled_dictionaries']!r}"
+            )
 
         for key, value in new_settings.items():
             if key not in special_keys:
@@ -382,11 +389,13 @@ class Application(QObject):
 
         # Update worst letter notification settings
         if "worst_letter_notifications_enabled" in new_settings:
-            self.notification_handler.worst_letter_notifications_enabled = self.config.get_bool(
-                "worst_letter_notifications_enabled", False
+            self.notification_handler.worst_letter_notifications_enabled = (
+                self.config.get_bool("worst_letter_notifications_enabled", False)
             )
         if "worst_letter_notification_debounce_min" in new_settings:
-            debounce_min = self.config.get_int("worst_letter_notification_debounce_min", 5)
+            debounce_min = self.config.get_int(
+                "worst_letter_notification_debounce_min", 5
+            )
             self.analyzer.worst_letter_debounce_ms = debounce_min * 60 * 1000
 
         # Update daily summary settings
@@ -407,9 +416,35 @@ class Application(QObject):
             self.signal_update_typing_time_display.emit(0, 0)
             self.signal_update_trend_data.emit([])
             self.signal_update_typing_time_graph.emit([])
-            QMessageBox.information(
-                None, "Data Cleared", "All typing data has been deleted."
+            self.signal_update_worst_letter.emit("", 0.0)
+            self.signal_update_worst_word.emit(None)
+            msg_box = QMessageBox(
+                QMessageBox.Information,
+                "Data Cleared",
+                "All typing data has been deleted.",
+                QMessageBox.Ok,
+                None,
             )
+            msg_box.setStyleSheet(
+                """
+                QMessageBox { messagebox-text-interaction-flags: 5; }
+                QPushButton {
+                    color: palette(text);
+                }
+            """
+            )
+            for button in msg_box.findChildren(QPushButton):
+                icon = button.icon()
+                if not icon.isNull():
+                    pixmap = icon.pixmap(button.iconSize())
+                    painter = QPainter(pixmap)
+                    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+                    painter.fillRect(
+                        pixmap.rect(), button.palette().color(QPalette.ButtonText)
+                    )
+                    painter.end()
+                    button.setIcon(QIcon(pixmap))
+            msg_box.exec()
 
         if "export_csv_path" in new_settings:
             try:
@@ -574,7 +609,9 @@ class Application(QObject):
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""
         enabled_dicts_value = self.config.get("enabled_dictionaries", "")
-        log.info(f"show_settings_dialog: loaded enabled_dictionaries from config: {enabled_dicts_value!r}")
+        log.info(
+            f"show_settings_dialog: loaded enabled_dictionaries from config: {enabled_dicts_value!r}"
+        )
         current_settings = {
             "burst_timeout_ms": self.config.get_int("burst_timeout_ms", 1000),
             "burst_duration_calculation": self.config.get(
@@ -587,12 +624,6 @@ class Application(QObject):
                 "high_score_min_duration_ms", 10000
             ),
             "keyboard_layout": self.config.get("keyboard_layout", "auto"),
-            "notifications_enabled": self.config.get_bool(
-                "notifications_enabled", True
-            ),
-            "exceptional_wpm_threshold": self.config.get_int(
-                "exceptional_wpm_threshold", 120
-            ),
             "notification_time_hour": self.config.get_int("notification_time_hour", 18),
             "worst_letter_notifications_enabled": self.config.get_bool(
                 "worst_letter_notifications_enabled", False
@@ -605,7 +636,6 @@ class Application(QObject):
             "dictionary_mode": self.config.get("dictionary_mode", "validate"),
             "enabled_languages": self.config.get("enabled_languages", "en,de"),
             "enabled_dictionaries": enabled_dicts_value,
-            "custom_dict_paths": self.config.get("custom_dict_paths", ""),
         }
         dialog = SettingsDialog(current_settings)
         if dialog.exec() == QDialog.Accepted:
@@ -645,7 +675,7 @@ class Application(QObject):
 
         self.notification_handler.set_notification_time(
             hour=self.config.get_int("notification_time_hour", 18),
-            minute=self.config.get_int("notification_time_minute", 0),
+            minute=0,
         )
 
         retention_days = self.config.get_int("data_retention_days", -1)
@@ -734,8 +764,8 @@ def main():
     palette = app.palette()
     bg_color = palette.color(QPalette.ColorRole.Window)
     fg_color = palette.color(QPalette.ColorRole.WindowText)
-    pg.setConfigOption('background', bg_color)
-    pg.setConfigOption('foreground', fg_color)
+    pg.setConfigOption("background", bg_color)
+    pg.setConfigOption("foreground", fg_color)
     pg.setConfigOptions(antialias=True)
 
     # Set default font to avoid malformed KDE font descriptions
