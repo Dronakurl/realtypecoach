@@ -159,3 +159,11 @@ Thumbs.db
 # Build artifacts
 *.pyc
 *.pyo
+
+# Project-specific
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.log
