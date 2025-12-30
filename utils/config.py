@@ -5,7 +5,7 @@ import sqlcipher3 as sqlite3
 from pathlib import Path
 from typing import Any, Optional, List
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from utils.crypto import CryptoManager
 
 
@@ -93,19 +93,16 @@ class AppSettings(BaseModel):
         default="en,de", description="Comma-separated language codes"
     )
 
-    class Config:
-        """Pydantic model configuration."""
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
-        extra = "ignore"
-        use_enum_values = True
-
-    @validator("active_time_threshold_ms")
-    def validate_active_threshold(cls, v, values):
+    @field_validator("active_time_threshold_ms")
+    @classmethod
+    def validate_active_threshold(cls, v, info):
         """Validate interdependent field relationships."""
-        if "burst_timeout_ms" in values and v >= values["burst_timeout_ms"]:
+        if "burst_timeout_ms" in info.data and v >= info.data["burst_timeout_ms"]:
             raise ValueError(
                 f"active_time_threshold_ms ({v}) must be "
-                f"less than burst_timeout_ms ({values['burst_timeout_ms']})"
+                f"less than burst_timeout_ms ({info.data['burst_timeout_ms']})"
             )
         return v
 
@@ -178,7 +175,7 @@ class Config:
 
     def _ensure_defaults(self) -> None:
         """Ensure all default settings exist in database."""
-        defaults = AppSettings().dict()
+        defaults = AppSettings().model_dump()
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -248,7 +245,7 @@ class Config:
                 raw_value = result[0]
                 parsed = self._simple_parse(raw_value)
                 # Validate through pydantic if key is in AppSettings
-                if key in AppSettings.__fields__:
+                if key in AppSettings.model_fields:
                     try:
                         settings = AppSettings(**{key: parsed})
                         return getattr(settings, key)
@@ -258,7 +255,7 @@ class Config:
             if default is not None:
                 return default
             # Fall back to AppSettings default if key exists
-            if key in AppSettings.__fields__:
+            if key in AppSettings.model_fields:
                 settings = AppSettings()
                 return getattr(settings, key)
             return None
@@ -313,7 +310,7 @@ class Config:
             ValueError: If value fails validation
         """
         # Validate using pydantic if key is in AppSettings
-        if key in AppSettings.__fields__:
+        if key in AppSettings.model_fields:
             try:
                 partial = {key: value}
                 validated = AppSettings(**partial)

@@ -238,7 +238,10 @@ class Application(QObject):
             callback=self.on_layout_changed, poll_interval=60
         )
 
-        self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
+        self.stats_panel = StatsPanel(
+            icon_path=str(self.icon_path),
+            slowest_keys_count=self.config.get_int("slowest_keys_count", 10),
+        )
         self.tray_icon = TrayIcon(
             self.stats_panel,
             self.icon_path,
@@ -558,7 +561,7 @@ class Application(QObject):
         self.signal_update_slowest_keys.emit(slowest_keys)
 
         fastest_keys = self.analyzer.get_fastest_keys(
-            limit=self.config.get_int("fastest_keys_count", 10),
+            limit=self.config.get_int("slowest_keys_count", 10),
             layout=self.get_current_layout(),
         )
         self.signal_update_fastest_keys.emit(fastest_keys)

@@ -1,7 +1,7 @@
 """Burst detector configuration with Pydantic validation."""
 
 from enum import Enum
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DurationCalculationMethod(str, Enum):
@@ -44,19 +44,16 @@ class BurstDetectorConfig(BaseModel):
         description="Minimum duration required for burst to be recorded (ms)",
     )
 
-    class Config:
-        """Pydantic model configuration."""
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
-        extra = "ignore"
-        use_enum_values = True
-
-    @validator("active_time_threshold_ms")
-    def validate_thresholds(cls, v, values):  # noqa: N805
+    @field_validator("active_time_threshold_ms")
+    @classmethod
+    def validate_thresholds(cls, v, info):
         """Validate interdependent field relationships."""
-        if "burst_timeout_ms" in values and v >= values["burst_timeout_ms"]:
+        if "burst_timeout_ms" in info.data and v >= info.data["burst_timeout_ms"]:
             raise ValueError(
                 f"active_time_threshold_ms ({v}) must be "
-                f"less than burst_timeout_ms ({values['burst_timeout_ms']})"
+                f"less than burst_timeout_ms ({info.data['burst_timeout_ms']})"
             )
         return v
 

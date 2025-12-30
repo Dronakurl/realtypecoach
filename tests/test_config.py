@@ -47,13 +47,13 @@ class TestConfigInit:
             cursor.execute("SELECT COUNT(*) FROM settings")
             count = cursor.fetchone()[0]
             # Count fields in AppSettings model (exclude private fields)
-            expected_count = len(AppSettings.__fields__)
+            expected_count = len(AppSettings.model_fields)
             assert count == expected_count
 
     def test_config_initialization_all_default_keys_present(self, config):
         """Test that all AppSettings keys are in database."""
         all_settings = config.get_all()
-        for key in AppSettings.__fields__:
+        for key in AppSettings.model_fields:
             assert key in all_settings
 
     def test_config_db_path_stored(self, temp_db):
@@ -72,13 +72,13 @@ class TestConfigGet:
     def test_get_existing_key_returns_value(self, config):
         """Test getting an existing key returns its value."""
         value = config.get("burst_timeout_ms")
-        expected = AppSettings.__fields__["burst_timeout_ms"].default
+        expected = AppSettings.model_fields["burst_timeout_ms"].default
         assert value == expected  # Should be parsed as int
 
     def test_get_existing_key_string_value(self, config):
         """Test getting a key with string value."""
         value = config.get("keyboard_layout")
-        expected = AppSettings.__fields__["keyboard_layout"].default
+        expected = AppSettings.model_fields["keyboard_layout"].default
         assert value == expected
 
     def test_get_existing_key_bool_value(self, config):
@@ -94,7 +94,7 @@ class TestConfigGet:
 
         # get() returns from AppSettings default (typed as int)
         value = config.get("min_burst_key_count")
-        expected = AppSettings.__fields__["min_burst_key_count"].default
+        expected = AppSettings.model_fields["min_burst_key_count"].default
         assert value == expected
         assert isinstance(value, int)
 
@@ -115,7 +115,7 @@ class TestConfigTypeGetters:
     def test_get_int_returns_integer(self, config):
         """Test get_int returns integer value."""
         value = config.get_int("burst_timeout_ms")
-        expected = AppSettings.__fields__["burst_timeout_ms"].default
+        expected = AppSettings.model_fields["burst_timeout_ms"].default
         assert isinstance(value, int)
         assert value == expected
 
@@ -143,7 +143,7 @@ class TestConfigTypeGetters:
             conn.execute("DELETE FROM settings WHERE key = 'slowest_keys_count'")
 
         value = config.get_int("slowest_keys_count")
-        expected = AppSettings.__fields__["slowest_keys_count"].default
+        expected = AppSettings.model_fields["slowest_keys_count"].default
         assert value == expected
         assert isinstance(value, int)
 
@@ -285,7 +285,7 @@ class TestConfigGetAll:
     def test_get_all_contains_all_defaults(self, config):
         """Test that get_all() contains all default keys."""
         all_settings = config.get_all()
-        for key in AppSettings.__fields__:
+        for key in AppSettings.model_fields:
             assert key in all_settings
 
     def test_get_all_includes_custom_values(self, config):

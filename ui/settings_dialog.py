@@ -208,19 +208,6 @@ class SettingsDialog(QDialog):
             "Language",
         )
 
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addStretch()
-
-        export_btn = QPushButton("Export to CSV")
-        export_btn.clicked.connect(self.export_csv)
-        buttons_layout.addWidget(export_btn)
-
-        clear_btn = QPushButton("Clear All Data")
-        clear_btn.clicked.connect(self.clear_data)
-        buttons_layout.addWidget(clear_btn)
-
-        layout.addLayout(buttons_layout)
-
         dialog_buttons = QHBoxLayout()
         ok_btn = QPushButton("OK")
         ok_btn.clicked.connect(self.accept)
@@ -513,6 +500,22 @@ class SettingsDialog(QDialog):
 
         retention_group.setLayout(retention_layout)
         layout.addWidget(retention_group)
+
+        # Data Actions Group
+        actions_group = QGroupBox("Data Actions")
+        actions_layout = QHBoxLayout()
+
+        export_btn = QPushButton("Export to CSV")
+        export_btn.clicked.connect(self.export_csv)
+        actions_layout.addWidget(export_btn)
+
+        clear_btn = QPushButton("Clear All Data")
+        clear_btn.clicked.connect(self.clear_data)
+        actions_layout.addWidget(clear_btn)
+
+        actions_layout.addStretch()
+        actions_group.setLayout(actions_layout)
+        layout.addWidget(actions_group)
 
         layout.addStretch()
         widget.setLayout(layout)

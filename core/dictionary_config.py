@@ -1,6 +1,6 @@
 """Dictionary configuration with Pydantic validation."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DictionaryConfig(BaseModel):
@@ -23,10 +23,7 @@ class DictionaryConfig(BaseModel):
         default=True, description="Auto-enable accept_all if no dictionaries found"
     )
 
-    class Config:
-        """Pydantic model configuration."""
-
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 __all__ = ["DictionaryConfig"]

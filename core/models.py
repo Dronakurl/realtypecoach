@@ -1,6 +1,6 @@
 """Pydantic models for RealTypeCoach data structures."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DailySummary(BaseModel):
@@ -13,8 +13,7 @@ class DailySummary(BaseModel):
     avg_wpm: str = Field(..., description="Average WPM as string")
     keystrokes: str = Field(..., description="Total keystrokes count as string")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class DailySummaryDB(BaseModel):
@@ -30,8 +29,7 @@ class DailySummaryDB(BaseModel):
         default=False, description="Whether daily summary was sent"
     )
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class KeyPerformance(BaseModel):
@@ -41,8 +39,7 @@ class KeyPerformance(BaseModel):
     key_name: str = Field(..., description="Human-readable key name")
     avg_press_time: float = Field(..., description="Average press time in milliseconds")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class WordStatisticsLite(BaseModel):
@@ -55,8 +52,7 @@ class WordStatisticsLite(BaseModel):
     total_duration_ms: int = Field(..., description="Total duration in milliseconds")
     total_letters: int = Field(..., description="Total number of letters")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class WordStatisticsFull(BaseModel):
@@ -74,8 +70,7 @@ class WordStatisticsFull(BaseModel):
     backspace_count: int = Field(default=0, description="Number of backspaces used")
     editing_time_ms: int = Field(default=0, description="Time spent editing in ms")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class BurstTimeSeries(BaseModel):
@@ -84,8 +79,7 @@ class BurstTimeSeries(BaseModel):
     timestamp_ms: int = Field(..., description="Burst start timestamp in milliseconds")
     avg_wpm: float = Field(..., description="Average WPM during burst")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class TypingTimeDataPoint(BaseModel):
@@ -100,8 +94,7 @@ class TypingTimeDataPoint(BaseModel):
     total_bursts: int = Field(..., description="Number of bursts in period")
     avg_wpm: float = Field(..., description="Average WPM for the period")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class KeystrokeInfo(BaseModel):
@@ -112,8 +105,7 @@ class KeystrokeInfo(BaseModel):
     type: str = Field(..., description="Type: 'letter' or 'backspace'")
     keycode: int | None = Field(default=None, description="Linux evdev keycode")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class WordInfo(BaseModel):
@@ -129,8 +121,7 @@ class WordInfo(BaseModel):
         default_factory=list, description="List of keystrokes in this word"
     )
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class BurstInfo(BaseModel):
@@ -140,8 +131,7 @@ class BurstInfo(BaseModel):
     duration_ms: int = Field(..., description="Duration in milliseconds")
     qualifies: bool = Field(..., description="Whether qualifies for high score")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class DailyStats(BaseModel):
@@ -158,8 +148,7 @@ class DailyStats(BaseModel):
     )
     last_press_time: int = Field(default=0, description="Last press time (global)")
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 class WorstLetterChange(BaseModel):
@@ -174,5 +163,4 @@ class WorstLetterChange(BaseModel):
         ..., description="True if the new worst letter is faster (improvement)"
     )
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")

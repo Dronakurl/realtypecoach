@@ -24,14 +24,16 @@ class StatsPanel(QWidget):
 
     settings_requested = Signal()
 
-    def __init__(self, icon_path: str = None):
+    def __init__(self, icon_path: str = None, slowest_keys_count: int = 10):
         """Initialize statistics panel.
 
         Args:
             icon_path: Optional path to the project logo icon
+            slowest_keys_count: Number of slowest/fastest keys to display
         """
         super().__init__()
         self.icon_path = icon_path
+        self.slowest_keys_count = slowest_keys_count
         self.init_ui()
 
     @staticmethod
@@ -248,7 +250,9 @@ class StatsPanel(QWidget):
         keys_tab = QWidget()
         keys_layout = QVBoxLayout(keys_tab)
 
-        self.slowest_title = QLabel("🐌 Slowest Letter Keys (Top 10)")
+        self.slowest_title = QLabel(
+            f"🐌 Slowest Letter Keys (Top {self.slowest_keys_count})"
+        )
         self.slowest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         keys_layout.addWidget(self.slowest_title)
 
@@ -258,8 +262,8 @@ class StatsPanel(QWidget):
         self.slowest_table.setHorizontalHeaderLabels(["Rank", "Key", "WPM"])
         self.slowest_table.verticalHeader().setVisible(False)
         self.slowest_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.slowest_table.setRowCount(10)
-        for i in range(10):
+        self.slowest_table.setRowCount(self.slowest_keys_count)
+        for i in range(self.slowest_keys_count):
             self.slowest_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
             self.slowest_table.setItem(i, 1, QTableWidgetItem("--"))
             self.slowest_table.setItem(i, 2, QTableWidgetItem("--"))
@@ -267,7 +271,9 @@ class StatsPanel(QWidget):
 
         keys_layout.addSpacing(10)
 
-        self.fastest_title = QLabel("⚡ Fastest Letter Keys (Top 10)")
+        self.fastest_title = QLabel(
+            f"⚡ Fastest Letter Keys (Top {self.slowest_keys_count})"
+        )
         self.fastest_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         keys_layout.addWidget(self.fastest_title)
 
@@ -277,8 +283,8 @@ class StatsPanel(QWidget):
         self.fastest_table.setHorizontalHeaderLabels(["Rank", "Key", "WPM"])
         self.fastest_table.verticalHeader().setVisible(False)
         self.fastest_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.fastest_table.setRowCount(10)
-        for i in range(10):
+        self.fastest_table.setRowCount(self.slowest_keys_count)
+        for i in range(self.slowest_keys_count):
             self.fastest_table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
             self.fastest_table.setItem(i, 1, QTableWidgetItem("--"))
             self.fastest_table.setItem(i, 2, QTableWidgetItem("--"))
@@ -427,7 +433,7 @@ class StatsPanel(QWidget):
             self.slowest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
             self.slowest_table.setItem(i, 2, QTableWidgetItem(f"{wpm:.1f}"))
 
-        for i in range(len(slowest_keys), 10):
+        for i in range(len(slowest_keys), self.slowest_keys_count):
             self.slowest_table.setItem(i, 1, QTableWidgetItem("--"))
             self.slowest_table.setItem(i, 2, QTableWidgetItem("--"))
 
@@ -443,7 +449,7 @@ class StatsPanel(QWidget):
             self.fastest_table.setItem(i, 1, QTableWidgetItem(key_perf.key_name))
             self.fastest_table.setItem(i, 2, QTableWidgetItem(f"{wpm:.1f}"))
 
-        for i in range(len(fastest_keys), 10):
+        for i in range(len(fastest_keys), self.slowest_keys_count):
             self.fastest_table.setItem(i, 1, QTableWidgetItem("--"))
             self.fastest_table.setItem(i, 2, QTableWidgetItem("--"))
 
