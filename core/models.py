@@ -88,6 +88,20 @@ class BurstTimeSeries(BaseModel):
         extra = "ignore"
 
 
+class TypingTimeDataPoint(BaseModel):
+    """Typing time and WPM aggregated data point for time series."""
+
+    period_start: int = Field(..., description="Period start timestamp (ms)")
+    period_end: int = Field(..., description="Period end timestamp (ms)")
+    period_label: str = Field(..., description="Human-readable period label (e.g., '2025-01-15')")
+    total_typing_ms: int = Field(..., description="Total typing time in milliseconds")
+    total_bursts: int = Field(..., description="Number of bursts in period")
+    avg_wpm: float = Field(..., description="Average WPM for the period")
+
+    class Config:
+        extra = "ignore"
+
+
 class KeystrokeInfo(BaseModel):
     """Single keystroke in word tracking."""
 
@@ -136,8 +150,22 @@ class DailyStats(BaseModel):
     keypress_times: dict[int, float] = Field(
         default_factory=dict, description="Intervals per key"
     )
-    last_press_time: dict[int, int] = Field(
-        default_factory=dict, description="Last press per key"
+    last_press_time: int = Field(default=0, description="Last press time (global)")
+
+    class Config:
+        extra = "ignore"
+
+
+class WorstLetterChange(BaseModel):
+    """Worst letter change notification data."""
+
+    previous_key: str = Field(..., description="Previous worst letter key name")
+    new_key: str = Field(..., description="New worst letter key name")
+    previous_time_ms: float = Field(..., description="Previous worst letter time (ms)")
+    new_time_ms: float = Field(..., description="New worst letter time (ms)")
+    timestamp: int = Field(..., description="Change timestamp in milliseconds")
+    improvement: bool = Field(
+        ..., description="True if the new worst letter is faster (improvement)"
     )
 
     class Config:

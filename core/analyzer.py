@@ -2,6 +2,7 @@
 
 import logging
 import sqlite3
+import time
 from typing import Optional, Dict, List, Any
 from collections import defaultdict
 from datetime import datetime
@@ -9,9 +10,20 @@ import threading
 
 from core.storage import Storage
 from core.burst_detector import Burst
-from core.models import DailySummaryDB, KeyPerformance, WordStatisticsLite, DailyStats
+from core.models import (
+    DailySummaryDB,
+    KeyPerformance,
+    WordStatisticsLite,
+    DailyStats,
+    WorstLetterChange,
+    TypingTimeDataPoint,
+)
 
 log = logging.getLogger("realtypecoach.analyzer")
+
+# Maximum gap between keystrokes to consider them part of continuous typing
+# Same as burst_timeout_ms in BurstDetectorConfig
+BURST_TIMEOUT_MS = 1000
 
 
 class Analyzer:
@@ -36,7 +48,7 @@ class Analyzer:
             "slowest_key_name": None,
             "slowest_ms": 0.0,
             "keypress_times": defaultdict(list),
-            "last_press_time": {},
+            "last_press_time": 0,
         }
 
         self.current_wpm: float = 0.0
@@ -44,6 +56,13 @@ class Analyzer:
         self.personal_best_today: Optional[float] = None
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
+
+        # Worst letter tracking state
+        self.worst_letter_keycode: Optional[int] = None
+        self.worst_letter_key_name: Optional[str] = None
+        self.worst_letter_avg_time: float = 0.0
+        self.last_worst_letter_notification: int = 0  # Timestamp of last notification
+        self.worst_letter_debounce_ms: int = 300000  # 5 minutes default
 
         # Load today's existing data from database
         self._load_today_data()
@@ -143,23 +162,25 @@ class Analyzer:
 
         with self._lock:
             self.today_stats["total_keystrokes"] += 1
-            last_press = self.today_stats["last_press_time"].get(keycode)
+            last_press = self.today_stats["last_press_time"]
 
-        if last_press:
+        if last_press > 0:
             time_between = press_time_ms - last_press
-            with self._lock:
-                self.today_stats["keypress_times"][keycode].append(time_between)
+            # Skip recording if gap is too large (first keystroke after a pause)
+            if time_between <= BURST_TIMEOUT_MS:
+                with self._lock:
+                    self.today_stats["keypress_times"][keycode].append(time_between)
 
-                if time_between > self.today_stats["slowest_ms"]:
-                    self.today_stats["slowest_ms"] = time_between
-                    self.today_stats["slowest_keycode"] = keycode
-                    self.today_stats["slowest_key_name"] = key_name
+                    if time_between > self.today_stats["slowest_ms"]:
+                        self.today_stats["slowest_ms"] = time_between
+                        self.today_stats["slowest_keycode"] = keycode
+                        self.today_stats["slowest_key_name"] = key_name
 
-            self._update_key_statistics(keycode, key_name, time_between, layout)
+                self._update_key_statistics(keycode, key_name, time_between, layout)
 
         # Store current press time for next comparison
         with self._lock:
-            self.today_stats["last_press_time"][keycode] = press_time_ms
+            self.today_stats["last_press_time"] = press_time_ms
 
     def process_burst(self, burst: Burst) -> None:
         """Process a completed burst.
@@ -276,7 +297,7 @@ class Analyzer:
                 "slowest_key_name": None,
                 "slowest_ms": 0.0,
                 "keypress_times": defaultdict(list),
-                "last_press_time": {},
+                "last_press_time": 0,
             }
 
     def _finalize_day(self, date: str, stats: DailyStats) -> None:
@@ -460,6 +481,80 @@ class Analyzer:
         self.storage._process_new_key_events(layout=current_layout)
         return self.storage.get_fastest_words(limit, layout)
 
+    def get_long_term_average_wpm(self) -> Optional[float]:
+        """Get long-term average WPM across all recorded bursts.
+
+        Returns:
+            Average WPM or None if no bursts recorded
+        """
+        with sqlite3.connect(self.storage.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT AVG(avg_wpm) FROM bursts
+                WHERE avg_wpm > 0
+            """,
+            )
+            result = cursor.fetchone()
+            return result[0] if result and result[0] else None
+
+    def get_all_time_high_score(self) -> Optional[float]:
+        """Get all-time highest WPM.
+
+        Returns:
+            WPM or None if no bursts recorded
+        """
+        return self.storage.get_all_time_high_score()
+
+    def _check_worst_letter_change(self) -> Optional[WorstLetterChange]:
+        """Check if worst letter has changed and return change data.
+
+        Returns:
+            WorstLetterChange if changed and debounce elapsed, None otherwise
+        """
+        with self._lock:
+            # Get current worst letter from database
+            slowest_keys = self.storage.get_slowest_keys(limit=1, layout=None)
+
+            if not slowest_keys:
+                return None
+
+            current_worst = slowest_keys[0]
+            current_time_ms = int(time.time() * 1000)
+
+            # Check if debounce period has elapsed
+            if current_time_ms - self.last_worst_letter_notification < self.worst_letter_debounce_ms:
+                return None
+
+            # Initialize on first run
+            if self.worst_letter_keycode is None:
+                self.worst_letter_keycode = current_worst.keycode
+                self.worst_letter_key_name = current_worst.key_name
+                self.worst_letter_avg_time = current_worst.avg_press_time
+                return None
+
+            # Check if worst letter changed
+            if current_worst.keycode != self.worst_letter_keycode:
+                # Prepare change data
+                change = WorstLetterChange(
+                    previous_key=self.worst_letter_key_name or "unknown",
+                    new_key=current_worst.key_name,
+                    previous_time_ms=self.worst_letter_avg_time,
+                    new_time_ms=current_worst.avg_press_time,
+                    timestamp=current_time_ms,
+                    improvement=current_worst.avg_press_time < self.worst_letter_avg_time,
+                )
+
+                # Update state
+                self.worst_letter_keycode = current_worst.keycode
+                self.worst_letter_key_name = current_worst.key_name
+                self.worst_letter_avg_time = current_worst.avg_press_time
+                self.last_worst_letter_notification = current_time_ms
+
+                return change
+
+        return None
+
     def get_daily_summary(self, date: str) -> Optional[DailySummaryDB]:
         """Get daily summary for a date.
 
@@ -475,9 +570,9 @@ class Analyzer:
         """Get WPM values over burst sequence with sliding window aggregation.
 
         Args:
-            window_size: Number of bursts to aggregate (1-50)
+            window_size: Number of bursts to aggregate (1-200)
                         1 = no aggregation (each burst is one point)
-                        50 = 50-burst sliding average
+                        200 = 200-burst sliding average
 
         Returns:
             List of WPM values (one per data point)
@@ -495,11 +590,36 @@ class Analyzer:
         if window_size == 1:
             return raw_wpm
         else:
-            # Calculate sliding window average
+            # Calculate sliding window average (looking back at previous bursts)
             import pandas as pd
 
             series = pd.Series(raw_wpm)
             rolling_avg = series.rolling(
-                window=window_size, center=True, min_periods=1
+                window=window_size, center=False, min_periods=1
             ).mean()
             return rolling_avg.tolist()
+
+    def get_typing_time_data(
+        self,
+        granularity: str = "day",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        limit: int = 90,
+    ) -> List[TypingTimeDataPoint]:
+        """Get typing time aggregated by time granularity.
+
+        Args:
+            granularity: Time period granularity ("day", "week", "month", "quarter")
+            start_date: Optional start date (YYYY-MM-DD)
+            end_date: Optional end date (YYYY-MM-DD)
+            limit: Maximum number of periods to return
+
+        Returns:
+            List of TypingTimeDataPoint models
+        """
+        return self.storage.get_typing_time_by_granularity(
+            granularity=granularity,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+        )
