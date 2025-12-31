@@ -34,6 +34,7 @@ class StatsPanel(QWidget):
         super().__init__()
         self.icon_path = icon_path
         self.slowest_keys_count = 10
+        self._clipboard = QApplication.clipboard()
         self.init_ui()
 
     @staticmethod
@@ -694,10 +695,14 @@ class StatsPanel(QWidget):
     def copy_hardest_words_to_clipboard(self) -> None:
         """Copy the n slowest words to clipboard."""
         count = self.hardest_words_count_combo.currentData()
+        print(f"[DEBUG] Copy button clicked, requesting {count} words")
         if hasattr(self, "_request_words_for_clipboard_callback"):
-            self._request_words_for_clipboard_callback(
-                count, self._on_words_fetched_for_copy
-            )
+            print("[DEBUG] Callback exists, calling fetch")
+            # Store the callback temporarily and trigger fetch
+            self._clipboard_callback = self._on_words_fetched_for_copy
+            self._request_words_for_clipboard_callback(count)
+        else:
+            print("[DEBUG] ERROR: Callback not set!")
 
     def _on_words_fetched_for_copy(self, words: List[WordStatisticsLite]) -> None:
         """Callback when words are fetched - copies to clipboard.
@@ -705,12 +710,23 @@ class StatsPanel(QWidget):
         Args:
             words: List of WordStatisticsLite models
         """
+        print(f"[DEBUG] Words fetched: {len(words) if words else 0}")
         if words:
             word_list = [w.word for w in words]
             clipboard_text = " ".join(word_list)
-            QApplication.clipboard().setText(clipboard_text)
+            print(f"[DEBUG] Clipboard text: {clipboard_text[:100]}...")
+            # Use stored clipboard reference for Wayland compatibility
+            from PySide6.QtGui import QClipboard
+
+            # Try primary selection first (works better on some Wayland compositors)
+            self._clipboard.setText(clipboard_text, QClipboard.Mode.Selection)
+            # Also set clipboard for standard Ctrl+V
+            self._clipboard.setText(clipboard_text, QClipboard.Mode.Clipboard)
+            print("[DEBUG] Clipboard set successfully")
+
             self._show_copy_notification(len(words))
         else:
+            print("[DEBUG] No words to copy")
             self._show_copy_notification(0)
 
     def _show_copy_notification(self, count: int) -> None:
@@ -732,6 +748,12 @@ class StatsPanel(QWidget):
         """Set callback for fetching words for clipboard.
 
         Args:
-            callback: Function to call with (count, callback) parameters
+            callback: Function to call with (count) parameter
         """
         self._request_words_for_clipboard_callback = callback
+
+    def _on_clipboard_words_ready(self, words: List[WordStatisticsLite]) -> None:
+        """Slot called when clipboard words are ready."""
+        print(f"[DEBUG] Signal received with {len(words) if words else 0} words")
+        if hasattr(self, '_clipboard_callback'):
+            self._clipboard_callback(words)

@@ -71,6 +71,7 @@ class Application(QObject):
     signal_update_worst_word = Signal(object)
     signal_update_keystrokes_bursts = Signal(int, int)
     signal_settings_changed = Signal(dict)
+    signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -290,6 +291,13 @@ class Application(QObject):
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
         self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
         self.stats_panel.set_words_clipboard_callback(self.fetch_words_for_clipboard)
+
+        # Connect clipboard words signal with QueuedConnection for thread safety
+        from PySide6.QtCore import Qt
+        self.signal_clipboard_words_ready.connect(
+            self.stats_panel._on_clipboard_words_ready,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
@@ -513,25 +521,27 @@ class Application(QObject):
         thread = threading.Thread(target=fetch_data, daemon=True)
         thread.start()
 
-    def fetch_words_for_clipboard(self, count: int, callback) -> None:
-        """Fetch slowest words in background thread and call callback.
+    def fetch_words_for_clipboard(self, count: int) -> None:
+        """Fetch slowest words in background thread and emit signal.
 
         Args:
             count: Number of words to fetch
-            callback: Function to call with List[WordStatisticsLite]
         """
         import threading
 
         def fetch_in_thread():
             try:
+                print(f"[DEBUG] Fetching {count} slowest words from analyzer")
                 words = self.analyzer.get_slowest_words(
                     limit=count, layout=self.get_current_layout()
                 )
-                # Call callback on main thread
-                QTimer.singleShot(0, lambda: callback(words))
+                print(f"[DEBUG] Fetched {len(words)} words, emitting signal")
+                # Emit signal to main thread
+                self.signal_clipboard_words_ready.emit(words)
             except Exception as e:
                 log.error(f"Error fetching words for clipboard: {e}")
-                QTimer.singleShot(0, lambda: callback([]))
+                print(f"[DEBUG] Error fetching words: {e}")
+                self.signal_clipboard_words_ready.emit([])
 
         # Fetch in background thread to avoid blocking UI
         thread = threading.Thread(target=fetch_in_thread, daemon=True)
