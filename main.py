@@ -536,16 +536,13 @@ class Application(QObject):
 
         def fetch_in_thread():
             try:
-                print(f"[DEBUG] Fetching {count} slowest words from analyzer")
                 words = self.analyzer.get_slowest_words(
                     limit=count, layout=self.get_current_layout()
                 )
-                print(f"[DEBUG] Fetched {len(words)} words, emitting signal")
                 # Emit signal to main thread
                 self.signal_clipboard_words_ready.emit(words)
             except Exception as e:
                 log.error(f"Error fetching words for clipboard: {e}")
-                print(f"[DEBUG] Error fetching words: {e}")
                 self.signal_clipboard_words_ready.emit([])
 
         # Fetch in background thread to avoid blocking UI
