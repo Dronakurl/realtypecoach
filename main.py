@@ -70,7 +70,7 @@ class Application(QObject):
     signal_update_worst_letter = Signal(str, float)
     signal_update_worst_word = Signal(object)
     signal_update_keystrokes_bursts = Signal(int, int)
-    signal_update_avg_burst_duration = Signal(int)
+    signal_update_avg_burst_duration = Signal(int, int, int)
     signal_settings_changed = Signal(dict)
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
 
@@ -656,9 +656,9 @@ class Application(QObject):
         all_time_bursts = db_bursts + stats["total_bursts"]
         self.signal_update_keystrokes_bursts.emit(all_time_keystrokes, all_time_bursts)
 
-        # Update average burst duration
-        avg_burst_duration_ms = self.storage.get_average_burst_duration_ms()
-        self.signal_update_avg_burst_duration.emit(avg_burst_duration_ms)
+        # Update average burst duration stats
+        avg_ms, min_ms, max_ms = self.storage.get_burst_duration_stats_ms()
+        self.signal_update_avg_burst_duration.emit(avg_ms, min_ms, max_ms)
 
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""
