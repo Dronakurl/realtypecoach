@@ -135,9 +135,12 @@ class StatsPanel(QWidget):
         elif "Worst Letter" in label_text:
             self.worst_letter_value_label = value
             self.worst_letter_subtitle_label = subtitle
-        elif "Worst Word" in label_text:
-            self.worst_word_value_label = value
-            self.worst_word_subtitle_label = subtitle
+        elif "Hardest Word" in label_text:
+            self.hardest_word_value_label = value
+            self.hardest_word_subtitle_label = subtitle
+        elif "Fastest Word" in label_text:
+            self.fastest_word_value_label = value
+            self.fastest_word_subtitle_label = subtitle
         elif "Keystrokes" in label_text:
             self.keystrokes_bursts_value_label = value
             self.keystrokes_bursts_subtitle_label = subtitle
@@ -213,17 +216,17 @@ class StatsPanel(QWidget):
 
         dashboard_layout.addLayout(first_row)
 
-        # Row 2: Letter and Word performance
+        # Row 2: Hardest and Fastest Words
         second_row = QHBoxLayout()
         second_row.setSpacing(30)
 
-        # Worst Letter Card
-        worst_letter_card = self._create_metric_card("Worst Letter", "#ff6b6b")
-        second_row.addWidget(worst_letter_card)
+        # Hardest Word Card
+        hardest_word_card = self._create_metric_card("Hardest Word", "#e67e22")
+        second_row.addWidget(hardest_word_card)
 
-        # Worst Word Card
-        worst_word_card = self._create_metric_card("Worst Word", "#e67e22")
-        second_row.addWidget(worst_word_card)
+        # Fastest Word Card
+        fastest_word_card = self._create_metric_card("Fastest Word", "#2ecc71")
+        second_row.addWidget(fastest_word_card)
 
         dashboard_layout.addLayout(second_row)
 
@@ -243,9 +246,13 @@ class StatsPanel(QWidget):
 
         dashboard_layout.addLayout(third_row)
 
-        # Row 4: Average Burst Time
+        # Row 4: Worst Letter and Avg Burst Time
         fourth_row = QHBoxLayout()
         fourth_row.setSpacing(30)
+
+        # Worst Letter Card
+        worst_letter_card = self._create_metric_card("Worst Letter", "#ff6b6b")
+        fourth_row.addWidget(worst_letter_card)
 
         # Avg Burst Time Card
         avg_burst_time_card = self._create_metric_card("Avg Burst Time", "#1abc9c")
@@ -525,17 +532,17 @@ class StatsPanel(QWidget):
                 )
 
     def update_worst_word(self, word_stat: WordStatisticsLite | None) -> None:
-        """Update worst word display.
+        """Update hardest word display.
 
         Args:
-            word_stat: WordStatisticsLite model with worst word data, or None if no data
+            word_stat: WordStatisticsLite model with hardest word data, or None if no data
         """
-        if hasattr(self, "worst_word_value_label"):
+        if hasattr(self, "hardest_word_value_label"):
             if word_stat is None:
-                self.worst_word_value_label.setText("-")
-                self.worst_word_subtitle_label.setText("no data")
+                self.hardest_word_value_label.setText("-")
+                self.hardest_word_subtitle_label.setText("no data")
             else:
-                self.worst_word_value_label.setText(word_stat.word)
+                self.hardest_word_value_label.setText(word_stat.word)
 
                 # Calculate projected WPM
                 wpm = (
@@ -543,9 +550,28 @@ class StatsPanel(QWidget):
                     if word_stat.avg_speed_ms_per_letter > 0
                     else 0
                 )
-                self.worst_word_subtitle_label.setText(
-                    f"{word_stat.avg_speed_ms_per_letter:.0f}ms/letter ({wpm:.0f} WPM)"
+                self.hardest_word_subtitle_label.setText(f"{wpm:.0f} WPM")
+
+    def update_fastest_word(self, word_stat: WordStatisticsLite | None) -> None:
+        """Update fastest word display.
+
+        Args:
+            word_stat: WordStatisticsLite model with fastest word data, or None if no data
+        """
+        if hasattr(self, "fastest_word_value_label"):
+            if word_stat is None:
+                self.fastest_word_value_label.setText("-")
+                self.fastest_word_subtitle_label.setText("no data")
+            else:
+                self.fastest_word_value_label.setText(word_stat.word)
+
+                # Calculate projected WPM
+                wpm = (
+                    12000 / word_stat.avg_speed_ms_per_letter
+                    if word_stat.avg_speed_ms_per_letter > 0
+                    else 0
                 )
+                self.fastest_word_subtitle_label.setText(f"{wpm:.0f} WPM")
 
     def update_typing_time_display(self, today_sec: float, all_time_sec: float) -> None:
         """Update typing time display.

@@ -69,6 +69,7 @@ class Application(QObject):
     signal_update_typing_time_graph = Signal(list)
     signal_update_worst_letter = Signal(str, float)
     signal_update_worst_word = Signal(object)
+    signal_update_fastest_word = Signal(object)
     signal_update_keystrokes_bursts = Signal(int, int)
     signal_update_avg_burst_duration = Signal(int, int, int)
     signal_settings_changed = Signal(dict)
@@ -261,6 +262,7 @@ class Application(QObject):
             self.stats_panel.update_typing_time_display
         )
         self.signal_update_worst_word.connect(self.stats_panel.update_worst_word)
+        self.signal_update_fastest_word.connect(self.stats_panel.update_fastest_word)
         self.signal_update_keystrokes_bursts.connect(
             self.stats_panel.update_keystrokes_bursts
         )
@@ -644,6 +646,12 @@ class Application(QObject):
         if worst_words:
             worst_word = worst_words[0]
             self.signal_update_worst_word.emit(worst_word)
+
+        # Get fastest word and update display
+        fastest_words = self.storage.get_fastest_words(limit=1)
+        if fastest_words:
+            fastest_word = fastest_words[0]
+            self.signal_update_fastest_word.emit(fastest_word)
 
         # Update all-time keystrokes and bursts (database excluding today + today's in-memory stats)
         db_keystrokes, db_bursts = self.storage.get_all_time_keystrokes_and_bursts(
