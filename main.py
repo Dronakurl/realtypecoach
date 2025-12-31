@@ -70,6 +70,7 @@ class Application(QObject):
     signal_update_worst_letter = Signal(str, float)
     signal_update_worst_word = Signal(object)
     signal_update_keystrokes_bursts = Signal(int, int)
+    signal_update_avg_burst_duration = Signal(int)
     signal_settings_changed = Signal(dict)
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
 
@@ -263,6 +264,9 @@ class Application(QObject):
         self.signal_update_keystrokes_bursts.connect(
             self.stats_panel.update_keystrokes_bursts
         )
+        self.signal_update_avg_burst_duration.connect(
+            self.stats_panel.update_avg_burst_duration
+        )
         self.signal_update_trend_data.connect(self.stats_panel.update_trend_graph)
         # Use Qt.QueuedConnection to ensure signal crosses thread boundaries properly
         from PySide6.QtCore import Qt
@@ -294,6 +298,7 @@ class Application(QObject):
 
         # Connect clipboard words signal with QueuedConnection for thread safety
         from PySide6.QtCore import Qt
+
         self.signal_clipboard_words_ready.connect(
             self.stats_panel._on_clipboard_words_ready,
             Qt.ConnectionType.QueuedConnection,
@@ -650,6 +655,10 @@ class Application(QObject):
         all_time_keystrokes = db_keystrokes + stats["total_keystrokes"]
         all_time_bursts = db_bursts + stats["total_bursts"]
         self.signal_update_keystrokes_bursts.emit(all_time_keystrokes, all_time_bursts)
+
+        # Update average burst duration
+        avg_burst_duration_ms = self.storage.get_average_burst_duration_ms()
+        self.signal_update_avg_burst_duration.emit(avg_burst_duration_ms)
 
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""

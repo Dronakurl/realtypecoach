@@ -144,6 +144,9 @@ class StatsPanel(QWidget):
         elif "Typing Time" in label_text:
             self.typing_time_value_label = value
             self.typing_time_subtitle_label = subtitle
+        elif "Avg Burst Time" in label_text:
+            self.avg_burst_time_value_label = value
+            self.avg_burst_time_subtitle_label = subtitle
 
         return card
 
@@ -239,6 +242,16 @@ class StatsPanel(QWidget):
         third_row.addWidget(typing_time_card)
 
         dashboard_layout.addLayout(third_row)
+
+        # Row 4: Average Burst Time
+        fourth_row = QHBoxLayout()
+        fourth_row.setSpacing(30)
+
+        # Avg Burst Time Card
+        avg_burst_time_card = self._create_metric_card("Avg Burst Time", "#1abc9c")
+        fourth_row.addWidget(avg_burst_time_card)
+
+        dashboard_layout.addLayout(fourth_row)
 
         overview_layout.addWidget(dashboard_widget)
 
@@ -593,6 +606,20 @@ class StatsPanel(QWidget):
                 f"{self._format_large_number(bursts)} bursts"
             )
 
+    def update_avg_burst_duration(self, duration_ms: int) -> None:
+        """Update average burst duration display.
+
+        Args:
+            duration_ms: Average burst duration in milliseconds
+        """
+        if hasattr(self, "avg_burst_time_value_label"):
+            if duration_ms >= 1000:
+                self.avg_burst_time_value_label.setText(f"{duration_ms / 1000:.1f}s")
+                self.avg_burst_time_subtitle_label.setText(f"{duration_ms:,} ms")
+            else:
+                self.avg_burst_time_value_label.setText(f"{duration_ms}")
+                self.avg_burst_time_subtitle_label.setText("milliseconds")
+
     @staticmethod
     def _format_large_number(count: int) -> str:
         """Format large numbers with K/M/B suffixes.
@@ -755,5 +782,5 @@ class StatsPanel(QWidget):
     def _on_clipboard_words_ready(self, words: List[WordStatisticsLite]) -> None:
         """Slot called when clipboard words are ready."""
         print(f"[DEBUG] Signal received with {len(words) if words else 0} words")
-        if hasattr(self, '_clipboard_callback'):
+        if hasattr(self, "_clipboard_callback"):
             self._clipboard_callback(words)

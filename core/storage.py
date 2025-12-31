@@ -559,6 +559,23 @@ class Storage:
             result = cursor.fetchone()
             return (result[0], result[1]) if result else (0, 0)
 
+    def get_average_burst_duration_ms(self) -> int:
+        """Get the average burst duration across all bursts.
+
+        Returns:
+            Average burst duration in milliseconds
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COALESCE(AVG(duration_ms), 0)
+                FROM bursts
+            """
+            )
+            result = cursor.fetchone()
+            return int(result[0]) if result and result[0] else 0
+
     def update_daily_summary(
         self,
         date: str,
