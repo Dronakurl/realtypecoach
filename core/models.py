@@ -38,6 +38,7 @@ class KeyPerformance(BaseModel):
     keycode: int = Field(..., description="Linux evdev keycode")
     key_name: str = Field(..., description="Human-readable key name")
     avg_press_time: float = Field(..., description="Average press time in milliseconds")
+    rank: int = Field(default=0, description="Frequency rank (1=most frequent)")
 
     model_config = ConfigDict(extra="ignore")
 
@@ -51,6 +52,7 @@ class WordStatisticsLite(BaseModel):
     )
     total_duration_ms: int = Field(..., description="Total duration in milliseconds")
     total_letters: int = Field(..., description="Total number of letters")
+    rank: int = Field(default=0, description="Frequency rank (1=most frequent)")
 
     model_config = ConfigDict(extra="ignore")
 

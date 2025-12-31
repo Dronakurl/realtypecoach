@@ -640,30 +640,42 @@ class Storage:
             if layout:
                 cursor.execute(
                     """
-                    SELECT keycode, key_name, avg_press_time
-                    FROM statistics
-                    WHERE layout = ? AND total_presses >= 2
-                        AND (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
-                    ORDER BY avg_press_time DESC
+                    SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
+                    FROM statistics s
+                    INNER JOIN (
+                        SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
+                        FROM statistics
+                        WHERE layout = ? AND (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ) freq_rank ON s.key_name = freq_rank.key_name
+                    WHERE s.layout = ? AND s.total_presses >= 2
+                        AND (s.key_name REGEXP '^[a-z]$' OR s.key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ORDER BY s.avg_press_time DESC
                     LIMIT ?
                 """,
-                    (layout, limit),
+                    (layout, layout, limit),
                 )
             else:
                 cursor.execute(
                     """
-                    SELECT keycode, key_name, avg_press_time
-                    FROM statistics
-                    WHERE total_presses >= 2
-                        AND (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
-                    ORDER BY avg_press_time DESC
+                    SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
+                    FROM statistics s
+                    INNER JOIN (
+                        SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
+                        FROM statistics
+                        WHERE (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ) freq_rank ON s.key_name = freq_rank.key_name
+                    WHERE s.total_presses >= 2
+                        AND (s.key_name REGEXP '^[a-z]$' OR s.key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ORDER BY s.avg_press_time DESC
                     LIMIT ?
                 """,
                     (limit,),
                 )
             rows = cursor.fetchall()
             return [
-                KeyPerformance(keycode=r[0], key_name=r[1], avg_press_time=r[2])
+                KeyPerformance(
+                    keycode=r[0], key_name=r[1], avg_press_time=r[2], rank=r[3]
+                )
                 for r in rows
             ]
 
@@ -686,30 +698,42 @@ class Storage:
             if layout:
                 cursor.execute(
                     """
-                    SELECT keycode, key_name, avg_press_time
-                    FROM statistics
-                    WHERE layout = ? AND total_presses >= 2
-                        AND (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
-                    ORDER BY avg_press_time ASC
+                    SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
+                    FROM statistics s
+                    INNER JOIN (
+                        SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
+                        FROM statistics
+                        WHERE layout = ? AND (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ) freq_rank ON s.key_name = freq_rank.key_name
+                    WHERE s.layout = ? AND s.total_presses >= 2
+                        AND (s.key_name REGEXP '^[a-z]$' OR s.key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ORDER BY s.avg_press_time ASC
                     LIMIT ?
                 """,
-                    (layout, limit),
+                    (layout, layout, limit),
                 )
             else:
                 cursor.execute(
                     """
-                    SELECT keycode, key_name, avg_press_time
-                    FROM statistics
-                    WHERE total_presses >= 2
-                        AND (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
-                    ORDER BY avg_press_time ASC
+                    SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
+                    FROM statistics s
+                    INNER JOIN (
+                        SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
+                        FROM statistics
+                        WHERE (key_name REGEXP '^[a-z]$' OR key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ) freq_rank ON s.key_name = freq_rank.key_name
+                    WHERE s.total_presses >= 2
+                        AND (s.key_name REGEXP '^[a-z]$' OR s.key_name IN ('ä', 'ö', 'ü', 'ß'))
+                    ORDER BY s.avg_press_time ASC
                     LIMIT ?
                 """,
                     (limit,),
                 )
             rows = cursor.fetchall()
             return [
-                KeyPerformance(keycode=r[0], key_name=r[1], avg_press_time=r[2])
+                KeyPerformance(
+                    keycode=r[0], key_name=r[1], avg_press_time=r[2], rank=r[3]
+                )
                 for r in rows
             ]
 
@@ -1293,23 +1317,34 @@ class Storage:
             if layout:
                 cursor.execute(
                     """
-                    SELECT word, avg_speed_ms_per_letter,
-                           total_duration_ms, total_letters
-                    FROM word_statistics
-                    WHERE layout = ? AND observation_count >= 2
-                    ORDER BY avg_speed_ms_per_letter DESC
+                    SELECT ws.word, ws.avg_speed_ms_per_letter,
+                           ws.total_duration_ms, ws.total_letters,
+                           freq_rank.rank
+                    FROM word_statistics ws
+                    INNER JOIN (
+                        SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
+                        FROM word_statistics
+                        WHERE layout = ?
+                    ) freq_rank ON ws.word = freq_rank.word
+                    WHERE ws.layout = ? AND ws.observation_count >= 2
+                    ORDER BY ws.avg_speed_ms_per_letter DESC
                     LIMIT ?
                 """,
-                    (layout, limit),
+                    (layout, layout, limit),
                 )
             else:
                 cursor.execute(
                     """
-                    SELECT word, avg_speed_ms_per_letter,
-                           total_duration_ms, total_letters
-                    FROM word_statistics
-                    WHERE observation_count >= 2
-                    ORDER BY avg_speed_ms_per_letter DESC
+                    SELECT ws.word, ws.avg_speed_ms_per_letter,
+                           ws.total_duration_ms, ws.total_letters,
+                           freq_rank.rank
+                    FROM word_statistics ws
+                    INNER JOIN (
+                        SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
+                        FROM word_statistics
+                    ) freq_rank ON ws.word = freq_rank.word
+                    WHERE ws.observation_count >= 2
+                    ORDER BY ws.avg_speed_ms_per_letter DESC
                     LIMIT ?
                 """,
                     (limit,),
@@ -1321,6 +1356,7 @@ class Storage:
                     avg_speed_ms_per_letter=r[1],
                     total_duration_ms=r[2],
                     total_letters=r[3],
+                    rank=r[4],
                 )
                 for r in rows
             ]
@@ -1342,23 +1378,34 @@ class Storage:
             if layout:
                 cursor.execute(
                     """
-                    SELECT word, avg_speed_ms_per_letter,
-                           total_duration_ms, total_letters
-                    FROM word_statistics
-                    WHERE layout = ? AND observation_count >= 2
-                    ORDER BY avg_speed_ms_per_letter ASC
+                    SELECT ws.word, ws.avg_speed_ms_per_letter,
+                           ws.total_duration_ms, ws.total_letters,
+                           freq_rank.rank
+                    FROM word_statistics ws
+                    INNER JOIN (
+                        SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
+                        FROM word_statistics
+                        WHERE layout = ?
+                    ) freq_rank ON ws.word = freq_rank.word
+                    WHERE ws.layout = ? AND ws.observation_count >= 2
+                    ORDER BY ws.avg_speed_ms_per_letter ASC
                     LIMIT ?
                 """,
-                    (layout, limit),
+                    (layout, layout, limit),
                 )
             else:
                 cursor.execute(
                     """
-                    SELECT word, avg_speed_ms_per_letter,
-                           total_duration_ms, total_letters
-                    FROM word_statistics
-                    WHERE observation_count >= 2
-                    ORDER BY avg_speed_ms_per_letter ASC
+                    SELECT ws.word, ws.avg_speed_ms_per_letter,
+                           ws.total_duration_ms, ws.total_letters,
+                           freq_rank.rank
+                    FROM word_statistics ws
+                    INNER JOIN (
+                        SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
+                        FROM word_statistics
+                    ) freq_rank ON ws.word = freq_rank.word
+                    WHERE ws.observation_count >= 2
+                    ORDER BY ws.avg_speed_ms_per_letter ASC
                     LIMIT ?
                 """,
                     (limit,),
@@ -1370,6 +1417,7 @@ class Storage:
                     avg_speed_ms_per_letter=r[1],
                     total_duration_ms=r[2],
                     total_letters=r[3],
+                    rank=r[4],
                 )
                 for r in rows
             ]
