@@ -356,7 +356,9 @@ class StatsPanel(QWidget):
 
         self.copy_hardest_words_btn = QPushButton("📋 Copy Words")
         self.copy_hardest_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
-        self.copy_hardest_words_btn.clicked.connect(self.copy_hardest_words_to_clipboard)
+        self.copy_hardest_words_btn.clicked.connect(
+            self.copy_hardest_words_to_clipboard
+        )
         controls_layout.addWidget(self.copy_hardest_words_btn)
 
         controls_layout.addStretch()
@@ -692,8 +694,10 @@ class StatsPanel(QWidget):
     def copy_hardest_words_to_clipboard(self) -> None:
         """Copy the n slowest words to clipboard."""
         count = self.hardest_words_count_combo.currentData()
-        if hasattr(self, '_request_words_for_clipboard_callback'):
-            self._request_words_for_clipboard_callback(count, self._on_words_fetched_for_copy)
+        if hasattr(self, "_request_words_for_clipboard_callback"):
+            self._request_words_for_clipboard_callback(
+                count, self._on_words_fetched_for_copy
+            )
 
     def _on_words_fetched_for_copy(self, words: List[WordStatisticsLite]) -> None:
         """Callback when words are fetched - copies to clipboard.
@@ -719,10 +723,10 @@ class StatsPanel(QWidget):
             message = f"Copied {count} words to clipboard"
         else:
             message = "No words available to copy"
-        # Show tray notification (use existing pattern from main.py)
-        from main import app_instance
-        if hasattr(app_instance, 'tray_icon'):
-            app_instance.tray_icon.show_notification("Copy Words", message)
+        # Show tray notification through QApplication
+        app = QApplication.instance()
+        if app and hasattr(app, "tray_icon"):
+            app.tray_icon.show_notification("Copy Words", message)
 
     def set_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words for clipboard.

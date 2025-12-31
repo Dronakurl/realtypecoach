@@ -289,6 +289,7 @@ class Application(QObject):
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
         self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
+        self.stats_panel.set_words_clipboard_callback(self.fetch_words_for_clipboard)
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
@@ -300,6 +301,9 @@ class Application(QObject):
     def on_burst_complete(self, burst) -> None:
         """Handle burst completion."""
         self.analyzer.process_burst(burst)
+
+        # Update statistics immediately when a burst completes
+        self.update_statistics()
 
         if burst.qualifies_for_high_score:
             wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
@@ -507,6 +511,30 @@ class Application(QObject):
 
         # Fetch in background thread to avoid blocking UI
         thread = threading.Thread(target=fetch_data, daemon=True)
+        thread.start()
+
+    def fetch_words_for_clipboard(self, count: int, callback) -> None:
+        """Fetch slowest words in background thread and call callback.
+
+        Args:
+            count: Number of words to fetch
+            callback: Function to call with List[WordStatisticsLite]
+        """
+        import threading
+
+        def fetch_in_thread():
+            try:
+                words = self.analyzer.get_slowest_words(
+                    limit=count, layout=self.get_current_layout()
+                )
+                # Call callback on main thread
+                QTimer.singleShot(0, lambda: callback(words))
+            except Exception as e:
+                log.error(f"Error fetching words for clipboard: {e}")
+                QTimer.singleShot(0, lambda: callback([]))
+
+        # Fetch in background thread to avoid blocking UI
+        thread = threading.Thread(target=fetch_in_thread, daemon=True)
         thread.start()
 
     def process_event_queue(self) -> None:
