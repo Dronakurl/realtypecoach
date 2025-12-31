@@ -90,6 +90,11 @@ class AppSettings(BaseModel):
         default="en,de", description="Comma-separated language codes"
     )
 
+    # UI settings
+    stats_update_interval_sec: int = Field(
+        default=2, ge=1, le=60, description="Statistics update interval (seconds)"
+    )
+
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
     @field_validator("active_time_threshold_ms")

@@ -537,10 +537,11 @@ class Application(QObject):
             except Empty:
                 break  # Queue empty
 
-        # Update stats display periodically (every 10 seconds if processing events)
+        # Update stats display periodically (every stats_update_interval_sec seconds if processing events)
         current_time = int(time.time())
         if processed_count > 0:
-            if current_time - self._last_stats_update >= 10:
+            stats_interval = self.config.get_int("stats_update_interval_sec", 2)
+            if current_time - self._last_stats_update >= stats_interval:
                 self.update_statistics()
                 self._last_stats_update = current_time
 

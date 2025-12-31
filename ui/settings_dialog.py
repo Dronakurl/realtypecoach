@@ -405,6 +405,25 @@ class SettingsDialog(QDialog):
         # Detect and show current layout
         self._update_detected_layout()
 
+        display_group = QGroupBox("Display")
+        display_layout = QFormLayout()
+
+        self.stats_update_interval_spin = QSpinBox()
+        self.stats_update_interval_spin.setRange(1, 60)
+        self.stats_update_interval_spin.setSuffix(" s")
+        self.stats_update_interval_spin.setValue(2)
+        display_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Statistics update interval:",
+                "How often the statistics window updates with new data.\n"
+                "Shorter interval = more frequent updates, but more CPU usage.",
+            ),
+            self.stats_update_interval_spin,
+        )
+
+        display_group.setLayout(display_layout)
+        layout.addWidget(display_group)
+
         layout.addStretch()
         widget.setLayout(layout)
         return widget
@@ -794,6 +813,9 @@ class SettingsDialog(QDialog):
         self.keyboard_layout_combo.setCurrentText(
             self.current_settings.get("keyboard_layout", "Auto-detect").capitalize()
         )
+        self.stats_update_interval_spin.setValue(
+            self.current_settings.get("stats_update_interval_sec", 2)
+        )
         self.notification_min_burst_spin.setValue(
             self.current_settings.get("notification_min_burst_ms", 10000) // 1000
         )
@@ -860,6 +882,7 @@ class SettingsDialog(QDialog):
             "min_burst_key_count": str(self.min_key_count_spin.value()),
             "min_burst_duration_ms": str(self.min_burst_duration_spin.value()),
             "keyboard_layout": self.keyboard_layout_combo.currentData().lower(),
+            "stats_update_interval_sec": str(self.stats_update_interval_spin.value()),
             "notification_min_burst_ms": str(
                 self.notification_min_burst_spin.value() * 1000
             ),

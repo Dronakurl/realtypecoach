@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QApplication,
     QGroupBox,
+    QComboBox,
 )
 from PySide6.QtCore import Signal, QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QFont
@@ -335,6 +336,31 @@ class StatsPanel(QWidget):
         self.hardest_words_title = QLabel("🐢 Hardest Words (All Time)")
         self.hardest_words_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         hardest_words_layout.addWidget(self.hardest_words_title)
+
+        # Controls row for clipboard functionality
+        controls_layout = QHBoxLayout()
+
+        count_label = QLabel("Copy:")
+        count_label.setStyleSheet("font-size: 12px; color: #666;")
+        controls_layout.addWidget(count_label)
+
+        self.hardest_words_count_combo = QComboBox()
+        self.hardest_words_count_combo.addItem("10", 10)
+        self.hardest_words_count_combo.addItem("25", 25)
+        self.hardest_words_count_combo.addItem("50", 50)
+        self.hardest_words_count_combo.addItem("75", 75)
+        self.hardest_words_count_combo.addItem("100", 100)
+        self.hardest_words_count_combo.setCurrentIndex(0)  # Default to 10
+        self.hardest_words_count_combo.setMaximumWidth(80)
+        controls_layout.addWidget(self.hardest_words_count_combo)
+
+        self.copy_hardest_words_btn = QPushButton("📋 Copy Words")
+        self.copy_hardest_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.copy_hardest_words_btn.clicked.connect(self.copy_hardest_words_to_clipboard)
+        controls_layout.addWidget(self.copy_hardest_words_btn)
+
+        controls_layout.addStretch()
+        hardest_words_layout.addLayout(controls_layout)
 
         self.hardest_words_table = QTableWidget()
         self.hardest_words_table.setFont(font)
@@ -662,3 +688,46 @@ class StatsPanel(QWidget):
             data: List of TypingTimeDataPoint models
         """
         self.typing_time_graph.update_graph(data)
+
+    def copy_hardest_words_to_clipboard(self) -> None:
+        """Copy the n slowest words to clipboard."""
+        count = self.hardest_words_count_combo.currentData()
+        if hasattr(self, '_request_words_for_clipboard_callback'):
+            self._request_words_for_clipboard_callback(count, self._on_words_fetched_for_copy)
+
+    def _on_words_fetched_for_copy(self, words: List[WordStatisticsLite]) -> None:
+        """Callback when words are fetched - copies to clipboard.
+
+        Args:
+            words: List of WordStatisticsLite models
+        """
+        if words:
+            word_list = [w.word for w in words]
+            clipboard_text = " ".join(word_list)
+            QApplication.clipboard().setText(clipboard_text)
+            self._show_copy_notification(len(words))
+        else:
+            self._show_copy_notification(0)
+
+    def _show_copy_notification(self, count: int) -> None:
+        """Show notification after copy operation.
+
+        Args:
+            count: Number of words copied
+        """
+        if count > 0:
+            message = f"Copied {count} words to clipboard"
+        else:
+            message = "No words available to copy"
+        # Show tray notification (use existing pattern from main.py)
+        from main import app_instance
+        if hasattr(app_instance, 'tray_icon'):
+            app_instance.tray_icon.show_notification("Copy Words", message)
+
+    def set_words_clipboard_callback(self, callback) -> None:
+        """Set callback for fetching words for clipboard.
+
+        Args:
+            callback: Function to call with (count, callback) parameters
+        """
+        self._request_words_for_clipboard_callback = callback
