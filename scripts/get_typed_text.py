@@ -8,9 +8,6 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.storage import Storage
-from core.dictionary_config import DictionaryConfig
-from utils.config import Config
 from utils.crypto import CryptoManager
 import sqlcipher3 as sqlite3
 
@@ -24,7 +21,7 @@ def get_typed_text(limit: int = -1) -> str:
     Returns:
         Reconstructed typed text
     """
-    db_path = Path.home() / '.local' / 'share' / 'realtypecoach' / 'typing_data.db'
+    db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
 
     if not db_path.exists():
         print(f"Error: Database not found at {db_path}")
@@ -59,12 +56,12 @@ def get_typed_text(limit: int = -1) -> str:
     # Map special keycodes to their character representations
     special_chars = {
         28: "\n",  # ENTER -> newline
-        57: " ",   # SPACE -> space
+        57: " ",  # SPACE -> space
     }
 
     # Control keys to ignore (not printable)
     control_keycodes = {
-        1,   # ESC
+        1,  # ESC
         14,  # BACKSPACE
         15,  # TAB
         29,  # LEFT_CTRL
@@ -73,34 +70,93 @@ def get_typed_text(limit: int = -1) -> str:
         56,  # LEFT_ALT
         58,  # CAPS_LOCK
         97,  # RIGHT_CTRL
-        100, # RIGHT_ALT
-        102, # HOME
-        103, # UP
-        104, # PAGE_UP
-        105, # LEFT
-        106, # RIGHT
-        107, # END
-        108, # DOWN
-        109, # PAGE_DOWN
-        110, # INSERT
-        111, # DELETE
-        127, # PAUSE
+        100,  # RIGHT_ALT
+        102,  # HOME
+        103,  # UP
+        104,  # PAGE_UP
+        105,  # LEFT
+        106,  # RIGHT
+        107,  # END
+        108,  # DOWN
+        109,  # PAGE_DOWN
+        110,  # INSERT
+        111,  # DELETE
+        127,  # PAUSE
         # F-keys
-        59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 87, 88,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        87,
+        88,
         # Keypad
-        69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 98, 99,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        98,
+        99,
     }
 
     # Printable keycodes - letters (q=16 through p=25, a=30 through l=38, z=44 through m=50)
     printable_keycodes = {
         # Letters - top row
-        16, 17, 18, 19, 20, 21, 22, 23, 24, 25,  # q w e r t y u i o p
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,  # q w e r t y u i o p
         # Letters - middle row
-        30, 31, 32, 33, 34, 35, 36, 37, 38,  # a s d f g h j k l
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,  # a s d f g h j k l
         # Letters - bottom row
-        44, 45, 46, 47, 48, 49, 50,  # z x c v b n m
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,  # z x c v b n m
         # Numbers
-        2, 3, 4, 5, 6, 7, 8, 9, 10, 11,  # 1-9 and 0
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,  # 1-9 and 0
         # Punctuation and symbols
         12,  # minus
         13,  # equals
@@ -166,6 +222,7 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
