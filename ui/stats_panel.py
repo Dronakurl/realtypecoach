@@ -134,7 +134,7 @@ class StatsPanel(QWidget):
         elif "Long-term Average" in label_text:
             self.avg_wpm_value_label = value
             self.avg_wpm_subtitle_label = subtitle
-        elif "Worst Letter" in label_text:
+        elif "Hardest Letter" in label_text:
             self.worst_letter_value_label = value
             self.worst_letter_subtitle_label = subtitle
         elif "Hardest Word" in label_text:
@@ -248,12 +248,12 @@ class StatsPanel(QWidget):
 
         dashboard_layout.addLayout(third_row)
 
-        # Row 4: Worst Letter and Avg Burst Time
+        # Row 4: Hardest Letter and Avg Burst Time
         fourth_row = QHBoxLayout()
         fourth_row.setSpacing(30)
 
         # Worst Letter Card
-        worst_letter_card = self._create_metric_card("Worst Letter", "#ff6b6b")
+        worst_letter_card = self._create_metric_card("Hardest Letter", "#ff6b6b")
         fourth_row.addWidget(worst_letter_card)
 
         # Avg Burst Time Card
@@ -457,6 +457,9 @@ class StatsPanel(QWidget):
             long_term_avg: Long-term average WPM
             all_time_best: All-time best WPM
         """
+        if not self.isVisible():
+            return
+
         # Update Current Burst WPM card
         if hasattr(self, "burst_wpm_value_label"):
             self.burst_wpm_value_label.setText(f"{burst_wpm:.1f}")
@@ -485,6 +488,9 @@ class StatsPanel(QWidget):
         Args:
             slowest_keys: List of KeyPerformance models
         """
+        if not self.isVisible():
+            return
+
         for i, key_perf in enumerate(slowest_keys):
             avg_time = key_perf.avg_press_time
             wpm = 12000 / avg_time if avg_time > 0 else 0
@@ -507,6 +513,9 @@ class StatsPanel(QWidget):
         Args:
             fastest_keys: List of KeyPerformance models
         """
+        if not self.isVisible():
+            return
+
         for i, key_perf in enumerate(fastest_keys):
             avg_time = key_perf.avg_press_time
             wpm = 12000 / avg_time if avg_time > 0 else 0
@@ -524,12 +533,15 @@ class StatsPanel(QWidget):
             self.fastest_table.setItem(i, 2, QTableWidgetItem("--"))
 
     def update_worst_letter(self, key_name: str, avg_time_ms: float) -> None:
-        """Update worst letter display.
+        """Update hardest letter display.
 
         Args:
             key_name: Worst letter key name
             avg_time_ms: Average press time in milliseconds
         """
+        if not self.isVisible():
+            return
+
         if hasattr(self, "worst_letter_value_label"):
             if not key_name:
                 self.worst_letter_value_label.setText("-")
@@ -549,6 +561,9 @@ class StatsPanel(QWidget):
         Args:
             word_stat: WordStatisticsLite model with hardest word data, or None if no data
         """
+        if not self.isVisible():
+            return
+
         if hasattr(self, "hardest_word_value_label"):
             if word_stat is None:
                 self.hardest_word_value_label.setText("-")
@@ -570,6 +585,9 @@ class StatsPanel(QWidget):
         Args:
             word_stat: WordStatisticsLite model with fastest word data, or None if no data
         """
+        if not self.isVisible():
+            return
+
         if hasattr(self, "fastest_word_value_label"):
             if word_stat is None:
                 self.fastest_word_value_label.setText("-")
@@ -592,6 +610,9 @@ class StatsPanel(QWidget):
             today_sec: Today's typing time in seconds
             all_time_sec: All-time typing time in seconds
         """
+        if not self.isVisible():
+            return
+
         if hasattr(self, "typing_time_value_label"):
             # Format today's typing time
             self.typing_time_value_label.setText(self._format_duration(today_sec))
@@ -636,6 +657,9 @@ class StatsPanel(QWidget):
             keystrokes: All-time total keystrokes
             bursts: All-time total bursts
         """
+        if not self.isVisible():
+            return
+
         if hasattr(self, "keystrokes_bursts_value_label"):
             self.keystrokes_bursts_value_label.setText(
                 self._format_large_number(keystrokes)
@@ -652,6 +676,9 @@ class StatsPanel(QWidget):
             min_ms: Minimum burst duration in milliseconds
             max_ms: Maximum burst duration in milliseconds
         """
+        if not self.isVisible():
+            return
+
         if hasattr(self, "avg_burst_time_value_label"):
             if avg_ms >= 1000:
                 self.avg_burst_time_value_label.setText(f"{avg_ms / 1000:.1f}s")
@@ -690,6 +717,9 @@ class StatsPanel(QWidget):
         Args:
             words: List of WordStatisticsLite models
         """
+        if not self.isVisible():
+            return
+
         for i, word_stat in enumerate(words):
             speed_ms_per_letter = word_stat.avg_speed_ms_per_letter
             projected_wpm = (
@@ -716,6 +746,9 @@ class StatsPanel(QWidget):
         Args:
             words: List of WordStatisticsLite models
         """
+        if not self.isVisible():
+            return
+
         for i, word_stat in enumerate(words):
             speed_ms_per_letter = word_stat.avg_speed_ms_per_letter
             projected_wpm = (

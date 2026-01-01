@@ -412,7 +412,9 @@ class Application(QObject):
             )
             icon_type = "warning"
 
-        self.tray_icon.show_notification("🔤 Worst Letter Changed", message, icon_type)
+        self.tray_icon.show_notification(
+            "🔤 Hardest Letter Changed", message, icon_type
+        )
 
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
@@ -658,8 +660,7 @@ class Application(QObject):
             stats["total_typing_sec"], all_time_typing_sec
         )
 
-        # Get worst letter and update display
-        slowest_keys = self.storage.get_slowest_keys(limit=1)
+        # Get worst letter and update display (reuse slowest_keys from above)
         if slowest_keys:
             worst = slowest_keys[0]
             self.signal_update_worst_letter.emit(worst.key_name, worst.avg_press_time)
@@ -669,14 +670,12 @@ class Application(QObject):
             if change:
                 self.notification_handler.check_and_notify_worst_letter_change(change)
 
-        # Get worst word and update display
-        worst_words = self.storage.get_slowest_words(limit=1)
-        if worst_words:
-            worst_word = worst_words[0]
+        # Get worst word and update display (reuse hardest_words from above)
+        if hardest_words:
+            worst_word = hardest_words[0]
             self.signal_update_worst_word.emit(worst_word)
 
-        # Get fastest word and update display
-        fastest_words = self.storage.get_fastest_words(limit=1)
+        # Get fastest word and update display (reuse fastest_words from above)
         if fastest_words:
             fastest_word = fastest_words[0]
             self.signal_update_fastest_word.emit(fastest_word)
@@ -747,8 +746,9 @@ class Application(QObject):
         log.info("Starting analyzer...")
         self.analyzer.start()
 
-        # Load and display existing statistics
-        self.update_statistics()
+        # Load and display existing statistics (only if panel is visible)
+        if self.stats_panel.isVisible():
+            self.update_statistics()
 
         log.info("Starting notification handler...")
         self.notification_handler.start()

@@ -3,27 +3,27 @@
 import logging
 from typing import Any
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
     QDialog,
-    QVBoxLayout,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QSpinBox,
-    QCheckBox,
-    QPushButton,
-    QFileDialog,
-    QGroupBox,
-    QFormLayout,
-    QComboBox,
-    QTabWidget,
-    QWidget,
     QListWidget,
-    QApplication,
+    QPushButton,
+    QSpinBox,
     QStyle,
+    QTabWidget,
     QToolTip,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QPainter
 
 log = logging.getLogger("realtypecoach.settings_dialog")
 
@@ -500,7 +500,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(time_group)
 
         # Worst letter notification settings
-        worst_letter_group = QGroupBox("Worst Letter Notifications")
+        worst_letter_group = QGroupBox("Hardest Letter Notifications")
         worst_letter_layout = QFormLayout()
 
         self.worst_letter_notification_check = QCheckBox(
@@ -519,8 +519,8 @@ class SettingsDialog(QDialog):
         self.worst_letter_debounce_spin.setValue(5)
         worst_letter_layout.addRow(
             self._create_labeled_icon_widget(
-                "Worst letter notification debounce:",
-                "Minimum time between worst letter change notifications.",
+                "Hardest letter notification debounce:",
+                "Minimum time between hardest letter change notifications.",
             ),
             self.worst_letter_debounce_spin,
         )
@@ -876,9 +876,7 @@ class SettingsDialog(QDialog):
             "word_boundary_timeout_ms": str(self.word_boundary_timeout_spin.value()),
             "burst_duration_calculation": self.duration_method_combo.currentData(),
             "active_time_threshold_ms": str(self.active_threshold_spin.value()),
-            "high_score_min_duration_ms": str(
-                self.high_score_duration_spin.value()
-            ),
+            "high_score_min_duration_ms": str(self.high_score_duration_spin.value()),
             "min_burst_key_count": str(self.min_key_count_spin.value()),
             "min_burst_duration_ms": str(self.min_burst_duration_spin.value()),
             "keyboard_layout": self.keyboard_layout_combo.currentData().lower(),
