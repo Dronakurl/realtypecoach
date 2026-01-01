@@ -70,7 +70,7 @@ class Application(QObject):
     signal_update_worst_letter = Signal(str, float)
     signal_update_worst_word = Signal(object)
     signal_update_fastest_word = Signal(object)
-    signal_update_keystrokes_bursts = Signal(int, int)
+    signal_update_keystrokes_bursts = Signal(int, int, int)
     signal_update_avg_burst_duration = Signal(int, int, int)
     signal_settings_changed = Signal(dict)
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
@@ -343,7 +343,11 @@ class Application(QObject):
         self.analyzer.process_burst(burst)
 
         # Update statistics immediately when a burst completes, but only if panel is visible
-        if self.stats_panel.isVisible():
+        is_visible = self.stats_panel.isVisible()
+        log.info(
+            f"Burst complete: {burst.key_count} keys, {burst.duration_ms / 1000:.1f}s, panel visible: {is_visible}"
+        )
+        if is_visible:
             self.update_statistics()
 
         if burst.qualifies_for_high_score:
@@ -465,7 +469,7 @@ class Application(QObject):
             self.signal_update_fastest_keys.emit([])
             self.signal_update_hardest_words.emit([])
             self.signal_update_fastest_words_stats.emit([])
-            self.signal_update_keystrokes_bursts.emit(0, 0)
+            self.signal_update_keystrokes_bursts.emit(0, 0, 0)
             self.signal_update_typing_time_display.emit(0, 0)
             self.signal_update_trend_data.emit([])
             self.signal_update_typing_time_graph.emit([])
@@ -619,10 +623,14 @@ class Application(QObject):
 
     def update_statistics(self) -> None:
         """Update statistics display."""
+        log.info("update_statistics() called")
         stats = self.analyzer.get_statistics()
         long_term_avg = self.analyzer.get_long_term_average_wpm() or 0
         all_time_best = self.analyzer.get_all_time_high_score() or 0
 
+        log.info(
+            f"Emitting stats signal: burst_wpm={stats['burst_wpm']:.1f}, today_best={stats['personal_best_today'] or 0:.1f}"
+        )
         self.signal_update_stats.emit(
             stats["burst_wpm"],
             stats["personal_best_today"] or 0,
@@ -686,7 +694,10 @@ class Application(QObject):
         )
         all_time_keystrokes = db_keystrokes + stats["total_keystrokes"]
         all_time_bursts = db_bursts + stats["total_bursts"]
-        self.signal_update_keystrokes_bursts.emit(all_time_keystrokes, all_time_bursts)
+        today_keystrokes = stats["total_keystrokes"]
+        self.signal_update_keystrokes_bursts.emit(
+            all_time_keystrokes, all_time_bursts, today_keystrokes
+        )
 
         # Update average burst duration stats
         avg_ms, min_ms, max_ms = self.storage.get_burst_duration_stats_ms()

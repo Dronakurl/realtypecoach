@@ -457,7 +457,15 @@ class StatsPanel(QWidget):
             long_term_avg: Long-term average WPM
             all_time_best: All-time best WPM
         """
+        import logging
+
+        log = logging.getLogger("realtypecoach.stats_panel")
+        log.info(
+            f"update_wpm() called: burst_wpm={burst_wpm:.1f}, visible={self.isVisible()}"
+        )
+
         if not self.isVisible():
+            log.info("update_wpm() - panel not visible, returning early")
             return
 
         # Update Current Burst WPM card
@@ -551,9 +559,7 @@ class StatsPanel(QWidget):
 
                 # Calculate equivalent WPM
                 wpm = 12000 / avg_time_ms if avg_time_ms > 0 else 0
-                self.worst_letter_subtitle_label.setText(
-                    f"{avg_time_ms:.0f}ms avg ({wpm:.0f} WPM)"
-                )
+                self.worst_letter_subtitle_label.setText(f"{wpm:.0f} WPM")
 
     def update_worst_word(self, word_stat: WordStatisticsLite | None) -> None:
         """Update hardest word display.
@@ -650,12 +656,15 @@ class StatsPanel(QWidget):
 
         return " ".join(parts)
 
-    def update_keystrokes_bursts(self, keystrokes: int, bursts: int) -> None:
+    def update_keystrokes_bursts(
+        self, keystrokes: int, bursts: int, today_keystrokes: int
+    ) -> None:
         """Update all-time keystrokes and bursts display.
 
         Args:
             keystrokes: All-time total keystrokes
             bursts: All-time total bursts
+            today_keystrokes: Today's keystrokes count
         """
         if not self.isVisible():
             return
@@ -665,7 +674,7 @@ class StatsPanel(QWidget):
                 self._format_large_number(keystrokes)
             )
             self.keystrokes_bursts_subtitle_label.setText(
-                f"{self._format_large_number(bursts)} bursts"
+                f"{self._format_large_number(bursts)} bursts • today: {self._format_large_number(today_keystrokes)}"
             )
 
     def update_avg_burst_duration(self, avg_ms: int, min_ms: int, max_ms: int) -> None:
