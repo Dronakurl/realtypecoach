@@ -31,12 +31,18 @@ class KeyEvent:
 class EvdevHandler:
     """Handles keyboard events using evdev (works on Wayland)."""
 
-    def __init__(self, event_queue: Queue[KeyEvent], layout_getter: Callable[[], str]):
+    def __init__(
+        self,
+        event_queue: Queue[KeyEvent],
+        layout_getter: Callable[[], str],
+        stats_panel_visible_getter: Optional[Callable[[], bool]] = None,
+    ):
         """Initialize evdev event handler.
 
         Args:
             event_queue: Queue to send events to
             layout_getter: Function to get current keyboard layout
+            stats_panel_visible_getter: Optional function to check if stats panel is visible
         """
         if not EVDEV_AVAILABLE:
             raise ImportError(
@@ -45,6 +51,8 @@ class EvdevHandler:
 
         self.event_queue = event_queue
         self.layout_getter = layout_getter
+        self.stats_panel_visible_getter = stats_panel_visible_getter
+        self._stats_panel_visible = False
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.devices: List[InputDevice] = []
@@ -107,6 +115,14 @@ class EvdevHandler:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=1.0)
 
+    def set_stats_panel_visible(self, visible: bool) -> None:
+        """Set stats panel visibility for adaptive polling.
+
+        Args:
+            visible: Whether the stats panel is visible
+        """
+        self._stats_panel_visible = visible
+
     def _run_listener(self) -> None:
         """Main event loop that reads from devices."""
         # Reopen devices in this thread
@@ -126,8 +142,15 @@ class EvdevHandler:
             log.info(f"Listening on {len(devices)} keyboard device(s)...")
 
             while not self._stop_event.is_set():
-                # Use select to efficiently wait for events from any device
-                r, _, _ = select(devices, [], [], 0.1)
+                # Use adaptive timeout: block indefinitely when stats panel hidden,
+                # use 1s timeout when visible for responsive updates
+                is_visible = (
+                    self.stats_panel_visible_getter()
+                    if self.stats_panel_visible_getter
+                    else self._stats_panel_visible
+                )
+                timeout = 1.0 if is_visible else None
+                r, _, _ = select(devices, [], [], timeout)
 
                 for device in r:
                     if not self.running:

@@ -426,8 +426,6 @@ class Analyzer:
         Returns:
             List of WordStatisticsLite models
         """
-        current_layout = layout if layout else "us"
-        self.storage._process_new_key_events(layout=current_layout)
         return self.storage.get_slowest_words(limit, layout)
 
     def get_fastest_words(
@@ -442,8 +440,6 @@ class Analyzer:
         Returns:
             List of WordStatisticsLite models
         """
-        current_layout = layout if layout else "us"
-        self.storage._process_new_key_events(layout=current_layout)
         return self.storage.get_fastest_words(limit, layout)
 
     def get_long_term_average_wpm(self) -> Optional[float]:

@@ -81,6 +81,7 @@ class Application(QObject):
         self.event_queue = Queue(maxsize=1000)
         self.running = False
         self._last_stats_update: int = 0
+        self._last_activity_time: int = int(time.time())
 
         self.init_data_directory()
         self.init_components()
@@ -222,7 +223,9 @@ class Application(QObject):
         )
 
         self.event_handler = EvdevHandler(
-            event_queue=self.event_queue, layout_getter=self.get_current_layout
+            event_queue=self.event_queue,
+            layout_getter=self.get_current_layout,
+            stats_panel_visible_getter=lambda: self.stats_panel.isVisible(),
         )
 
         self.analyzer = Analyzer(self.storage)
@@ -613,17 +616,39 @@ class Application(QObject):
 
         # Only update stats panel if it's visible (avoid wasting resources when hidden)
         if self.stats_panel.isVisible():
-            # Update stats display periodically (every stats_update_interval_sec seconds if processing events)
             current_time = int(time.time())
+
+            # Update activity time when processing events
             if processed_count > 0:
-                stats_interval = self.config.get_int("stats_update_interval_sec", 2)
-                if current_time - self._last_stats_update >= stats_interval:
-                    self.update_statistics()
-                    self._last_stats_update = current_time
+                self._last_activity_time = current_time
+
+            # Use adaptive interval based on typing activity
+            idle_threshold = self.config.get_int("idle_threshold_sec", 10)
+            idle_time = current_time - self._last_activity_time
+
+            if idle_time >= idle_threshold:
+                # Idle - use slower update interval
+                stats_interval = self.config.get_int(
+                    "stats_update_interval_idle_sec", 15
+                )
+            else:
+                # Active or recently active - use normal update interval
+                stats_interval = self.config.get_int(
+                    "stats_update_interval_active_sec", 5
+                )
+
+            if current_time - self._last_stats_update >= stats_interval:
+                self.update_statistics()
+                self._last_stats_update = current_time
 
     def update_statistics(self) -> None:
         """Update statistics display."""
         log.info("update_statistics() called")
+
+        # Process pending key events once before all queries to avoid redundant processing
+        current_layout = self.get_current_layout()
+        self.storage._process_new_key_events(layout=current_layout)
+
         stats = self.analyzer.get_statistics()
         long_term_avg = self.analyzer.get_long_term_average_wpm() or 0
         all_time_best = self.analyzer.get_all_time_high_score() or 0

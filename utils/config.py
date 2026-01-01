@@ -94,6 +94,24 @@ class AppSettings(BaseModel):
     stats_update_interval_sec: int = Field(
         default=2, ge=1, le=60, description="Statistics update interval (seconds)"
     )
+    stats_update_interval_active_sec: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="Statistics update interval when actively typing (seconds)",
+    )
+    stats_update_interval_idle_sec: int = Field(
+        default=15,
+        ge=1,
+        le=60,
+        description="Statistics update interval when idle (seconds)",
+    )
+    idle_threshold_sec: int = Field(
+        default=10,
+        ge=5,
+        le=60,
+        description="Seconds of inactivity before entering idle mode",
+    )
 
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
