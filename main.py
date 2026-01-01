@@ -204,7 +204,7 @@ class Application(QObject):
         burst_config = BurstDetectorConfig(
             burst_timeout_ms=self.config.get_int("burst_timeout_ms", 1000),
             high_score_min_duration_ms=self.config.get_int(
-                "high_score_min_duration_ms", 10000
+                "high_score_min_duration_ms", 5000
             ),
             duration_calculation_method=self.config.get(
                 "burst_duration_calculation", "total_time"
@@ -251,28 +251,53 @@ class Application(QObject):
 
     def connect_signals(self) -> None:
         """Connect all signals."""
-        self.signal_update_stats.connect(self.stats_panel.update_wpm)
-        self.signal_update_slowest_keys.connect(self.stats_panel.update_slowest_keys)
-        self.signal_update_fastest_keys.connect(self.stats_panel.update_fastest_keys)
-        self.signal_update_hardest_words.connect(self.stats_panel.update_hardest_words)
-        self.signal_update_fastest_words_stats.connect(
-            self.stats_panel.update_fastest_words
-        )
-        self.signal_update_typing_time_display.connect(
-            self.stats_panel.update_typing_time_display
-        )
-        self.signal_update_worst_word.connect(self.stats_panel.update_worst_word)
-        self.signal_update_fastest_word.connect(self.stats_panel.update_fastest_word)
-        self.signal_update_keystrokes_bursts.connect(
-            self.stats_panel.update_keystrokes_bursts
-        )
-        self.signal_update_avg_burst_duration.connect(
-            self.stats_panel.update_avg_burst_duration
-        )
-        self.signal_update_trend_data.connect(self.stats_panel.update_trend_graph)
-        # Use Qt.QueuedConnection to ensure signal crosses thread boundaries properly
+        # Use Qt.QueuedConnection to ensure signals cross thread boundaries properly
         from PySide6.QtCore import Qt
 
+        self.signal_update_stats.connect(
+            self.stats_panel.update_wpm,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_slowest_keys.connect(
+            self.stats_panel.update_slowest_keys,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_fastest_keys.connect(
+            self.stats_panel.update_fastest_keys,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_hardest_words.connect(
+            self.stats_panel.update_hardest_words,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_fastest_words_stats.connect(
+            self.stats_panel.update_fastest_words,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_typing_time_display.connect(
+            self.stats_panel.update_typing_time_display,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_worst_word.connect(
+            self.stats_panel.update_worst_word,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_fastest_word.connect(
+            self.stats_panel.update_fastest_word,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_keystrokes_bursts.connect(
+            self.stats_panel.update_keystrokes_bursts,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_avg_burst_duration.connect(
+            self.stats_panel.update_avg_burst_duration,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_update_trend_data.connect(
+            self.stats_panel.update_trend_graph,
+            Qt.ConnectionType.QueuedConnection,
+        )
         self.signal_update_typing_time_graph.connect(
             self.stats_panel.update_typing_time_graph,
             Qt.ConnectionType.QueuedConnection,
@@ -287,7 +312,10 @@ class Application(QObject):
         self.notification_handler.signal_worst_letter_changed.connect(
             self.show_worst_letter_notification
         )
-        self.signal_update_worst_letter.connect(self.stats_panel.update_worst_letter)
+        self.signal_update_worst_letter.connect(
+            self.stats_panel.update_worst_letter,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         self.tray_icon.settings_changed.connect(self.apply_settings)
         self.tray_icon.settings_requested.connect(self.show_settings_dialog)
@@ -297,9 +325,6 @@ class Application(QObject):
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
         self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
         self.stats_panel.set_words_clipboard_callback(self.fetch_words_for_clipboard)
-
-        # Connect clipboard words signal with QueuedConnection for thread safety
-        from PySide6.QtCore import Qt
 
         self.signal_clipboard_words_ready.connect(
             self.stats_panel._on_clipboard_words_ready,
@@ -317,8 +342,9 @@ class Application(QObject):
         """Handle burst completion."""
         self.analyzer.process_burst(burst)
 
-        # Update statistics immediately when a burst completes
-        self.update_statistics()
+        # Update statistics immediately when a burst completes, but only if panel is visible
+        if self.stats_panel.isVisible():
+            self.update_statistics()
 
         if burst.qualifies_for_high_score:
             wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
@@ -579,13 +605,15 @@ class Application(QObject):
             except Empty:
                 break  # Queue empty
 
-        # Update stats display periodically (every stats_update_interval_sec seconds if processing events)
-        current_time = int(time.time())
-        if processed_count > 0:
-            stats_interval = self.config.get_int("stats_update_interval_sec", 2)
-            if current_time - self._last_stats_update >= stats_interval:
-                self.update_statistics()
-                self._last_stats_update = current_time
+        # Only update stats panel if it's visible (avoid wasting resources when hidden)
+        if self.stats_panel.isVisible():
+            # Update stats display periodically (every stats_update_interval_sec seconds if processing events)
+            current_time = int(time.time())
+            if processed_count > 0:
+                stats_interval = self.config.get_int("stats_update_interval_sec", 2)
+                if current_time - self._last_stats_update >= stats_interval:
+                    self.update_statistics()
+                    self._last_stats_update = current_time
 
     def update_statistics(self) -> None:
         """Update statistics display."""
@@ -680,7 +708,7 @@ class Application(QObject):
                 "active_time_threshold_ms", 500
             ),
             "high_score_min_duration_ms": self.config.get_int(
-                "high_score_min_duration_ms", 10000
+                "high_score_min_duration_ms", 5000
             ),
             "keyboard_layout": self.config.get("keyboard_layout", "auto"),
             "notification_time_hour": self.config.get_int("notification_time_hour", 18),

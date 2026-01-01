@@ -339,7 +339,7 @@ class SettingsDialog(QDialog):
         self.high_score_duration_spin = QSpinBox()
         self.high_score_duration_spin.setRange(5000, 60000)
         self.high_score_duration_spin.setSuffix(" ms")
-        self.high_score_duration_spin.setValue(10000)
+        self.high_score_duration_spin.setValue(5000)
         burst_layout.addRow(
             self._create_labeled_icon_widget(
                 "High score min duration:",
@@ -802,7 +802,7 @@ class SettingsDialog(QDialog):
         )
 
         self.high_score_duration_spin.setValue(
-            self.current_settings.get("high_score_min_duration_ms", 10000) // 1000
+            self.current_settings.get("high_score_min_duration_ms", 5000)
         )
         self.min_key_count_spin.setValue(
             self.current_settings.get("min_burst_key_count", 10)
@@ -877,7 +877,7 @@ class SettingsDialog(QDialog):
             "burst_duration_calculation": self.duration_method_combo.currentData(),
             "active_time_threshold_ms": str(self.active_threshold_spin.value()),
             "high_score_min_duration_ms": str(
-                self.high_score_duration_spin.value() * 1000
+                self.high_score_duration_spin.value()
             ),
             "min_burst_key_count": str(self.min_key_count_spin.value()),
             "min_burst_duration_ms": str(self.min_burst_duration_spin.value()),

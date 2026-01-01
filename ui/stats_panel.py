@@ -1,23 +1,25 @@
 """Statistics panel for RealTypeCoach."""
 
+from typing import List, Tuple
+
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QApplication,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
     QLabel,
-    QTabWidget,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView,
-    QPushButton,
-    QHBoxLayout,
-    QApplication,
-    QGroupBox,
-    QComboBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Signal, QSize, Qt
-from PySide6.QtGui import QIcon, QPixmap, QImage, QColor, QPalette, QFont
-from typing import List, Tuple
-from core.models import KeyPerformance, WordStatisticsLite, TypingTimeDataPoint
+
+from core.models import KeyPerformance, TypingTimeDataPoint, WordStatisticsLite
 
 
 class StatsPanel(QWidget):
@@ -175,7 +177,7 @@ class StatsPanel(QWidget):
             header_layout.addWidget(self.logo_widget)
 
         # Title
-        self.title_label = QLabel("RealTypeCoach Statistics")
+        self.title_label = QLabel("Statistics")
         self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
