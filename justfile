@@ -11,10 +11,6 @@ run:
 sync-deps:
     bash -c 'if [ ! -d ".venv" ]; then python3 -m venv .venv; fi && .venv/bin/python3 -m pip install -e .'
 
-# Run and show first 50 lines
-watch:
-    @just run 2>&1 | head -50
-
 # Instance Management
 # Kill running instances
 kill:
@@ -187,24 +183,3 @@ test-evdev:
         sys.exit(1)
     '
 
-# Clean, check, and run
-rebuild:
-    @just clean
-    @just check
-    @just run
-
-# Full reset, clean, check, and run
-full:
-    @just reset
-    @just clean
-    @just check
-    @just run
-
-# Git
-# Show git status
-git-status:
-    @git status --short
-
-# Show recent git commits
-git-log:
-    @git log --oneline -10
