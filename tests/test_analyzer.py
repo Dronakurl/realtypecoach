@@ -108,6 +108,8 @@ class TestAnalyzer:
                 start_time_ms=base,
                 end_time_ms=base + 5000,
                 key_count=10,
+                backspace_count=0,
+                net_key_count=10,
                 duration_ms=5000,
                 qualifies_for_high_score=False,
             ),
@@ -115,6 +117,8 @@ class TestAnalyzer:
                 start_time_ms=base + 6000,
                 end_time_ms=base + 11000,
                 key_count=15,
+                backspace_count=0,
+                net_key_count=15,
                 duration_ms=5000,
                 qualifies_for_high_score=False,
             ),
@@ -122,6 +126,8 @@ class TestAnalyzer:
                 start_time_ms=base + 12000,
                 end_time_ms=base + 17000,
                 key_count=20,
+                backspace_count=0,
+                net_key_count=20,
                 duration_ms=5000,
                 qualifies_for_high_score=False,
             ),
@@ -145,6 +151,52 @@ class TestAnalyzer:
         wpm = analyzer._calculate_wpm(100, 30000)
         assert abs(wpm - 40.0) < 0.1
 
+    def test_calculate_wpm_with_backspaces(self, analyzer):
+        """Test WPM calculation subtracts backspaces."""
+        # 100 keystrokes in 30 seconds, but 20 were backspaces
+        # Net: 80 keystrokes = 16 words / 0.5 min = 32 WPM
+        wpm = analyzer._calculate_wpm(100, 30000, 20)
+        assert abs(wpm - 32.0) < 0.1
+
+    def test_calculate_wpm_all_backspaces(self, analyzer):
+        """Test WPM calculation when all keystrokes are backspaces."""
+        # 100 keystrokes but all 100 are backspaces
+        # Net: 0 keystrokes = 0 WPM
+        wpm = analyzer._calculate_wpm(100, 30000, 100)
+        assert wpm == 0.0
+
+    def test_process_burst_with_backspaces(self, analyzer):
+        """Test burst processing with backspaces tracked."""
+        base = get_today_timestamp_ms()
+        burst = Burst(
+            start_time_ms=base,
+            end_time_ms=base + 30000,  # 30 seconds
+            key_count=100,  # Total keystrokes
+            backspace_count=20,  # 20 backspaces
+            net_key_count=80,  # 80 productive keystrokes
+            duration_ms=30000,
+            qualifies_for_high_score=True,
+        )
+
+        analyzer.process_burst(burst)
+
+        # WPM should be calculated from net keystrokes
+        # 80 net keystrokes = 16 words / 0.5 min = 32 WPM
+        assert abs(analyzer.current_burst_wpm - 32.0) < 0.1
+
+        # Verify storage received correct data
+        with analyzer.storage._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT key_count, backspace_count, net_key_count, avg_wpm FROM bursts"
+            )
+            result = cursor.fetchone()
+
+            assert result[0] == 100  # key_count
+            assert result[1] == 20  # backspace_count
+            assert result[2] == 80  # net_key_count
+            assert abs(result[3] - 32.0) < 0.1  # avg_wpm calculated from net
+
     def test_get_statistics_returns_correct_types(self, analyzer):
         """Test that get_statistics returns correct types."""
         stats = analyzer.get_statistics()
@@ -165,6 +217,8 @@ class TestAnalyzer:
             start_time_ms=base,
             end_time_ms=base + 10000,
             key_count=50,
+            backspace_count=0,
+            net_key_count=50,
             duration_ms=10000,  # 10 seconds
             qualifies_for_high_score=False,
         )

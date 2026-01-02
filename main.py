@@ -600,7 +600,11 @@ class Application(QObject):
                     log.info(f"Processing key event: {key_event.key_name}")
                     logged = True
 
-                self.burst_detector.process_key_event(key_event.timestamp_ms, True)
+                # Detect if key is backspace
+                is_backspace = key_event.key_name == "BACKSPACE"
+                self.burst_detector.process_key_event(
+                    key_event.timestamp_ms, True, is_backspace
+                )
 
                 self.analyzer.process_key_event(
                     key_event.keycode,
@@ -644,10 +648,6 @@ class Application(QObject):
     def update_statistics(self) -> None:
         """Update statistics display."""
         log.info("update_statistics() called")
-
-        # Process pending key events once before all queries to avoid redundant processing
-        current_layout = self.get_current_layout()
-        self.storage._process_new_key_events(layout=current_layout)
 
         stats = self.analyzer.get_statistics()
         long_term_avg = self.analyzer.get_long_term_average_wpm() or 0

@@ -17,6 +17,7 @@ from core.models import (
     WorstLetterChange,
     TypingTimeDataPoint,
 )
+from utils.keycodes import is_letter_key
 
 log = logging.getLogger("realtypecoach.analyzer")
 
@@ -95,20 +96,20 @@ class Analyzer:
                 self.today_stats["slowest_keycode"] = summary.slowest_keycode
                 self.today_stats["slowest_key_name"] = summary.slowest_key_name
         else:
-            # No daily summary yet, calculate from raw data
+            # No daily summary yet, calculate from bursts
             with self.storage._get_connection() as conn:
                 cursor = conn.cursor()
 
-                # Count today's keystrokes
                 startOfDay = int(
                     datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000
                 )
                 endOfDay = startOfDay + 86400000
 
+                # Calculate keystrokes from bursts (sum of net_key_count)
                 cursor.execute(
                     """
-                    SELECT COUNT(*) FROM key_events
-                    WHERE timestamp_ms >= ? AND timestamp_ms < ?
+                    SELECT COALESCE(SUM(net_key_count), 0) FROM bursts
+                    WHERE start_time >= ? AND start_time < ?
                 """,
                     (startOfDay, endOfDay),
                 )
@@ -154,18 +155,21 @@ class Analyzer:
         if needs_new_day:
             self._new_day(current_date)
 
-        # Store key event to database
-        self.storage.store_key_event(keycode, key_name, timestamp_ms)
+        # Process keystroke through WordDetector immediately (no database storage)
+        is_letter = is_letter_key(key_name)
+        word_info = self.storage.word_detector.process_keystroke(
+            key_name, timestamp_ms, layout, is_letter, keycode
+        )
+
+        # If a word was completed, update statistics from it
+        if word_info and self.storage.dictionary.is_valid_word(
+            word_info.word, self.storage._get_language_from_layout(layout)
+        ):
+            with self.storage._get_connection() as conn:
+                self.storage._store_word_from_state(conn, word_info)
 
         with self._lock:
             self.today_stats["total_keystrokes"] += 1
-
-        # Note: Key statistics are NO longer updated immediately here.
-        # Instead, they are updated ONLY when processing valid dictionary words
-        # in storage._process_keystroke_timings(). This ensures that letter speed
-        # statistics only include keystrokes that are:
-        # 1. Part of valid dictionary words
-        # 2. Typed in bursts (within BURST_TIMEOUT_MS of each other)
 
     def process_burst(self, burst: Burst) -> None:
         """Process a completed burst.
@@ -176,7 +180,9 @@ class Analyzer:
         if burst.key_count == 0:
             return
 
-        burst_wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
+        burst_wpm = self._calculate_wpm(
+            burst.key_count, burst.duration_ms, burst.backspace_count
+        )
 
         with self._lock:
             self.today_stats["total_bursts"] += 1
@@ -184,26 +190,24 @@ class Analyzer:
 
         self.current_burst_wpm = burst_wpm
 
-        self.storage.store_burst(
-            burst.start_time_ms,
-            burst.end_time_ms,
-            burst.key_count,
-            burst.duration_ms,
-            burst_wpm,
-            burst.qualifies_for_high_score,
-        )
+        self.storage.store_burst(burst, burst_wpm)
 
         if burst.qualifies_for_high_score:
             self._check_high_score(burst_wpm, burst.duration_ms, burst.key_count)
 
-    def _calculate_wpm(self, key_count: int, duration_ms: int) -> float:
+    def _calculate_wpm(
+        self, key_count: int, duration_ms: int, backspace_count: int = 0
+    ) -> float:
         """Calculate words per minute.
+
+        Uses NET productive keystrokes (total - backspaces).
 
         Standard: 5 characters = 1 word
 
         Args:
-            key_count: Number of keystrokes
+            key_count: Number of keystrokes (gross)
             duration_ms: Duration in milliseconds
+            backspace_count: Number of backspace keystrokes
 
         Returns:
             WPM (words per minute)
@@ -211,7 +215,10 @@ class Analyzer:
         if duration_ms == 0:
             return 0.0
 
-        words = key_count / 5.0
+        # Calculate productive keystrokes
+        net_keystrokes = max(0, key_count - backspace_count)
+
+        words = net_keystrokes / 5.0
         minutes = duration_ms / 60000.0
         return words / minutes if minutes > 0 else 0.0
 

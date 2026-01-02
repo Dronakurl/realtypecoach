@@ -1,6 +1,5 @@
 """Storage management for RealTypeCoach - SQLite database operations."""
 
-import csv
 import re
 import sqlcipher3 as sqlite3
 import time
@@ -20,7 +19,6 @@ from core.models import (
     WordInfo,
     TypingTimeDataPoint,
 )
-from utils.keycodes import is_letter_key
 from utils.config import Config
 from utils.crypto import CryptoManager
 
@@ -72,6 +70,7 @@ class Storage:
         )
 
         self._add_word_statistics_columns()
+        self._add_backspace_tracking_to_bursts()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Create a database connection with encryption and REGEXP function enabled."""
@@ -130,7 +129,7 @@ class Storage:
                 log.info("Using existing encryption key from keyring")
 
         with self._get_connection() as conn:
-            self._create_key_events_table(conn)
+            # key_events table removed for security - keystrokes are no longer stored
             self._create_bursts_table(conn)
             self._create_statistics_table(conn)
             self._create_high_scores_table(conn)
@@ -138,20 +137,7 @@ class Storage:
             # Settings table is owned by Config class, not Storage
             self._create_word_statistics_table(conn)
             self._migrate_high_scores_duration_ms(conn)
-            self._migrate_key_events_event_type(conn)
             conn.commit()
-
-    def _create_key_events_table(self, conn: sqlite3.Connection) -> None:
-        """Create key_events table."""
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS key_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                keycode INTEGER NOT NULL,
-                key_name TEXT NOT NULL,
-                timestamp_ms INTEGER NOT NULL,
-                event_type TEXT NOT NULL DEFAULT 'press'
-            )
-        """)
 
     def _create_bursts_table(self, conn: sqlite3.Connection) -> None:
         """Create bursts table."""
@@ -248,6 +234,38 @@ class Storage:
 
             conn.commit()
 
+    def _add_backspace_tracking_to_bursts(self) -> None:
+        """Add backspace_count and net_key_count columns to bursts table if they don't exist.
+
+        Migration: Add columns for tracking backspace keystrokes separately.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            try:
+                cursor.execute("""
+                    ALTER TABLE bursts ADD COLUMN backspace_count INTEGER DEFAULT 0
+                """)
+                log.info("Added backspace_count column to bursts table")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" in str(e):
+                    pass
+                else:
+                    log.error(f"Error adding backspace_count to bursts: {e}")
+
+            try:
+                cursor.execute("""
+                    ALTER TABLE bursts ADD COLUMN net_key_count INTEGER DEFAULT 0
+                """)
+                log.info("Added net_key_count column to bursts table")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" in str(e):
+                    pass
+                else:
+                    log.error(f"Error adding net_key_count to bursts: {e}")
+
+            conn.commit()
+
     def _migrate_high_scores_duration_ms(self, conn: sqlite3.Connection) -> None:
         """Migrate high_scores table to use duration_ms instead of duration_sec."""
         cursor = conn.cursor()
@@ -274,24 +292,6 @@ class Storage:
             """)
             log.info("Migrated high_scores data from duration_sec to duration_ms")
 
-    def _migrate_key_events_event_type(self, conn: sqlite3.Connection) -> None:
-        """Migrate key_events table to add event_type column."""
-        cursor = conn.cursor()
-
-        # Check if event_type column exists
-        cursor.execute("""
-            SELECT COUNT(*) FROM pragma_table_info('key_events')
-            WHERE name='event_type'
-        """)
-        has_column = cursor.fetchone()[0] > 0
-
-        if not has_column:
-            # Add new column
-            cursor.execute("""
-                ALTER TABLE key_events ADD COLUMN event_type TEXT NOT NULL DEFAULT 'press'
-            """)
-            log.info("Added event_type column to key_events table")
-
     def _create_word_statistics_table(self, conn: sqlite3.Connection) -> None:
         """Create word_statistics table."""
         conn.execute("""
@@ -309,58 +309,29 @@ class Storage:
             )
         """)
 
-    def store_key_event(self, keycode: int, key_name: str, timestamp_ms: int) -> None:
-        """Store a single key event.
-
-        Args:
-            keycode: Linux evdev keycode
-            key_name: Human-readable key name
-            timestamp_ms: Milliseconds since epoch
-        """
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO key_events
-                (keycode, key_name, timestamp_ms, event_type)
-                VALUES (?, ?, ?, ?)
-            """,
-                (keycode, key_name, timestamp_ms, "press"),
-            )
-            conn.commit()
-
-    def store_burst(
-        self,
-        start_time: int,
-        end_time: int,
-        key_count: int,
-        duration_ms: int,
-        avg_wpm: float,
-        qualifies_for_high_score: bool,
-    ) -> None:
+    def store_burst(self, burst, avg_wpm: float) -> None:
         """Store a burst.
 
         Args:
-            start_time: Start timestamp (ms since epoch)
-            end_time: End timestamp (ms since epoch)
-            key_count: Number of keystrokes
-            duration_ms: Burst duration in milliseconds
-            avg_wpm: Average WPM during burst
-            qualifies_for_high_score: Whether burst meets minimum duration
+            burst: Burst object with timing and keystroke data
+            avg_wpm: Average WPM during burst (calculated from net keystrokes)
         """
         with self._get_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO bursts
-                (start_time, end_time, key_count, duration_ms, avg_wpm, qualifies_for_high_score)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (start_time, end_time, key_count, backspace_count, net_key_count, duration_ms, avg_wpm, qualifies_for_high_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
-                    start_time,
-                    end_time,
-                    key_count,
-                    duration_ms,
+                    burst.start_time_ms,
+                    burst.end_time_ms,
+                    burst.key_count,
+                    burst.backspace_count,
+                    burst.net_key_count,
+                    burst.duration_ms,
                     avg_wpm,
-                    int(qualifies_for_high_score),
+                    int(burst.qualifies_for_high_score),
                 ),
             )
             conn.commit()
@@ -784,60 +755,6 @@ class Storage:
             )
             conn.commit()
 
-    def export_to_csv(
-        self,
-        csv_path: Path,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-    ) -> int:
-        """Export key events to CSV file.
-
-        Args:
-            csv_path: Path to save CSV file
-            start_date: Start date string (YYYY-MM-DD) or None
-            end_date: End date string (YYYY-MM-DD) or None
-
-        Returns:
-            Number of rows exported
-        """
-        query = """
-            SELECT timestamp_ms, keycode, key_name
-            FROM key_events
-        """
-        params = []
-
-        if start_date:
-            start_ms = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp() * 1000)
-            query += " WHERE timestamp_ms >= ?"
-            params.append(start_ms)
-
-        if end_date:
-            end_ms = int(
-                (
-                    datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
-                ).timestamp()
-                * 1000
-            )
-            if start_date:
-                query += " AND timestamp_ms < ?"
-            else:
-                query += " WHERE timestamp_ms < ?"
-            params.append(end_ms)
-
-        query += " ORDER BY timestamp_ms"
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-
-            with open(csv_path, "w", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["timestamp_ms", "keycode", "key_name"])
-                writer.writerows(rows)
-
-            return len(rows)
-
     def delete_old_data(self, retention_days: int) -> None:
         """Delete data older than retention period.
 
@@ -854,7 +771,7 @@ class Storage:
             "%Y-%m-%d"
         )
         with self._get_connection() as conn:
-            conn.execute("DELETE FROM key_events WHERE timestamp_ms < ?", (cutoff_ms,))
+            # key_events table removed - keystrokes no longer stored
             conn.execute("DELETE FROM bursts WHERE start_time < ?", (cutoff_ms,))
             conn.execute("DELETE FROM daily_summaries WHERE date < ?", (cutoff_date,))
             conn.commit()
@@ -862,15 +779,15 @@ class Storage:
     def clear_database(self) -> None:
         """Clear all data from database."""
         with self._get_connection() as conn:
-            conn.execute("DELETE FROM key_events")
+            # key_events table removed - keystrokes no longer stored
             conn.execute("DELETE FROM bursts")
             conn.execute("DELETE FROM statistics")
             conn.execute("DELETE FROM high_scores")
             conn.execute("DELETE FROM daily_summaries")
             conn.execute("DELETE FROM word_statistics")
+            # Clean up settings related to removed key_events processing
             conn.execute(
-                "DELETE FROM settings WHERE key = ? OR key = ?",
-                ("last_processed_event_id_us", "last_processed_event_id_de"),
+                "DELETE FROM settings WHERE key LIKE 'last_processed_event_id_%'"
             )
             conn.commit()
 
@@ -974,95 +891,6 @@ class Storage:
                 )
 
             conn.commit()
-
-    def _get_last_processed_event_id(self, layout: str) -> int:
-        """Get the last processed event ID for a layout.
-
-        Args:
-            layout: Keyboard layout identifier
-
-        Returns:
-            Last processed event ID, or 0 if none
-        """
-        key = f"last_processed_event_id_{layout}"
-        return self.config.get_int(key, 0)
-
-    def _set_last_processed_event_id(self, layout: str, event_id: int) -> None:
-        """Set the last processed event ID for a layout.
-
-        Args:
-            layout: Keyboard layout identifier
-            event_id: Event ID to save
-        """
-        key = f"last_processed_event_id_{layout}"
-        self.config.set(key, event_id)
-
-    def _process_new_key_events(
-        self, layout: str = "us", max_events: int = 1000
-    ) -> int:
-        """Process new key events to detect and update word statistics.
-
-        Uses WordDetector to track backspace editing and validates words
-        against dictionary. Only stores valid dictionary words.
-
-        Args:
-            layout: Keyboard layout identifier
-            max_events: Maximum number of events to process in one call
-
-        Returns:
-            Number of events processed
-        """
-        # In accept_all mode, always process words
-        # In validate mode, only process if at least one dictionary loaded
-        if not self.dictionary.accept_all_mode and not self.dictionary.is_loaded():
-            log.warning(
-                "No dictionary loaded and accept_all_mode is False, skipping word processing"
-            )
-            return 0
-
-        last_processed_id = self._get_last_processed_event_id(layout)
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            cursor.execute(
-                """
-                SELECT id, keycode, key_name, timestamp_ms
-                FROM key_events
-                WHERE id > ?
-                ORDER BY id
-                LIMIT ?
-            """,
-                (last_processed_id, max_events),
-            )
-
-            events = cursor.fetchall()
-
-            if not events:
-                return 0
-
-            last_event_id = last_processed_id
-
-            for event_id, keycode, key_name, timestamp_ms in events:
-                last_event_id = event_id
-
-                is_letter = is_letter_key(key_name)
-                word_info = self.word_detector.process_keystroke(
-                    key_name, timestamp_ms, layout, is_letter, keycode
-                )
-
-                if word_info:
-                    word = word_info.word
-
-                    if self.dictionary.is_valid_word(
-                        word, self._get_language_from_layout(layout)
-                    ):
-                        self._store_word_from_state(conn, word_info)
-
-            conn.commit()
-            self._set_last_processed_event_id(layout, last_event_id)
-
-            return len(events)
 
     def _get_language_from_layout(self, layout: str) -> Optional[str]:
         """Get language code from layout identifier.

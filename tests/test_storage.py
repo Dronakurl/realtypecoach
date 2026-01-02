@@ -5,8 +5,23 @@ import tempfile
 from pathlib import Path
 
 from core.storage import Storage
+from core.burst_detector import Burst
 from utils.config import Config
 from utils.crypto import CryptoManager
+
+
+@pytest.fixture
+def sample_burst():
+    """Create a sample burst for testing."""
+    return Burst(
+        start_time_ms=1234567890,
+        end_time_ms=1234568890,
+        key_count=50,
+        backspace_count=0,
+        net_key_count=50,
+        duration_ms=5000,
+        qualifies_for_high_score=False,
+    )
 
 
 @pytest.fixture
@@ -41,27 +56,17 @@ class TestStorage:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cursor.fetchall()]
 
-            assert "key_events" in tables
+            # key_events table removed for security
             assert "bursts" in tables
             assert "statistics" in tables
             assert "high_scores" in tables
             assert "daily_summaries" in tables
+            assert "word_statistics" in tables
             assert "settings" in tables
 
-    def test_store_key_event(self, storage):
-        """Test storing key events."""
-        storage.store_key_event(30, "KEY_A", 1234567890)
-
-        with storage._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM key_events")
-            count = cursor.fetchone()[0]
-
-            assert count == 1
-
-    def test_store_burst(self, storage):
+    def test_store_burst(self, storage, sample_burst):
         """Test storing bursts."""
-        storage.store_burst(1234567890, 1234568890, 50, 5000, 60.0, True)
+        storage.store_burst(sample_burst, 60.0)
 
         with storage._get_connection() as conn:
             cursor = conn.cursor()
@@ -72,6 +77,32 @@ class TestStorage:
 
             assert count == 1
             assert duration == 5000  # 5 seconds in milliseconds
+
+    def test_store_burst_with_backspaces(self, storage):
+        """Test storing bursts with backspace tracking."""
+        burst = Burst(
+            start_time_ms=1234567890,
+            end_time_ms=1234568890,
+            key_count=100,  # Total keystrokes
+            backspace_count=20,  # 20 backspaces
+            net_key_count=80,  # 80 productive keystrokes
+            duration_ms=5000,
+            qualifies_for_high_score=False,
+        )
+
+        storage.store_burst(burst, 96.0)  # 80/5 / (5000/60000) = 16 / 0.0833 = 192 WPM?
+
+        with storage._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT key_count, backspace_count, net_key_count, avg_wpm FROM bursts"
+            )
+            result = cursor.fetchone()
+
+            assert result[0] == 100  # key_count
+            assert result[1] == 20  # backspace_count
+            assert result[2] == 80  # net_key_count
+            assert result[3] == 96.0  # avg_wpm
 
     def test_update_daily_summary_typing_time(self, storage):
         """Test that typing time is stored correctly in daily summary."""

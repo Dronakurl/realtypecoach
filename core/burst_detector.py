@@ -17,6 +17,8 @@ class Burst:
     start_time_ms: int
     end_time_ms: int = 0
     key_count: int = 0
+    backspace_count: int = 0
+    net_key_count: int = 0
     duration_ms: int = 0
     qualifies_for_high_score: bool = False
 
@@ -41,12 +43,15 @@ class BurstDetector:
         self.last_key_time_ms: Optional[int] = None
         self._current_timestamps: List[int] = []
 
-    def process_key_event(self, timestamp_ms: int, is_press: bool) -> Optional[Burst]:
+    def process_key_event(
+        self, timestamp_ms: int, is_press: bool, is_backspace: bool = False
+    ) -> Optional[Burst]:
         """Process a key event and detect bursts.
 
         Args:
             timestamp_ms: Timestamp of key event in milliseconds since epoch
             is_press: True if key press, False if release
+            is_backspace: True if key is backspace, False otherwise
 
         Returns:
             Completed Burst if a burst ended, None otherwise
@@ -61,6 +66,8 @@ class BurstDetector:
                 start_time_ms=timestamp_ms,
                 end_time_ms=timestamp_ms,
                 key_count=1,
+                backspace_count=1 if is_backspace else 0,
+                net_key_count=0 if is_backspace else 1,
                 duration_ms=0,
             )
             return None
@@ -68,17 +75,24 @@ class BurstDetector:
         time_since_last = timestamp_ms - self.last_key_time_ms
 
         if time_since_last > self.config.burst_timeout_ms:
-            return self._complete_burst(timestamp_ms)
+            return self._complete_burst(timestamp_ms, is_backspace)
         else:
             if self.current_burst:
                 self.current_burst.key_count += 1
+                if is_backspace:
+                    self.current_burst.backspace_count += 1
+                self.current_burst.net_key_count = (
+                    self.current_burst.key_count - self.current_burst.backspace_count
+                )
                 self.current_burst.end_time_ms = timestamp_ms
                 self._current_timestamps.append(timestamp_ms)
                 self.current_burst.duration_ms = self._calculate_duration()
             self.last_key_time_ms = timestamp_ms
             return None
 
-    def _complete_burst(self, timestamp_ms: int) -> Optional[Burst]:
+    def _complete_burst(
+        self, timestamp_ms: int, is_backspace: bool = False
+    ) -> Optional[Burst]:
         """Complete current burst and start new one.
 
         Args:
@@ -118,6 +132,8 @@ class BurstDetector:
             start_time_ms=timestamp_ms,
             end_time_ms=timestamp_ms,
             key_count=1,
+            backspace_count=1 if is_backspace else 0,
+            net_key_count=0 if is_backspace else 1,
             duration_ms=0,
         )
         self.last_key_time_ms = timestamp_ms

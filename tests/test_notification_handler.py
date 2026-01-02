@@ -9,8 +9,31 @@ from datetime import datetime, timedelta
 from core.notification_handler import NotificationHandler
 from core.models import DailySummary, DailySummaryDB
 from core.storage import Storage
+from core.burst_detector import Burst
 from utils.config import Config
 from utils.crypto import CryptoManager
+
+
+def create_test_burst(
+    start_time_ms,
+    end_time_ms,
+    key_count,
+    backspace_count=0,
+    net_key_count=None,
+    qualifies=True,
+):
+    """Helper to create test burst objects."""
+    if net_key_count is None:
+        net_key_count = key_count - backspace_count
+    return Burst(
+        start_time_ms=start_time_ms,
+        end_time_ms=end_time_ms,
+        key_count=key_count,
+        backspace_count=backspace_count,
+        net_key_count=net_key_count,
+        duration_ms=end_time_ms - start_time_ms,
+        qualifies_for_high_score=qualifies,
+    )
 
 
 @pytest.fixture
@@ -194,9 +217,8 @@ class TestThresholdUpdate:
         # Insert 100 bursts with various WPMs
         now_ms = int(datetime.now().timestamp() * 1000)
         for wpm in range(40, 140):  # 40 to 139
-            notification_handler.storage.store_burst(
-                now_ms - 1000, now_ms + 10000, 50, 10000, float(wpm), False
-            )
+            burst = create_test_burst(now_ms - 1000, now_ms + 10000, 50)
+            notification_handler.storage.store_burst(burst, float(wpm))
 
         notification_handler._update_threshold()
 
@@ -209,9 +231,8 @@ class TestThresholdUpdate:
         now_ms = int(datetime.now().timestamp() * 1000)
         # Insert only 10 bursts with WPM 50-59
         for i, wpm in enumerate(range(50, 60)):
-            notification_handler.storage.store_burst(
-                now_ms - 1000, now_ms + 10000, 50, 10000, float(wpm), False
-            )
+            burst = create_test_burst(now_ms - 1000, now_ms + 10000, 50)
+            notification_handler.storage.store_burst(burst, float(wpm))
 
         notification_handler._update_threshold()
 
@@ -239,14 +260,12 @@ class TestThresholdUpdate:
         now_ms = int(datetime.now().timestamp() * 1000)
 
         # Insert long burst (should be counted)
-        notification_handler.storage.store_burst(
-            now_ms - 1000, now_ms + 10000, 50, 10000, 80.0, False
-        )
+        long_burst = create_test_burst(now_ms - 1000, now_ms + 10000, 50)
+        notification_handler.storage.store_burst(long_burst, 80.0)
 
         # Insert short burst (should be ignored)
-        notification_handler.storage.store_burst(
-            now_ms - 1000, now_ms + 5000, 20, 5000, 100.0, False
-        )
+        short_burst = create_test_burst(now_ms - 1000, now_ms + 5000, 20)
+        notification_handler.storage.store_burst(short_burst, 100.0)
 
         notification_handler._update_threshold()
 
@@ -263,14 +282,12 @@ class TestThresholdUpdate:
         recent_time = int((now - timedelta(days=1)).timestamp() * 1000)
 
         # Old burst (should be ignored)
-        notification_handler.storage.store_burst(
-            old_time, old_time + 10000, 50, 10000, 100.0, False
-        )
+        old_burst = create_test_burst(old_time, old_time + 10000, 50)
+        notification_handler.storage.store_burst(old_burst, 100.0)
 
         # Recent burst (should be counted)
-        notification_handler.storage.store_burst(
-            recent_time, recent_time + 10000, 50, 10000, 60.0, False
-        )
+        recent_burst = create_test_burst(recent_time, recent_time + 10000, 50)
+        notification_handler.storage.store_burst(recent_burst, 60.0)
 
         notification_handler._update_threshold()
 
