@@ -15,7 +15,8 @@ Unlike typing tests that measure artificial performance, RealTypeCoach tracks yo
 ## Features
 
 - ⌨️ **Works silently in the background** - Tracks your natural typing patterns without interrupting your workflow
-- 🔒 **Privacy-first design** - Your typing data stays on your device and is encrypted
+- 🔒 **Privacy-focused** - Only aggregated statistics are stored (WPM, slowest keys/words) - no keystroke history
+- 📊 **Encrypted storage** - Your statistics data stays on your device in an encrypted database
 - 📈 **Visualize your progress** - See your WPM improvement over time with interactive charts
 - 🔤 **Find your problem words** - Discover which specific words slow you down the most
 - 🎯 **Targeted improvement** - Identifies your slowest keys so you can focus practice where it counts
@@ -68,9 +69,9 @@ The application runs in your system tray:
 ### How It Works
 
 1. RealTypeCoach captures keyboard events from `/dev/input/eventX` devices
-2. It detects bursts of continuous typing (separated by pauses)
-3. Only keycodes and timings are stored - never actual text or passwords
-4. Statistics are calculated per-key and per-burst
+2. Keystrokes are processed in real-time to detect bursts of continuous typing
+3. Only aggregated statistics are stored (WPM, key speeds, word speeds) - **no keystroke history**
+4. Statistics are calculated per-key and per-word to identify your slowest patterns
 5. Optional daily summary notifications at a configurable time
 
 ## Troubleshooting

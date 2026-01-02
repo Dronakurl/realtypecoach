@@ -250,13 +250,18 @@ class TestWordStorageWithDictionary:
             (57, "SPACE", base_time + 250),
         ]
 
+        # Process keystrokes through WordDetector directly (no database storage)
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp)
-
-        processed = storage_with_dict._process_new_key_events(
-            layout="us", max_events=100
-        )
-        assert processed == 6
+            is_letter = len(key_name) == 1 and key_name.isalpha()
+            word_info = storage_with_dict.word_detector.process_keystroke(
+                key_name, timestamp, "us", is_letter, keycode
+            )
+            # Store word if detected
+            if word_info and storage_with_dict.dictionary.is_valid_word(
+                word_info.word, storage_with_dict._get_language_from_layout("us")
+            ):
+                with storage_with_dict._get_connection() as conn:
+                    storage_with_dict._store_word_from_state(conn, word_info)
 
         with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
@@ -283,13 +288,18 @@ class TestWordStorageWithDictionary:
             (57, "SPACE", base_time + 150),
         ]
 
+        # Process keystrokes through WordDetector directly (no database storage)
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp)
-
-        processed = storage_with_dict._process_new_key_events(
-            layout="us", max_events=100
-        )
-        assert processed == 4
+            is_letter = len(key_name) == 1 and key_name.isalpha()
+            word_info = storage_with_dict.word_detector.process_keystroke(
+                key_name, timestamp, "us", is_letter, keycode
+            )
+            # Store word if detected (should not happen for "xyz")
+            if word_info and storage_with_dict.dictionary.is_valid_word(
+                word_info.word, storage_with_dict._get_language_from_layout("us")
+            ):
+                with storage_with_dict._get_connection() as conn:
+                    storage_with_dict._store_word_from_state(conn, word_info)
 
         with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
@@ -319,13 +329,18 @@ class TestWordStorageWithDictionary:
             (57, "SPACE", base_time + 550),
         ]
 
+        # Process keystrokes through WordDetector directly (no database storage)
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp)
-
-        processed = storage_with_dict._process_new_key_events(
-            layout="us", max_events=100
-        )
-        assert processed == 12
+            is_letter = len(key_name) == 1 and key_name.isalpha()
+            word_info = storage_with_dict.word_detector.process_keystroke(
+                key_name, timestamp, "us", is_letter, keycode
+            )
+            # Store word if detected
+            if word_info and storage_with_dict.dictionary.is_valid_word(
+                word_info.word, storage_with_dict._get_language_from_layout("us")
+            ):
+                with storage_with_dict._get_connection() as conn:
+                    storage_with_dict._store_word_from_state(conn, word_info)
 
         with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
@@ -361,13 +376,18 @@ class TestWordStorageWithDictionary:
             (57, "SPACE", base_time + 550),
         ]
 
+        # Process keystrokes through WordDetector directly (no database storage)
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp)
-
-        processed = storage_with_dict._process_new_key_events(
-            layout="us", max_events=100
-        )
-        assert processed == 12
+            is_letter = len(key_name) == 1 and key_name.isalpha()
+            word_info = storage_with_dict.word_detector.process_keystroke(
+                key_name, timestamp, "us", is_letter, keycode
+            )
+            # Store word if detected
+            if word_info and storage_with_dict.dictionary.is_valid_word(
+                word_info.word, storage_with_dict._get_language_from_layout("us")
+            ):
+                with storage_with_dict._get_connection() as conn:
+                    storage_with_dict._store_word_from_state(conn, word_info)
 
         with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
@@ -396,13 +416,18 @@ class TestWordStorageWithDictionary:
             (57, "SPACE", base_time + 2750),
         ]
 
+        # Process keystrokes through WordDetector directly (no database storage)
         for keycode, key_name, timestamp in events:
-            storage_with_dict.store_key_event(keycode, key_name, timestamp)
-
-        processed = storage_with_dict._process_new_key_events(
-            layout="us", max_events=100
-        )
-        assert processed == 12
+            is_letter = len(key_name) == 1 and key_name.isalpha()
+            word_info = storage_with_dict.word_detector.process_keystroke(
+                key_name, timestamp, "us", is_letter, keycode
+            )
+            # Store word if detected
+            if word_info and storage_with_dict.dictionary.is_valid_word(
+                word_info.word, storage_with_dict._get_language_from_layout("us")
+            ):
+                with storage_with_dict._get_connection() as conn:
+                    storage_with_dict._store_word_from_state(conn, word_info)
 
         with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()

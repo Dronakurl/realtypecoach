@@ -2,7 +2,7 @@
 
 ## Overview
 
-RealTypeCoach uses a **SQLite database** to store all typing data locally. This document explains how data is organized, stored, and managed.
+RealTypeCoach uses an **encrypted SQLite database** to store typing statistics locally. This document explains how data is organized and managed.
 
 ## Database Location
 
@@ -15,93 +15,48 @@ RealTypeCoach uses a **SQLite database** to store all typing data locally. This 
 /home/username/.local/share/realtypecoach/typing_data.db
 ```
 
-## Why SQLite?
+## Security & Privacy
 
-**Advantages:**
-- ✓ Built into Python (no external dependencies)
-- ✓ Lightweight and fast
-- ✓ Reliable and battle-tested
-- ✓ Easy to query with SQL
-- ✓ No database server required
-- ✓ Single file = easy backup/restore
+### Encryption
+
+The database is encrypted using **SQLCipher** with keys stored in your system keyring:
+- **GNOME Keyring** (gnome-keyring/seahorse)
+- **KDE KWallet**
+
+This ensures that:
+- ✓ Statistics data is encrypted at rest
+- ✓ Only you (with your keyring unlock) can access the data
+- ✓ Database file is useless without the encryption key
+
+### No Keystroke History
+
+**Important:** RealTypeCoach does **NOT** store individual keystrokes. No permanent record of what you type is kept.
+
+**What is NOT stored:**
+- ✗ Individual keystroke events
+- ✗ Typed text or passwords
+- ✗ Keystroke history
+- ✗ Timings of individual keystrokes
+
+**What IS stored (aggregated statistics only):**
+- ✓ WPM (words per minute) per burst
+- ✓ Average speed per key
+- ✓ Average speed per word
+- ✓ Daily summaries (total keystrokes, bursts, typing time)
+- ✓ High scores (fastest bursts)
 
 ## Database Schema
 
 ### Tables Overview
 
 ```
-key_events       - Individual keystroke events
-bursts          - Typing burst records
-statistics      - Per-key statistics (speed data)
-high_scores     - Daily high scores
-daily_summaries - Aggregated daily statistics
-settings        - Application configuration
+bursts              - Typing burst records (WPM, duration, key count)
+statistics          - Per-key speed statistics (average press time)
+word_statistics     - Per-word speed statistics
+high_scores         - Daily high scores
+daily_summaries     - Aggregated daily statistics
+settings            - Application configuration
 ```
-
-### Table: key_events
-
-Stores individual keystroke events (with selective logging):
-
-```sql
-CREATE TABLE key_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    keycode INTEGER NOT NULL,          -- Linux evdev keycode
-    key_name TEXT NOT NULL,            -- Human-readable (e.g., 'KEY_A')
-    timestamp_ms INTEGER NOT NULL,     -- Milliseconds since epoch
-    event_type TEXT NOT NULL,          -- 'press' or 'release'
-    app_name TEXT,                     -- Application name (if available)
-    is_password_field INTEGER DEFAULT 0 -- 1 if password field (always 0)
-);
-```
-
-**Example data:**
-```
-id | keycode | key_name | timestamp_ms  | event_type | app_name   | is_password_field
----|---------|----------|---------------|------------|------------|------------------
-1  | 30      | KEY_A    | 1735312345678 | press      | kate       | 0
-2  | 30      | KEY_A    | 1735312345800 | release    | kate       | 0
-3  | 48      | KEY_B    | 1735312346123 | press      | firefox    | 0
-```
-
-**Note:** Password field events are never inserted.
-
-#### Selective Logging Behavior
-
-**Important:** RealTypeCoach does NOT log every single keystroke. This is intentional and by design.
-
-**What gets logged:**
-- ✓ A subset of key events during active typing
-- ✓ Events needed for burst detection and word tracking
-- ✓ Sufficient data for statistics and analysis
-
-**What may be skipped:**
-- ✗ Some modifier keys (Ctrl, Alt, Shift when used alone)
-- ✗ Repetitive key events (auto-repeat)
-- ✗ Some non-letter keys when not part of typing patterns
-- ✗ Events during very high-frequency typing (performance optimization)
-
-**Why selective logging?**
-
-1. **Performance**: Reduces database I/O during intensive typing
-2. **Privacy**: Less data stored = better privacy
-3. **Focus**: Captures typing patterns without recording every raw event
-4. **Efficiency**: Stores only what's needed for meaningful statistics
-
-**Trade-offs:**
-- ✗ Cannot replay exact typing sequence
-- ✗ Missing some raw keystroke data
-- ✓ All statistics remain accurate
-- ✓ Burst detection works correctly
-- ✓ Word tracking is preserved
-
-**Example:**
-```
-You type:        "hello world"
-Events logged:   ~5-10 events (not 11+ events)
-Accuracy:        Speed, bursts, words still tracked correctly
-```
-
-**Note for users:** If you need complete keystroke logging for forensic purposes, this is not the right tool. RealTypeCoach focuses on typing improvement statistics, not comprehensive activity logging.
 
 ### Table: bursts
 
@@ -115,16 +70,16 @@ CREATE TABLE bursts (
     key_count INTEGER NOT NULL,         -- Number of keystrokes
     duration_ms INTEGER NOT NULL,       -- Duration in milliseconds
     avg_wpm REAL,                       -- Calculated WPM
-    qualifies_for_high_score INTEGER DEFAULT 0 -- Boolean: 1 if 10+ seconds
+    qualifies_for_high_score INTEGER DEFAULT 0
 );
 ```
 
 **Example data:**
 ```
-id | start_time   | end_time     | key_count | duration_ms | avg_wpm | qualifies
----|--------------|--------------|-----------|-------------|---------|----------
-1  | 1735312000000| 1735312030000| 250       | 30000       | 100.0   | 1
-2  | 1735312100000| 1735312115000| 50        | 15000       | 40.0    | 0
+id | start_time   | end_time     | key_count | duration_ms | avg_wpm
+---|--------------|--------------|-----------|-------------|--------
+1  | 1735312000000| 1735312030000| 250       | 30000       | 100.0
+2  | 1735312100000| 1735312115000| 50        | 15000       | 40.0
 ```
 
 ### Table: statistics
@@ -149,11 +104,36 @@ CREATE TABLE statistics (
 ```
 keycode | key_name | layout | avg_press_time | total_presses | slowest_ms | fastest_ms
 --------|----------|--------|----------------|---------------|------------|------------
-30      | KEY_A    | us     | 145.3          | 1523          | 482.1      | 87.2
-48      | KEY_B    | us     | 132.8          | 892           | 391.5      | 76.4
+30      | a        | us     | 145.3          | 1523          | 482.1      | 87.2
+48      | b        | us     | 132.8          | 892           | 391.5      | 76.4
 ```
 
-**Unique constraint:** One record per key per layout.
+### Table: word_statistics
+
+Stores per-word speed statistics:
+
+```sql
+CREATE TABLE word_statistics (
+    word TEXT NOT NULL,
+    layout TEXT NOT NULL,
+    avg_speed_ms_per_letter REAL NOT NULL,
+    total_letters INTEGER NOT NULL,
+    total_duration_ms INTEGER NOT NULL,
+    observation_count INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    backspace_count INTEGER DEFAULT 0,
+    editing_time_ms INTEGER DEFAULT 0,
+    PRIMARY KEY (word, layout)
+);
+```
+
+**Example data:**
+```
+word   | layout | avg_speed_ms_per_letter | total_letters | observation_count | last_seen
+-------|--------|------------------------|---------------|-------------------|----------
+hello  | us     | 95.2                   | 50            | 10                | 1736892345678
+world  | us     | 102.3                  | 60            | 8                 | 1736894567890
+```
 
 ### Table: high_scores
 
@@ -166,16 +146,9 @@ CREATE TABLE high_scores (
     fastest_burst_wpm REAL,             -- WPM achieved
     burst_duration_sec REAL,            -- Burst duration in seconds
     burst_key_count INTEGER,             -- Keystrokes in burst
-    timestamp INTEGER NOT NULL           -- When achieved (ms since epoch)
+    timestamp INTEGER NOT NULL,          -- When achieved
+    burst_duration_ms INTEGER            -- Duration in milliseconds
 );
-```
-
-**Example data:**
-```
-id | date       | fastest_burst_wpm | burst_duration_sec | burst_key_count | timestamp
----|------------|-------------------|-------------------|-----------------|----------
-1  | 2025-01-15 | 127.3             | 15.2              | 423             | 1736892345678
-2  | 2025-01-15 | 115.8             | 12.8              | 391             | 1736894567890
 ```
 
 ### Table: daily_summaries
@@ -191,16 +164,8 @@ CREATE TABLE daily_summaries (
     slowest_keycode INTEGER,             -- Slowest key code
     slowest_key_name TEXT,               -- Slowest key name
     total_typing_sec INTEGER,            -- Total typing time (seconds)
-    summary_sent INTEGER DEFAULT 0       -- Was daily summary notification sent?
+    summary_sent INTEGER DEFAULT 0       -- Was notification sent?
 );
-```
-
-**Example data:**
-```
-date       | total_keystrokes | total_bursts | avg_wpm | slowest_keycode | slowest_key_name | total_typing_sec | summary_sent
------------|-----------------|--------------|---------|-----------------|------------------|-----------------|-------------
-2025-01-15 | 12453           | 87           | 82.3    | 30              | KEY_A            | 925             | 1
-2025-01-16 | 8234            | 52           | 78.9    | 57              | KEY_SPACE        | 678             | 0
 ```
 
 ### Table: settings
@@ -209,40 +174,30 @@ Application configuration:
 
 ```sql
 CREATE TABLE settings (
-    key TEXT PRIMARY KEY,                -- Setting name
-    value TEXT NOT NULL                  -- Setting value (as string)
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
-```
-
-**Example data:**
-```
-key                            | value
--------------------------------|------------------
-burst_timeout_ms               | 3000
-high_score_min_duration_ms     | 10000
-slowest_keys_count             | 10
-password_exclusion             | true
 ```
 
 ## Data Retention
 
 ### Automatic Cleanup
 
-RealTypeCoach automatically deletes old data:
+RealTypeCoach can automatically delete old data:
 
-**Default retention: 90 days**
+**Default retention: 90 days** (configurable)
 
 **What gets deleted:**
-- Key events older than 90 days
-- Bursts older than 90 days
-- Daily summaries older than 90 days
+- Bursts older than retention period
+- Daily summaries older than retention period
 
 **What's kept:**
 - Statistics (all-time key averages)
+- Word statistics (all-time word averages)
 - High scores (all-time records)
 - Settings
 
-**Configurable** via `data_retention_days` setting.
+**Configurable** via `data_retention_days` setting in the application.
 
 ### Why Delete Old Data?
 
@@ -262,187 +217,58 @@ rm ~/.local/share/realtypecoach/typing_data.db
 - Settings → "Clear Database"
 - Deletes everything, starts fresh
 
-## Data Import/Export
-
-### Export to CSV
-
-```python
-storage.export_to_csv(
-    csv_path='/path/to/export.csv',
-    start_date='2025-01-01',
-    end_date='2025-01-31'
-)
-```
-
-**CSV format:**
-```csv
-timestamp_ms,keycode,key_name,event_type,app_name,is_password_field
-1735312345678,30,KEY_A,press,kate,0
-1735312345800,30,KEY_A,release,kate,0
-...
-```
-
-### Backup Database
-
-**Simple backup:**
-```bash
-cp ~/.local/share/realtypecoach/typing_data.db ~/backup/typing_data_$(date +%Y%m%d).db
-```
-
-**Restore:**
-```bash
-cp ~/backup/typing_data_20250115.db ~/.local/share/realtypecoach/typing_data.db
-```
-
-## Database Queries
-
-### Example Queries
-
-**Total keystrokes today:**
-```sql
-SELECT COUNT(*) FROM key_events
-WHERE date(timestamp_ms / 1000, 'unixepoch') = date('now');
-```
-
-**Average WPM by day:**
-```sql
-SELECT date, avg_wpm FROM daily_summaries
-ORDER BY date DESC
-LIMIT 7;
-```
-
-**Slowest keys:**
-```sql
-SELECT key_name, avg_press_time
-FROM statistics
-WHERE total_presses >= 2
-ORDER BY avg_press_time DESC
-LIMIT 10;
-```
-
-**Personal best:**
-```sql
-SELECT date, fastest_burst_wpm
-FROM high_scores
-ORDER BY fastest_burst_wpm DESC
-LIMIT 1;
-```
-
-## Performance Considerations
-
-### Indexes
-
-SQLite automatically creates:
-- Primary key indexes
-- Unique constraint indexes
-
-**Custom indexes** (could be added for performance):
-```sql
-CREATE INDEX idx_key_events_timestamp ON key_events(timestamp_ms);
-CREATE INDEX idx_bursts_start_time ON bursts(start_time);
-CREATE INDEX idx_high_scores_date ON high_scores(date);
-```
-
-### Database Size
+## Database Size
 
 **Typical usage:**
-- New database: ~100 KB (empty schema)
-- 1 day of heavy typing: ~500 KB
-- 1 month of regular use: ~5-10 MB
-- 1 year of regular use: ~50-100 MB (with 90-day retention, stays smaller)
+- New database: ~50 KB (empty schema, encrypted)
+- 1 day of heavy typing: ~20-30 KB
+- 1 month of regular use: ~500 KB - 1 MB
+- 1 year of regular use: ~5-10 MB (with 90-day retention, stays smaller)
 
 **Factors affecting size:**
 - Typing volume
 - Retention period
-- Number of different keys used
-- Application switching frequency
+- Number of different keys/words used
 
-### Optimization
+Much smaller than before since only aggregated statistics are stored, not individual keystrokes.
 
-**Vacuum** (reclaim space after deletions):
+## Backup & Restore
+
+### Backup Database
+
 ```bash
-sqlite3 ~/.local/share/realtypecoach/typing_data.db "VACUUM;"
+cp ~/.local/share/realtypecoach/typing_data.db ~/backup/typing_data_$(date +%Y%m%d).db
 ```
 
-**Analyze** (update query planner statistics):
+### Restore
+
 ```bash
-sqlite3 ~/.local/share/realtypecoach/typing_data.db "ANALYZE;"
+cp ~/backup/typing_data_20250115.db ~/.local/share/realtypecoach/typing_data.db
 ```
 
-## Data Integrity
+**Note:** After restoring, you may need to reinitialize the encryption key if you get a "wrong encryption key" error.
 
-### Transaction Safety
+## Encryption Details
 
-All database writes use transactions:
-```python
-with sqlite3.connect(self.db_path) as conn:
-    # Multiple operations
-    conn.execute(...)
-    conn.execute(...)
-    conn.commit()  # All or nothing
-```
+### How It Works
 
-**Protection against:**
-- Power loss during write
-- Application crash
-- Concurrent access issues
+1. **Key Generation**: When you first run RealTypeCoach, a random encryption key is generated
+2. **Key Storage**: The key is stored in your system keyring (GNOME Keyring or KDE KWallet)
+3. **Database Access**: Every time RealTypeCoach starts, it retrieves the key from the keyring
+4. **Encryption**: All data is encrypted using SQLCipher (AES-256)
 
-### Corruption Recovery
+### Key Management
 
-**Check for corruption:**
+**Encryption key location:**
+- **GNOME**: `/org/freedesktop/secrets/collection/login` (via keyring)
+- **KDE**: KWallet (`kdewallet`)
+
+**Reinitialize encryption** (WARNING: This deletes existing data):
 ```bash
-sqlite3 ~/.local/share/realtypecoach/typing_data.db "PRAGMA integrity_check;"
+rm ~/.local/share/realtypecoach/typing_data.db
 ```
 
-**Output:** `ok` if database is healthy
-
-**Recover from backup** if corrupted.
-
-## Concurrency
-
-### Single-Instance Design
-
-RealTypeCoach enforces **single instance**:
-- PID file: `~/.local/share/realtypecoach/realtypecoach.pid`
-- Second instance refuses to start
-- Prevents database corruption from concurrent writes
-
-### Locking
-
-SQLite uses **file-level locking**:
-- Automatic during writes
-- Queue-based for concurrent reads
-- No manual locking needed
-
-## Privacy & Security
-
-### File Permissions
-
-Database file permissions:
-```
--rw-------  (600)
-Owner: Your user
-Group: Your group
-Others: No access
-```
-
-**Protection:**
-- Standard Linux file permissions
-- Respects encrypted home directories
-- No special encryption in database
-
-### Data at Rest
-
-**Not encrypted** within database:
-- Relies on file system encryption
-- If home directory is encrypted, database is encrypted
-- If full disk encryption, database is encrypted
-
-**Why no database encryption?**
-- Performance overhead
-- Complexity
-- Local-only data
-- File system encryption is better
+The next time RealTypeCoach starts, it will create a new database with a new encryption key.
 
 ## Monitoring Database Health
 
@@ -455,31 +281,42 @@ ls -lh ~/.local/share/realtypecoach/typing_data.db
 ### Row Counts
 
 ```sql
--- Total events
-SELECT COUNT(*) FROM key_events;
-
 -- Total bursts
 SELECT COUNT(*) FROM bursts;
 
--- Oldest / newest event
-SELECT MIN(timestamp_ms), MAX(timestamp_ms) FROM key_events;
-```
+-- Total words tracked
+SELECT COUNT(*) FROM word_statistics;
 
-### Maintenance
-
-**Recommended** (monthly or quarterly):
-```bash
-# 1. Backup
-cp ~/.local/share/realtypecoach/typing_data.db ~/backup/typing_data_$(date +%Y%m%d).db
-
-# 2. Vacuum (reclaim space)
-sqlite3 ~/.local/share/realtypecoach/typing_data.db "VACUUM;"
-
-# 3. Analyze (update statistics)
-sqlite3 ~/.local/share/realtypecoach/typing_data.db "ANALYZE;"
+-- Unique keys tracked
+SELECT COUNT(*) FROM statistics;
 ```
 
 ## Troubleshooting
+
+### "Database encryption key not found"
+
+This error occurs when the keyring cannot access the encryption key.
+
+**Solutions:**
+
+1. **Check keyring is unlocked:**
+   ```bash
+   # For GNOME
+   loginctl unlock-session
+
+   # For KDE/KWallet
+   kwallet-query -l kdewallet
+   ```
+
+2. **Verify keyring backend:**
+   ```bash
+   python3 -c "import keyring; print(keyring.get_keyring())"
+   ```
+
+3. **Reinitialize** (WARNING: Deletes all data):
+   ```bash
+   rm ~/.local/share/realtypecoach/typing_data.db
+   ```
 
 ### Database Locked
 
@@ -488,7 +325,6 @@ sqlite3 ~/.local/share/realtypecoach/typing_data.db "ANALYZE;"
 **Causes:**
 - Another instance running
 - Crash left PID file
-- Other process accessing file
 
 **Solutions:**
 ```bash
@@ -499,41 +335,9 @@ just kill
 rm ~/.local/share/realtypecoach/realtypecoach.pid
 ```
 
-### Database Corruption
-
-**Symptom:** "database disk image is malformed"
-
-**Recovery:**
-```bash
-# 1. Backup (if possible)
-cp ~/.local/share/realtypecoach/typing_data.db ~/backup/corrupted_backup.db
-
-# 2. Try to dump data
-sqlite3 ~/.local/share/realtypecoach/typing_data.db ".dump" > dump.sql
-
-# 3. Create new database from dump
-sqlite3 new_typing_data.db < dump.sql
-
-# 4. Replace (if successful)
-mv new_typing_data.db ~/.local/share/realtypecoach/typing_data.db
-```
-
-### Performance Issues
-
-**Symptom:** Slow queries, laggy UI
-
-**Solutions:**
-```bash
-# 1. Delete old data (via app settings)
-# 2. Vacuum database
-sqlite3 ~/.local/share/realtypecoach/typing_data.db "VACUUM;"
-# 3. Check database size (consider reducing retention)
-```
-
 ## Best Practices
 
-1. **Regular backups**: Before major changes
+1. **Regular backups**: Before major changes or system upgrades
 2. **Monitor size**: Ensure it doesn't grow too large
-3. **Export periodically**: Keep CSV exports for analysis
-4. **Clean old data**: Use retention settings
-5. **Check integrity**: After crashes or power issues
+3. **Clean old data**: Use retention settings in the app
+4. **Keyring access**: Ensure your keyring is unlocked when logging in

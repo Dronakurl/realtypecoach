@@ -60,12 +60,6 @@ reset:
 seed-database days:
     @.venv/bin/python3 scripts/seed_database.py --days {{days}}
 
-# Data retrieval
-# Retrieve typed text from database
-# Get last N characters typed (default: all)
-get-typed-text LIMIT="-1":
-    @.venv/bin/python3 scripts/get_typed_text.py {{LIMIT}}
-
 # Testing
 # Format code with ruff and remove unused imports
 ruff-format:
