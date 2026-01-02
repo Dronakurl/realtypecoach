@@ -43,7 +43,7 @@ sudo usermod -aG input $USER
 ./install.sh
 ```
 
-The install script installs RealTypeCoach to your home directory (in `~/.local/share/realtypecoach/`) and creates an entry in your application menu. 
+The install script installs RealTypeCoach to your home directory (in `~/.local/share/realtypecoach/`) and creates an entry in your application menu. You can delete the code checkout after installation.
 
 > [!NOTE]
 > **Why the `input` group?** RealTypeCoach needs to read your keyboard events to analyze typing. Linux restricts this to the `input` group for security. On single-user systems (your laptop/desktop), this is safe and appropriate.
