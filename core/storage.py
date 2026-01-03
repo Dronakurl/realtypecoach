@@ -72,6 +72,12 @@ class Storage:
         self._add_word_statistics_columns()
         self._add_backspace_tracking_to_bursts()
 
+        # Initialize cache for all-time statistics (calculated once, updated on burst store)
+        self._cache_all_time_typing_sec = 0
+        self._cache_all_time_keystrokes = 0
+        self._cache_all_time_bursts = 0
+        self._refresh_all_time_cache()
+
     def _get_connection(self) -> sqlite3.Connection:
         """Create a database connection with encryption and REGEXP function enabled."""
         # Get encryption key from keyring
@@ -336,6 +342,11 @@ class Storage:
             )
             conn.commit()
 
+        # Update cache with new burst data
+        self._cache_all_time_typing_sec += burst.duration_ms // 1000
+        self._cache_all_time_keystrokes += burst.net_key_count
+        self._cache_all_time_bursts += 1
+
     def update_key_statistics(
         self, keycode: int, key_name: str, layout: str, press_time_ms: float
     ) -> None:
@@ -466,8 +477,22 @@ class Storage:
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
 
+    def _refresh_all_time_cache(self) -> None:
+        """Refresh all-time statistics cache from database."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COALESCE(SUM(duration_ms), 0) FROM bursts")
+            total_ms = cursor.fetchone()[0]
+            self._cache_all_time_typing_sec = int(total_ms / 1000)
+
+            cursor.execute("SELECT COALESCE(SUM(net_key_count), 0) FROM bursts")
+            self._cache_all_time_keystrokes = int(cursor.fetchone()[0])
+
+            cursor.execute("SELECT COUNT(*) FROM bursts")
+            self._cache_all_time_bursts = int(cursor.fetchone()[0])
+
     def get_all_time_typing_time(self, exclude_today: str = None) -> int:
-        """Get all-time total typing time.
+        """Get all-time total typing time from cache (calculated once, updated on burst store).
 
         Args:
             exclude_today: Optional date string (YYYY-MM-DD) to exclude from sum.
@@ -476,59 +501,66 @@ class Storage:
         Returns:
             Total typing time in seconds
         """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            if exclude_today:
+        if exclude_today:
+            # Calculate today's time and subtract from cache
+            start_of_day = int(
+                datetime.strptime(exclude_today, "%Y-%m-%d").timestamp() * 1000
+            )
+            end_of_day = start_of_day + 86400000
+
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
                 cursor.execute(
                     """
-                    SELECT COALESCE(SUM(total_typing_sec), 0) FROM daily_summaries
-                    WHERE date != ?
+                    SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
+                    WHERE start_time >= ? AND start_time < ?
                 """,
-                    (exclude_today,),
+                    (start_of_day, end_of_day),
                 )
-            else:
-                cursor.execute(
-                    """
-                    SELECT COALESCE(SUM(total_typing_sec), 0) FROM daily_summaries
-                """,
-                )
-            result = cursor.fetchone()
-            return result[0] if result else 0
+                today_ms = cursor.fetchone()[0]
+                return self._cache_all_time_typing_sec - int(today_ms / 1000)
+
+        # Return cached all-time value
+        return self._cache_all_time_typing_sec
 
     def get_all_time_keystrokes_and_bursts(
         self, exclude_today: str = None
     ) -> tuple[int, int]:
-        """Get all-time total keystrokes and bursts.
+        """Get all-time total keystrokes and bursts from cache.
 
         Args:
             exclude_today: Optional date string (YYYY-MM-DD) to exclude from sum.
                           Used to avoid double-counting today's in-memory stats.
 
         Returns:
-            Tuple of (total_keystrokes, total_bursts) from daily_summaries table
+            Tuple of (total_keystrokes, total_bursts)
         """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            if exclude_today:
+        if exclude_today:
+            # Calculate today's keystrokes and bursts, subtract from cache
+            start_of_day = int(
+                datetime.strptime(exclude_today, "%Y-%m-%d").timestamp() * 1000
+            )
+            end_of_day = start_of_day + 86400000
+
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
                 cursor.execute(
                     """
-                    SELECT COALESCE(SUM(total_keystrokes), 0),
-                           COALESCE(SUM(total_bursts), 0)
-                    FROM daily_summaries
-                    WHERE date != ?
+                    SELECT COALESCE(SUM(net_key_count), 0),
+                           COUNT(*)
+                    FROM bursts
+                    WHERE start_time >= ? AND start_time < ?
                 """,
-                    (exclude_today,),
+                    (start_of_day, end_of_day),
                 )
-            else:
-                cursor.execute(
-                    """
-                    SELECT COALESCE(SUM(total_keystrokes), 0),
-                           COALESCE(SUM(total_bursts), 0)
-                    FROM daily_summaries
-                """,
+                today_keystrokes, today_bursts = cursor.fetchone()
+                return (
+                    self._cache_all_time_keystrokes - int(today_keystrokes),
+                    self._cache_all_time_bursts - int(today_bursts),
                 )
-            result = cursor.fetchone()
-            return (result[0], result[1]) if result else (0, 0)
+
+        # Return cached all-time values
+        return (self._cache_all_time_keystrokes, self._cache_all_time_bursts)
 
     def get_burst_duration_stats_ms(self) -> tuple[int, int, int]:
         """Get burst duration statistics across all bursts.

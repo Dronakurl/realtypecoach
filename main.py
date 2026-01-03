@@ -9,6 +9,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Queue, Empty
+from concurrent.futures import ThreadPoolExecutor
 
 # Path constants (must be defined before logging setup)
 DATA_DIR = Path.home() / ".local" / "share" / "realtypecoach"
@@ -82,6 +83,10 @@ class Application(QObject):
         self.running = False
         self._last_stats_update: int = 0
         self._last_activity_time: int = int(time.time())
+        # Thread pool for background data fetching (limit to prevent thread leaks)
+        self._executor = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="data_fetcher"
+        )
 
         self.init_data_directory()
         self.init_components()
@@ -528,7 +533,6 @@ class Application(QObject):
         Args:
             window_size: Number of bursts to aggregate (1-200)
         """
-        import threading
 
         def fetch_data():
             try:
@@ -537,9 +541,8 @@ class Application(QObject):
             except Exception as e:
                 log.error(f"Error fetching trend data: {e}")
 
-        # Fetch in background thread to avoid blocking UI
-        thread = threading.Thread(target=fetch_data, daemon=True)
-        thread.start()
+        # Submit to thread pool to limit concurrent background threads
+        self._executor.submit(fetch_data)
 
     def provide_typing_time_data(self, granularity: str) -> None:
         """Provide typing time data to stats panel.
@@ -547,7 +550,6 @@ class Application(QObject):
         Args:
             granularity: Time granularity ("day", "week", "month", "quarter")
         """
-        import threading
 
         def fetch_data():
             try:
@@ -559,9 +561,8 @@ class Application(QObject):
             except Exception as e:
                 log.error(f"Error fetching typing time data: {e}")
 
-        # Fetch in background thread to avoid blocking UI
-        thread = threading.Thread(target=fetch_data, daemon=True)
-        thread.start()
+        # Submit to thread pool to limit concurrent background threads
+        self._executor.submit(fetch_data)
 
     def fetch_words_for_clipboard(self, count: int) -> None:
         """Fetch slowest words in background thread and emit signal.
@@ -569,7 +570,6 @@ class Application(QObject):
         Args:
             count: Number of words to fetch
         """
-        import threading
 
         def fetch_in_thread():
             try:
@@ -582,9 +582,8 @@ class Application(QObject):
                 log.error(f"Error fetching words for clipboard: {e}")
                 self.signal_clipboard_words_ready.emit([])
 
-        # Fetch in background thread to avoid blocking UI
-        thread = threading.Thread(target=fetch_in_thread, daemon=True)
-        thread.start()
+        # Submit to thread pool to limit concurrent background threads
+        self._executor.submit(fetch_in_thread)
 
     def process_event_queue(self) -> None:
         """Process events from queue."""
@@ -826,6 +825,9 @@ class Application(QObject):
 
         log.info("Stopping notification handler...")
         self.notification_handler.stop()
+
+        log.info("Shutting down thread pool...")
+        self._executor.shutdown(wait=True)
 
         log.info("RealTypeCoach stopped.")
 
