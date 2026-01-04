@@ -283,8 +283,8 @@ class TestLayoutMonitor:
 
     @patch("utils.keyboard_detector.get_current_layout")
     def test_layout_monitor_default_poll_interval(self, mock_get_layout):
-        """Test that default poll interval is 60 seconds."""
+        """Test that default poll interval is 300 seconds."""
         callback = MagicMock()
         monitor = LayoutMonitor(callback)
 
-        assert monitor.poll_interval == 60
+        assert monitor.poll_interval == 300
