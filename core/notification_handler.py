@@ -199,8 +199,8 @@ class NotificationHandler(QObject):
                 self._stop_event.wait(60)
                 continue
 
-            # Check every 30 seconds
-            self._stop_event.wait(30)
+            # Check every 5 minutes (300 seconds) - daily notification doesn't need frequent checks
+            self._stop_event.wait(300)
 
     def _send_daily_summary(self, date: str) -> None:
         """Send daily summary notification.

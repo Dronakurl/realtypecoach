@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """RealTypeCoach - KDE Wayland typing analysis application."""
 
-import sys
-import os
-import time
-import signal
 import logging
+import os
+import signal
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from queue import Queue, Empty
-from concurrent.futures import ThreadPoolExecutor
+from queue import Empty, Queue
 
 # Path constants (must be defined before logging setup)
 DATA_DIR = Path.home() / ".local" / "share" / "realtypecoach"
@@ -36,24 +36,29 @@ logging.basicConfig(
 )
 log = logging.getLogger("realtypecoach")
 
-from PySide6.QtWidgets import QApplication, QMessageBox, QDialog, QPushButton  # noqa: E402
-from PySide6.QtCore import QTimer, QObject, Signal  # noqa: E402
-from PySide6.QtGui import QFont, QIcon, QPalette, QPainter  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
+from PySide6.QtCore import QObject, QTimer, Signal  # noqa: E402
+from PySide6.QtGui import QFont, QIcon, QPainter, QPalette  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QDialog,
+    QMessageBox,
+    QPushButton,
+)
 
-from core.storage import Storage  # noqa: E402
-from core.dictionary_config import DictionaryConfig  # noqa: E402
-from core.burst_detector import BurstDetector  # noqa: E402
-from core.burst_config import BurstDetectorConfig  # noqa: E402
-from core.evdev_handler import EvdevHandler  # noqa: E402
 from core.analyzer import Analyzer  # noqa: E402
+from core.burst_config import BurstDetectorConfig  # noqa: E402
+from core.burst_detector import BurstDetector  # noqa: E402
+from core.dictionary_config import DictionaryConfig  # noqa: E402
+from core.evdev_handler import EvdevHandler  # noqa: E402
 from core.notification_handler import NotificationHandler  # noqa: E402
-from utils.keyboard_detector import LayoutMonitor, get_current_layout  # noqa: E402
-from utils.config import Config  # noqa: E402
-from utils.crypto import CryptoManager  # noqa: E402
+from core.storage import Storage  # noqa: E402
+from ui.settings_dialog import SettingsDialog  # noqa: E402
 from ui.stats_panel import StatsPanel  # noqa: E402
 from ui.tray_icon import TrayIcon  # noqa: E402
-from ui.settings_dialog import SettingsDialog  # noqa: E402
+from utils.config import Config  # noqa: E402
+from utils.crypto import CryptoManager  # noqa: E402
+from utils.keyboard_detector import LayoutMonitor, get_current_layout  # noqa: E402
 
 
 class Application(QObject):
@@ -128,8 +133,9 @@ class Application(QObject):
 
         # Backup old unencrypted/undecryptable database if it exists
         if self.db_path.exists():
-            import sqlcipher3 as sqlite3
             import uuid
+
+            import sqlcipher3 as sqlite3
 
             crypto = CryptoManager(self.db_path)
 
@@ -396,7 +402,7 @@ class Application(QObject):
             return
         self.tray_icon.show_notification(
             "🚀 Exceptional Typing Speed!",
-            f"{wpm:.1f} WPM - New personal best!",
+            f"{wpm:.1f} WPM - Top 95% burst!",
             "info",
         )
 
@@ -644,6 +650,26 @@ class Application(QObject):
                 self.update_statistics()
                 self._last_stats_update = current_time
 
+        # Adaptively adjust event queue polling interval based on activity
+        # This reduces CPU usage when the user is not actively typing
+        current_time = time.time()
+        idle_time = current_time - self._last_activity_time
+
+        if idle_time > 30:
+            # Long idle - check every 5 seconds
+            new_interval = 5000
+        elif idle_time > 5:
+            # Recently active - check every 2 seconds
+            new_interval = 2000
+        else:
+            # Active typing - check every 500ms
+            new_interval = 500
+
+        # Only update if interval changed
+        if self.process_queue_timer.interval() != new_interval:
+            log.debug(f"Adjusting queue poll interval to {new_interval}ms (idle: {idle_time:.1f}s)")
+            self.process_queue_timer.setInterval(new_interval)
+
     def update_statistics(self) -> None:
         """Update statistics display."""
         log.info("update_statistics() called")
@@ -825,6 +851,9 @@ class Application(QObject):
 
         log.info("Stopping notification handler...")
         self.notification_handler.stop()
+
+        log.info("Closing storage connection pool...")
+        self.storage.close()
 
         log.info("Shutting down thread pool...")
         self._executor.shutdown(wait=True)

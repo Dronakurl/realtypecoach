@@ -1,8 +1,11 @@
 """Storage management for RealTypeCoach - SQLite database operations."""
 
+import queue
 import re
 import sqlcipher3 as sqlite3
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -23,6 +26,159 @@ from utils.config import Config
 from utils.crypto import CryptoManager
 
 log = logging.getLogger("realtypecoach.storage")
+
+
+class _PooledConnection:
+    """Wrapper for a pooled database connection with metadata."""
+
+    def __init__(self, conn: sqlite3.Connection, created_at: float):
+        self.conn = conn
+        self.created_at = created_at
+        self.in_use = False
+
+
+class ConnectionPool:
+    """Thread-safe connection pool for SQLCipher database connections.
+
+    Reuses encrypted connections to avoid expensive encryption/decryption overhead.
+    Connections are rotated after max_lifetime_sec to prevent staleness.
+    """
+
+    def __init__(
+        self,
+        db_path: Path,
+        crypto,
+        pool_size: int = 3,
+        max_lifetime_sec: int = 300,
+        acquire_timeout: float = 30.0,
+    ):
+        """Initialize connection pool.
+
+        Args:
+            db_path: Path to SQLite database file
+            crypto: CryptoManager instance for key retrieval
+            pool_size: Maximum number of connections to maintain
+            max_lifetime_sec: Rotate connections after this many seconds
+            acquire_timeout: Seconds to wait for connection acquisition
+        """
+        self._db_path = db_path
+        self._crypto = crypto
+        self._pool_size = pool_size
+        self._max_lifetime = max_lifetime_sec
+        self._acquire_timeout = acquire_timeout
+        self._pool: queue.Queue[_PooledConnection] = queue.Queue(maxsize=pool_size)
+        self._lock = threading.Lock()
+        self._created_connections = 0
+
+    @contextmanager
+    def get_connection(self):
+        """Get a connection from the pool.
+
+        Yields:
+            sqlite3.Connection: A database connection
+
+        Raises:
+            RuntimeError: If encryption key is not found
+            TimeoutError: If connection cannot be acquired within timeout
+        """
+        conn_wrapper = self._acquire()
+        try:
+            yield conn_wrapper.conn
+        finally:
+            self._return(conn_wrapper)
+
+    def _acquire(self) -> _PooledConnection:
+        """Acquire a connection from the pool or create a new one."""
+        # Try to get from pool without blocking first
+        try:
+            conn_wrapper = self._pool.get_nowait()
+            # Check if connection is too old
+            if time.time() - conn_wrapper.created_at > self._max_lifetime:
+                log.debug("Closing stale connection from pool")
+                conn_wrapper.conn.close()
+                # Create new connection
+                return self._create_connection()
+            return conn_wrapper
+        except queue.Empty:
+            # Pool is empty, try to create new connection
+            with self._lock:
+                if self._created_connections < self._pool_size:
+                    return self._create_connection()
+                # Pool is full, wait for a connection to become available
+                pass
+
+        # Wait with timeout for a connection to become available
+        try:
+            return self._pool.get(timeout=self._acquire_timeout)
+        except queue.Empty:
+            raise TimeoutError(
+                f"Could not acquire database connection within {self._acquire_timeout} seconds"
+            )
+
+    def _return(self, conn_wrapper: _PooledConnection) -> None:
+        """Return a connection to the pool."""
+        try:
+            self._pool.put_nowait(conn_wrapper)
+        except queue.Full:
+            # Pool is full, close the connection
+            conn_wrapper.conn.close()
+            with self._lock:
+                self._created_connections -= 1
+
+    def _create_connection(self) -> _PooledConnection:
+        """Create a new encrypted database connection."""
+        # Get encryption key from keyring
+        encryption_key = self._crypto.get_key()
+        if encryption_key is None:
+            raise RuntimeError(
+                "Database encryption key not found in keyring. "
+                "This may indicate a corrupted installation or data migration issue."
+            )
+
+        # Connect with SQLCipher
+        conn = sqlite3.connect(self._db_path)
+
+        # Set encryption key (must be done IMMEDIATELY after connection)
+        conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
+
+        # Verify database is accessible (wrong key will cause error)
+        try:
+            conn.execute("SELECT count(*) FROM sqlite_master")
+        except sqlite3.DatabaseError as e:
+            conn.close()
+            raise RuntimeError(
+                f"Cannot decrypt database. Wrong encryption key or corrupted database. "
+                f"Error: {e}"
+            )
+
+        # Set encryption parameters
+        conn.execute("PRAGMA cipher_memory_security = ON")
+        conn.execute("PRAGMA cipher_page_size = 4096")
+        conn.execute("PRAGMA cipher_kdf_iter = 256000")
+
+        # Enable REGEXP function
+        def regexp(expr, item):
+            return re.search(expr, item) is not None if item else False
+
+        conn.create_function("REGEXP", 2, regexp)
+
+        with self._lock:
+            self._created_connections += 1
+
+        log.debug(f"Created new pooled connection (total: {self._created_connections})")
+        return _PooledConnection(conn, time.time())
+
+    def close_all(self) -> None:
+        """Close all connections in the pool."""
+        while not self._pool.empty():
+            try:
+                conn_wrapper = self._pool.get_nowait()
+                conn_wrapper.conn.close()
+                with self._lock:
+                    self._created_connections -= 1
+            except queue.Empty:
+                break
+        log.debug("All pooled connections closed")
 
 
 class Storage:
@@ -54,8 +210,17 @@ class Storage:
         self.word_boundary_timeout_ms = word_boundary_timeout_ms
         self.config = config
 
-        # Initialize crypto manager BEFORE _init_database()
+        # Initialize crypto manager BEFORE connection pool
         self.crypto = CryptoManager(db_path)
+
+        # Initialize connection pool for reusing encrypted connections
+        self._connection_pool = ConnectionPool(
+            db_path=db_path,
+            crypto=self.crypto,
+            pool_size=3,
+            max_lifetime_sec=300,  # Rotate every 5 minutes
+            acquire_timeout=30.0,
+        )
 
         # Check if this is a fresh database (no file exists)
         is_fresh_install = not db_path.exists()
@@ -78,44 +243,18 @@ class Storage:
         self._cache_all_time_bursts = 0
         self._refresh_all_time_cache()
 
+    @contextmanager
     def _get_connection(self) -> sqlite3.Connection:
-        """Create a database connection with encryption and REGEXP function enabled."""
-        # Get encryption key from keyring
-        encryption_key = self.crypto.get_key()
-        if encryption_key is None:
-            raise RuntimeError(
-                "Database encryption key not found in keyring. "
-                "This may indicate a corrupted installation or data migration issue."
-            )
+        """Get a database connection from the connection pool.
 
-        # Connect with SQLCipher
-        conn = sqlite3.connect(self.db_path)
+        The connection pool reuses encrypted connections to avoid expensive
+        encryption/decryption overhead on every query.
 
-        # Set encryption key (must be done IMMEDIATELY after connection)
-        # SQLCipher requires quotes around the hex literal
-        conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
-
-        # Verify database is accessible (wrong key will cause error)
-        try:
-            conn.execute("SELECT count(*) FROM sqlite_master")
-        except sqlite3.DatabaseError as e:
-            conn.close()
-            raise RuntimeError(
-                f"Cannot decrypt database. Wrong encryption key or corrupted database. "
-                f"Error: {e}"
-            )
-
-        # Set encryption parameters
-        conn.execute("PRAGMA cipher_memory_security = ON")
-        conn.execute("PRAGMA cipher_page_size = 4096")
-        conn.execute("PRAGMA cipher_kdf_iter = 256000")
-
-        # Enable REGEXP function
-        def regexp(expr, item):
-            return re.search(expr, item) is not None if item else False
-
-        conn.create_function("REGEXP", 2, regexp)
-        return conn
+        Yields:
+            sqlite3.Connection: A database connection with encryption and REGEXP enabled
+        """
+        with self._connection_pool.get_connection() as conn:
+            yield conn
 
     def _init_database(self, is_fresh_install: bool = False) -> None:
         """Create all database tables if they don't exist.
@@ -1491,3 +1630,13 @@ class Storage:
             return f"{dt.year}-Q{quarter}"
         else:
             return dt.strftime("%Y-%m-%d")
+
+    def close(self) -> None:
+        """Close the connection pool and cleanup resources.
+
+        This should be called when shutting down the application to ensure
+        all database connections are properly closed.
+        """
+        log.info("Closing storage connection pool...")
+        self._connection_pool.close_all()
+        log.info("Storage closed successfully")

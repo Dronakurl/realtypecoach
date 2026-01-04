@@ -107,12 +107,12 @@ def get_available_layouts() -> list[str]:
 class LayoutMonitor:
     """Monitor keyboard layout changes."""
 
-    def __init__(self, callback: Callable[[str], None], poll_interval: int = 60):
+    def __init__(self, callback: Callable[[str], None], poll_interval: int = 300):
         """Initialize layout monitor.
 
         Args:
             callback: Function to call when layout changes (receives new_layout)
-            poll_interval: Seconds between checks (default 60)
+            poll_interval: Seconds between checks (default 300)
 
         Raises:
             ValueError: If poll_interval is not positive
