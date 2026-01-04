@@ -67,7 +67,9 @@ class ConnectionPool:
         self._max_lifetime = max_lifetime_sec
         self._acquire_timeout = acquire_timeout
         self._pool: queue.Queue[_PooledConnection] = queue.Queue(maxsize=pool_size)
-        self._lock = threading.RLock()  # Use RLock for reentrancy (needed in _create_connection)
+        self._lock = (
+            threading.RLock()
+        )  # Use RLock for reentrancy (needed in _create_connection)
         self._created_connections = 0
 
     @contextmanager

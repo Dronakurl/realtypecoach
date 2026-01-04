@@ -667,7 +667,9 @@ class Application(QObject):
 
         # Only update if interval changed
         if self.process_queue_timer.interval() != new_interval:
-            log.debug(f"Adjusting queue poll interval to {new_interval}ms (idle: {idle_time:.1f}s)")
+            log.debug(
+                f"Adjusting queue poll interval to {new_interval}ms (idle: {idle_time:.1f}s)"
+            )
             self.process_queue_timer.setInterval(new_interval)
 
     def update_statistics(self) -> None:
