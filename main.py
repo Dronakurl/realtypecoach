@@ -600,9 +600,20 @@ class Application(QObject):
             try:
                 key_event = self.event_queue.get_nowait()
 
-                # Log first few processed events for debugging
+                # Log first few processed events for debugging (sanitize key_name to prevent logging sensitive data)
                 if not logged and processed_count < 3:
-                    log.info(f"Processing key event: {key_event.key_name}")
+                    # Don't log actual letter/number characters - just log the type of key
+                    if len(key_event.key_name) == 1:
+                        key_type = (
+                            "CHARACTER"
+                            if key_event.key_name.isalnum()
+                            else key_event.key_name
+                        )
+                    else:
+                        key_type = (
+                            key_event.key_name
+                        )  # Special keys like SPACE, ENTER are safe to log
+                    log.info(f"Processing key event: {key_type}")
                     logged = True
 
                 # Detect if key is backspace

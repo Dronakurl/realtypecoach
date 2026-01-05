@@ -192,10 +192,17 @@ class EvdevHandler:
             else:
                 return  # Ignore repeat events
 
-            # Log first few events for debugging
+            # Log first few events for debugging (sanitize key_name to prevent logging sensitive data)
             if self._event_count < 5:
                 self._event_count += 1
-                log.info(f"Received key event: {key_name} ({keycode}) - {event_type}")
+                # Don't log actual letter/number characters - just log the type of key
+                if len(key_name) == 1:
+                    key_type = "CHARACTER" if key_name.isalnum() else key_name
+                else:
+                    key_type = (
+                        key_name  # Special keys like SPACE, ENTER are safe to log
+                    )
+                log.info(f"Received key event: {key_type} ({keycode}) - {event_type}")
 
             # Only queue press events to reduce queue size
             if event_type == "press":
