@@ -103,13 +103,14 @@ class ConnectionPool:
             return conn_wrapper
         except queue.Empty:
             # Pool is empty, try to create new connection
-            with self._lock:
-                if self._created_connections < self._pool_size:
-                    return self._create_connection()
-                # Pool is full, wait for a connection to become available
-                pass
+            pass
 
-        # Wait with timeout for a connection to become available
+        # Create new connection under lock to prevent race condition
+        with self._lock:
+            if self._created_connections < self._pool_size:
+                return self._create_connection()
+
+        # Pool is full, wait with timeout for a connection to become available
         try:
             return self._pool.get(timeout=self._acquire_timeout)
         except queue.Empty:
@@ -138,7 +139,9 @@ class ConnectionPool:
             )
 
         # Connect with SQLCipher
-        conn = sqlite3.connect(self._db_path)
+        # check_same_thread=False allows connections to be safely reused across threads
+        # by the connection pool, which is thread-safe via locks
+        conn = sqlite3.connect(self._db_path, check_same_thread=False)
 
         # Set encryption key (must be done IMMEDIATELY after connection)
         conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
