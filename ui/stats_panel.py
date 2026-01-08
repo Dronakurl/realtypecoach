@@ -39,8 +39,10 @@ class StatsPanel(QWidget):
         self._clipboard = QApplication.clipboard()
         self._trend_data_loaded = False
         self._typing_time_data_loaded = False
+        self._histogram_data_loaded = False
         self._trend_data_callback = None
         self._typing_time_data_callback = None
+        self._histogram_data_callback = None
         self.init_ui()
 
     @staticmethod
@@ -440,6 +442,21 @@ class StatsPanel(QWidget):
             "Typing Time",
         )
 
+        # Tab 6: Burst Speed Distribution
+        histogram_tab = QWidget()
+        histogram_layout = QVBoxLayout(histogram_tab)
+
+        from ui.burst_histogram import BurstSpeedHistogram
+
+        self.burst_histogram = BurstSpeedHistogram()
+        histogram_layout.addWidget(self.burst_histogram)
+
+        tab_widget.addTab(
+            histogram_tab,
+            self._create_palette_aware_icon("view-statistics"),
+            "Burst Speeds",
+        )
+
         layout.addWidget(tab_widget)
         self.tab_widget = tab_widget
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -820,6 +837,23 @@ class StatsPanel(QWidget):
         """
         self.typing_time_graph.update_graph(data)
 
+    def set_histogram_data_callback(self, callback) -> None:
+        """Set callback for requesting histogram data.
+
+        Args:
+            callback: Function to call when new data is needed
+        """
+        self._histogram_data_callback = callback
+        self.burst_histogram.set_data_callback(callback, load_immediately=False)
+
+    def update_histogram_graph(self, data: List[Tuple[float, int]]) -> None:
+        """Update histogram graph with new data.
+
+        Args:
+            data: List of (bin_center_wpm, count) tuples
+        """
+        self.burst_histogram.update_graph(data)
+
     def _on_tab_changed(self, index: int) -> None:
         """Handle tab change - load graph data lazily when tab is first viewed.
 
@@ -841,6 +875,12 @@ class StatsPanel(QWidget):
                 self._typing_time_data_callback(
                     self.typing_time_graph.current_granularity.value
                 )
+
+        # Tab 5 is Burst Speed Distribution (index 5)
+        if index == 5 and not self._histogram_data_loaded:
+            self._histogram_data_loaded = True
+            if self._histogram_data_callback is not None:
+                self._histogram_data_callback(self.burst_histogram.bin_count)
 
     def copy_hardest_words_to_clipboard(self) -> None:
         """Copy the n slowest words to clipboard."""

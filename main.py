@@ -81,6 +81,7 @@ class Application(QObject):
     signal_update_avg_burst_duration = Signal(int, int, int)
     signal_settings_changed = Signal(dict)
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
+    signal_update_histogram_graph = Signal(list)  # For histogram data
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -318,6 +319,10 @@ class Application(QObject):
             self.stats_panel.update_typing_time_graph,
             Qt.ConnectionType.QueuedConnection,
         )
+        self.signal_update_histogram_graph.connect(
+            self.stats_panel.update_histogram_graph,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         self.notification_handler.signal_daily_summary.connect(
             self.show_daily_notification
@@ -340,6 +345,7 @@ class Application(QObject):
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
         self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
+        self.stats_panel.set_histogram_data_callback(self.provide_histogram_data)
         self.stats_panel.set_words_clipboard_callback(self.fetch_words_for_clipboard)
 
         self.signal_clipboard_words_ready.connect(
@@ -508,6 +514,7 @@ class Application(QObject):
             self.signal_update_typing_time_display.emit(0, 0)
             self.signal_update_trend_data.emit([])
             self.signal_update_typing_time_graph.emit([])
+            self.signal_update_histogram_graph.emit([])
             self.signal_update_worst_letter.emit("", 0.0)
             self.signal_update_worst_word.emit(None)
             msg_box = QMessageBox(
@@ -587,6 +594,26 @@ class Application(QObject):
                 log.info("Signal emitted successfully")
             except Exception as e:
                 log.error(f"Error fetching typing time data: {e}")
+
+        # Submit to thread pool to limit concurrent background threads
+        self._executor.submit(fetch_data)
+
+    def provide_histogram_data(self, bin_count: int) -> None:
+        """Provide histogram data to stats panel.
+
+        Args:
+            bin_count: Number of histogram bins
+        """
+
+        def fetch_data():
+            try:
+                log.info(f"Fetching histogram data with {bin_count} bins")
+                data = self.analyzer.get_burst_wpm_histogram(bin_count=bin_count)
+                log.info(f"Got {len(data)} bins, emitting signal")
+                self.signal_update_histogram_graph.emit(data)
+                log.info("Histogram signal emitted successfully")
+            except Exception as e:
+                log.error(f"Error fetching histogram data: {e}")
 
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_data)

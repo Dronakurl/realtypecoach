@@ -7,7 +7,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 import logging
 
@@ -1450,6 +1450,54 @@ class Storage:
             )
             rows = cursor.fetchall()
             return [BurstTimeSeries(timestamp_ms=r[0], avg_wpm=r[1]) for r in rows]
+
+    def get_burst_wpm_histogram(self, bin_count: int = 50) -> List[Tuple[float, int]]:
+        """Get burst WPM distribution as histogram data.
+
+        Args:
+            bin_count: Number of histogram bins (10-200)
+
+        Returns:
+            List of (bin_center_wpm, count) tuples ordered by bin_center_wpm
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get all WPM values
+            cursor.execute(
+                "SELECT avg_wpm FROM bursts WHERE avg_wpm IS NOT NULL ORDER BY avg_wpm"
+            )
+            wpm_values = [row[0] for row in cursor.fetchall()]
+
+            if not wpm_values:
+                return []
+
+            # Calculate range
+            min_wpm = wpm_values[0]
+            max_wpm = wpm_values[-1]
+
+            if min_wpm == max_wpm:
+                # All values are the same
+                return [(min_wpm, len(wpm_values))]
+
+            # Calculate bin width
+            bin_width = (max_wpm - min_wpm) / bin_count
+
+            # Initialize bins
+            bins = [0] * bin_count
+
+            # Assign values to bins
+            for wpm in wpm_values:
+                bin_index = min(int((wpm - min_wpm) / bin_width), bin_count - 1)
+                bins[bin_index] += 1
+
+            # Calculate bin centers
+            bin_centers = [min_wpm + (i + 0.5) * bin_width for i in range(bin_count)]
+
+            # Filter empty bins
+            return [
+                (center, count) for center, count in zip(bin_centers, bins) if count > 0
+            ]
 
     def get_typing_time_by_granularity(
         self,

@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from collections import defaultdict
 from datetime import datetime
 import threading
@@ -595,3 +595,14 @@ class Analyzer:
             end_date=end_date,
             limit=limit,
         )
+
+    def get_burst_wpm_histogram(self, bin_count: int = 50) -> List[Tuple[float, int]]:
+        """Get burst WPM distribution as histogram data.
+
+        Args:
+            bin_count: Number of histogram bins (10-200)
+
+        Returns:
+            List of (bin_center_wpm, count) tuples
+        """
+        return self.storage.get_burst_wpm_histogram(bin_count=bin_count)

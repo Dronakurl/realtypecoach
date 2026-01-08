@@ -34,6 +34,10 @@ status:
         echo "Not running"; \
     fi
 
+# Monitor log file in real-time
+monitor-log:
+    @tail -f ~/.local/state/realtypecoach/realtypecoach.log
+
 # Testing
 # Syntax check Python files
 check:
