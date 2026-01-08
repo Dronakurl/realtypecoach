@@ -37,6 +37,10 @@ class StatsPanel(QWidget):
         self.icon_path = icon_path
         self.slowest_keys_count = 10
         self._clipboard = QApplication.clipboard()
+        self._trend_data_loaded = False
+        self._typing_time_data_loaded = False
+        self._trend_data_callback = None
+        self._typing_time_data_callback = None
         self.init_ui()
 
     @staticmethod
@@ -437,6 +441,8 @@ class StatsPanel(QWidget):
         )
 
         layout.addWidget(tab_widget)
+        self.tab_widget = tab_widget
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
         self.setLayout(layout)
 
         # Set default window size (wider for better table display)
@@ -784,7 +790,9 @@ class StatsPanel(QWidget):
         Args:
             callback: Function to call when new data is needed
         """
-        self.wpm_graph.set_data_callback(callback)
+        self._trend_data_callback = callback
+        # Don't load immediately - wait for tab to be shown
+        self.wpm_graph.set_data_callback(callback, load_immediately=False)
 
     def update_trend_graph(self, data: List[Tuple[int, float]]) -> None:
         """Update trend graph with new data.
@@ -800,7 +808,9 @@ class StatsPanel(QWidget):
         Args:
             callback: Function to call when new data is needed
         """
-        self.typing_time_graph.set_data_callback(callback)
+        self._typing_time_data_callback = callback
+        # Don't load immediately - wait for tab to be shown
+        self.typing_time_graph.set_data_callback(callback, load_immediately=False)
 
     def update_typing_time_graph(self, data: List[TypingTimeDataPoint]) -> None:
         """Update typing time graph with new data.
@@ -809,6 +819,28 @@ class StatsPanel(QWidget):
             data: List of TypingTimeDataPoint models
         """
         self.typing_time_graph.update_graph(data)
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Handle tab change - load graph data lazily when tab is first viewed.
+
+        Args:
+            index: New tab index
+        """
+        # Tab 3 is Trends (index 3)
+        if index == 3 and not self._trend_data_loaded:
+            self._trend_data_loaded = True
+            # Trigger data load via callback
+            if self._trend_data_callback is not None:
+                self._trend_data_callback(self.wpm_graph.current_window_size)
+
+        # Tab 4 is Typing Time (index 4)
+        if index == 4 and not self._typing_time_data_loaded:
+            self._typing_time_data_loaded = True
+            # Trigger data load via callback
+            if self._typing_time_data_callback is not None:
+                self._typing_time_data_callback(
+                    self.typing_time_graph.current_granularity.value
+                )
 
     def copy_hardest_words_to_clipboard(self) -> None:
         """Copy the n slowest words to clipboard."""

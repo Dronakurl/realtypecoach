@@ -90,6 +90,8 @@ class TypingTimeGraph(QWidget):
         self.plot_time.getAxis("left").enableAutoSIPrefix(False)
         # Y-axis starts at 0, auto-range enabled
         self.plot_time.setYRange(0, 1, padding=0.1)
+        # Hide X-axis on top plot (bottom plot shows it for both)
+        self.plot_time.hideAxis('bottom')
 
         self.plot_wpm = self.plot_widget.addPlot(row=1, col=0)
         self.plot_wpm.setLabel("left", "Average WPM")
@@ -151,7 +153,9 @@ class TypingTimeGraph(QWidget):
         # Request new data
         self.request_data()
 
-    def set_data_callback(self, callback: Callable[[str], None]) -> None:
+    def set_data_callback(
+        self, callback: Callable[[str], None], load_immediately: bool = False
+    ) -> None:
         """Set callback for requesting new data.
 
         The callback will be called with granularity string ("day", "week", "month", "quarter")
@@ -159,13 +163,13 @@ class TypingTimeGraph(QWidget):
 
         Args:
             callback: Function to call with granularity string
+            load_immediately: If True, load data immediately. If False, wait for explicit request.
         """
         self._data_callback = callback
-        # Load initial data after event loop is running
-        if self._data_callback:
+        # Load initial data only if requested
+        if load_immediately and self._data_callback:
             from PySide6.QtCore import QTimer
 
-            # Use QTimer to schedule callback for next event loop iteration
             QTimer.singleShot(
                 0, lambda: self._data_callback(self.current_granularity.value)
             )
@@ -222,17 +226,29 @@ class TypingTimeGraph(QWidget):
             max_wpm = max(avg_wpm) if avg_wpm else 100
             self.plot_wpm.setYRange(0, max_wpm * 1.1, padding=0)
 
-            # Set X-axis ticks with labels (show fewer ticks if many data points)
-            if len(data_points) > 10:
-                # Show every Nth label
-                step = max(1, len(period_labels) // 10)
+            # Format labels more compactly for days mode
+            display_labels = period_labels
+            if self.current_granularity == TimeGranularity.DAY:
+                from datetime import datetime
+                display_labels = []
+                for label in period_labels:
+                    try:
+                        dt = datetime.strptime(label, "%Y-%m-%d")
+                        display_labels.append(dt.strftime("%b %d"))
+                    except Exception:
+                        display_labels.append(label)
+
+            # Set X-axis ticks with labels (show fewer ticks to prevent overlap)
+            if len(data_points) > 7:
+                # Show every Nth label (target ~6 ticks instead of ~10)
+                step = max(1, len(display_labels) // 6)
                 ticks = [
-                    (i, period_labels[i]) for i in range(0, len(period_labels), step)
+                    (i, display_labels[i]) for i in range(0, len(display_labels), step)
                 ]
                 self.plot_wpm.getAxis("bottom").setTicks([ticks])
             else:
                 # Show all labels
-                ticks = [(i, period_labels[i]) for i in range(len(period_labels))]
+                ticks = [(i, display_labels[i]) for i in range(len(display_labels))]
                 self.plot_wpm.getAxis("bottom").setTicks([ticks])
 
             # Update info label

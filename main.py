@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Empty, Queue
+from typing import Optional
 
 # Path constants (must be defined before logging setup)
 DATA_DIR = Path.home() / ".local" / "share" / "realtypecoach"
@@ -88,6 +89,7 @@ class Application(QObject):
         self.running = False
         self._last_stats_update: int = 0
         self._last_activity_time: int = int(time.time())
+        self._stats_update_timer: Optional[QTimer] = None
         # Thread pool for background data fetching (limit to prevent thread leaks)
         self._executor = ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="data_fetcher"
@@ -356,13 +358,13 @@ class Application(QObject):
         """Handle burst completion."""
         self.analyzer.process_burst(burst)
 
-        # Update statistics immediately when a burst completes, but only if panel is visible
+        # Update statistics with debouncing when a burst completes, but only if panel is visible
         is_visible = self.stats_panel.isVisible()
         log.info(
             f"Burst complete: {burst.key_count} keys, {burst.duration_ms / 1000:.1f}s, panel visible: {is_visible}"
         )
         if is_visible:
-            self.update_statistics()
+            self._schedule_stats_update()
 
         if burst.qualifies_for_high_score:
             wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
@@ -376,6 +378,25 @@ class Application(QObject):
         self.tray_icon.show_notification(
             "Keyboard Layout Changed", f"New layout: {new_layout}", "info"
         )
+
+    def _schedule_stats_update(self) -> None:
+        """Schedule statistics update with debouncing.
+
+        Ensures that statistics updates are debounced to prevent excessive
+        database queries when multiple bursts complete in quick succession.
+        """
+        if self._stats_update_timer is not None:
+            # Cancel pending update
+            self._stats_update_timer.stop()
+
+        # Create timer if it doesn't exist
+        if self._stats_update_timer is None:
+            self._stats_update_timer = QTimer()
+            self._stats_update_timer.setSingleShot(True)
+            self._stats_update_timer.timeout.connect(self.update_statistics)
+
+        # Schedule update in 500ms
+        self._stats_update_timer.start(500)
 
     def _calculate_wpm(self, key_count: int, duration_ms: int) -> float:
         """Calculate words per minute."""

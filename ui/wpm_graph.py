@@ -101,11 +101,18 @@ class WPMTimeSeriesGraph(QWidget):
         if self._data_callback:
             self._data_callback(window_size)
 
-    def set_data_callback(self, callback: Callable[[int], None]) -> None:
-        """Set callback for requesting new data."""
+    def set_data_callback(
+        self, callback: Callable[[int], None], load_immediately: bool = False
+    ) -> None:
+        """Set callback for requesting new data.
+
+        Args:
+            callback: Function to call with window size
+            load_immediately: If True, load data immediately. If False, wait for explicit request.
+        """
         self._data_callback = callback
-        # Load initial data
-        if self._data_callback:
+        # Load initial data only if requested
+        if load_immediately and self._data_callback:
             self._data_callback(self.current_window_size)
 
     def update_graph(self, wpm_values: List[float]) -> None:

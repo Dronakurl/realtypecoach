@@ -48,7 +48,7 @@ class ConnectionPool:
         self,
         db_path: Path,
         crypto,
-        pool_size: int = 3,
+        pool_size: int = 10,
         max_lifetime_sec: int = 300,
         acquire_timeout: float = 30.0,
     ):
@@ -221,7 +221,7 @@ class Storage:
         self._connection_pool = ConnectionPool(
             db_path=db_path,
             crypto=self.crypto,
-            pool_size=3,
+            pool_size=10,  # Increased to handle concurrent operations
             max_lifetime_sec=300,  # Rotate every 5 minutes
             acquire_timeout=30.0,
         )
