@@ -1,6 +1,5 @@
 """Tests for WordDetector with correction window."""
 
-
 from core.word_detector import WordDetector, WordState
 
 

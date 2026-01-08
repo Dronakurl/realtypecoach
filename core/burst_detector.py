@@ -21,6 +21,7 @@ class Burst:
     net_key_count: int = 0
     duration_ms: int = 0
     qualifies_for_high_score: bool = False
+    backspace_ratio: float = 0.0
 
 
 class BurstDetector:
@@ -62,13 +63,17 @@ class BurstDetector:
         if self.last_key_time_ms is None:
             self.last_key_time_ms = timestamp_ms
             self._current_timestamps = [timestamp_ms]
+            backspace_count = 1 if is_backspace else 0
             self.current_burst = Burst(
                 start_time_ms=timestamp_ms,
                 end_time_ms=timestamp_ms,
                 key_count=1,
-                backspace_count=1 if is_backspace else 0,
+                backspace_count=backspace_count,
                 net_key_count=0 if is_backspace else 1,
                 duration_ms=0,
+                backspace_ratio=float(
+                    backspace_count
+                ),  # 1.0 if backspace, 0.0 otherwise
             )
             return None
 
@@ -84,6 +89,12 @@ class BurstDetector:
                 self.current_burst.net_key_count = (
                     self.current_burst.key_count - self.current_burst.backspace_count
                 )
+                # Calculate backspace ratio
+                if self.current_burst.key_count > 0:
+                    self.current_burst.backspace_ratio = (
+                        self.current_burst.backspace_count
+                        / self.current_burst.key_count
+                    )
                 self.current_burst.end_time_ms = timestamp_ms
                 self._current_timestamps.append(timestamp_ms)
                 self.current_burst.duration_ms = self._calculate_duration()
@@ -128,13 +139,15 @@ class BurstDetector:
                         log.error(f"Error in burst complete callback: {e}")
 
         self._current_timestamps = [timestamp_ms]
+        backspace_count = 1 if is_backspace else 0
         self.current_burst = Burst(
             start_time_ms=timestamp_ms,
             end_time_ms=timestamp_ms,
             key_count=1,
-            backspace_count=1 if is_backspace else 0,
+            backspace_count=backspace_count,
             net_key_count=0 if is_backspace else 1,
             duration_ms=0,
+            backspace_ratio=float(backspace_count),  # 1.0 if backspace, 0.0 otherwise
         )
         self.last_key_time_ms = timestamp_ms
 

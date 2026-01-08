@@ -28,6 +28,7 @@ class NotificationHandler(QObject):
         min_burst_ms: int = 10000,
         threshold_days: int = 30,
         threshold_update_sec: int = 300,
+        max_backspace_ratio: float = 0.3,
     ):
         """Initialize notification handler.
 
@@ -37,6 +38,7 @@ class NotificationHandler(QObject):
             min_burst_ms: Minimum burst duration for notification (milliseconds)
             threshold_days: Lookback period for 95th percentile calculation (days)
             threshold_update_sec: How often to update threshold (seconds)
+            max_backspace_ratio: Maximum backspace ratio for exceptional bursts (0.3 = 30%)
         """
         super().__init__()
         self.summary_getter = summary_getter
@@ -44,6 +46,7 @@ class NotificationHandler(QObject):
         self.min_burst_ms = min_burst_ms
         self.threshold_days = threshold_days
         self.update_interval_sec = threshold_update_sec
+        self.max_backspace_ratio = max_backspace_ratio
 
         self.running = False
         self._stop_event = threading.Event()
@@ -98,7 +101,7 @@ class NotificationHandler(QObject):
             self.threshold_thread.join(timeout=2)
 
     def notify_exceptional_burst(
-        self, wpm: float, key_count: int, duration_ms: int
+        self, wpm: float, key_count: int, duration_ms: int, backspace_ratio: float = 0.0
     ) -> None:
         """Notify on exceptional burst.
 
@@ -106,9 +109,17 @@ class NotificationHandler(QObject):
             wpm: Words per minute achieved
             key_count: Number of keystrokes
             duration_ms: Burst duration in milliseconds
+            backspace_ratio: Ratio of backspaces to total keystrokes (0.0 to 1.0)
         """
         # Only notify for bursts lasting at least minimum duration
         if duration_ms < self.min_burst_ms:
+            return
+
+        # Skip notification if backspace ratio exceeds threshold
+        if backspace_ratio > self.max_backspace_ratio:
+            log.debug(
+                f"Burst disqualified due to high backspace ratio: {backspace_ratio:.2%} > {self.max_backspace_ratio:.2%}"
+            )
             return
 
         # Check if this burst is exceptional (above 95th percentile threshold)

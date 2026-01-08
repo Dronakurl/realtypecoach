@@ -21,10 +21,13 @@ def create_test_burst(
     backspace_count=0,
     net_key_count=None,
     qualifies=True,
+    backspace_ratio=None,
 ):
     """Helper to create test burst objects."""
     if net_key_count is None:
         net_key_count = key_count - backspace_count
+    if backspace_ratio is None:
+        backspace_ratio = backspace_count / key_count if key_count > 0 else 0.0
     return Burst(
         start_time_ms=start_time_ms,
         end_time_ms=end_time_ms,
@@ -33,6 +36,7 @@ def create_test_burst(
         net_key_count=net_key_count,
         duration_ms=end_time_ms - start_time_ms,
         qualifies_for_high_score=qualifies,
+        backspace_ratio=backspace_ratio,
     )
 
 
@@ -198,6 +202,77 @@ class TestNotifyExceptionalBurst:
         notification_handler.notify_exceptional_burst(
             wpm=120.0, key_count=300, duration_ms=15000
         )
+        assert len(emitted_wpm) == 1
+
+    def test_notify_exceptional_burst_low_backspace_ratio(self, notification_handler):
+        """Test notification with low backspace ratio (< 30%)."""
+        emitted_wpm = []
+        notification_handler.signal_exceptional_burst.connect(
+            lambda wpm: emitted_wpm.append(wpm)
+        )
+
+        # High WPM, sufficient duration, low backspace ratio (20%)
+        notification_handler.notify_exceptional_burst(
+            wpm=80.0, key_count=200, duration_ms=15000, backspace_ratio=0.2
+        )
+
+        assert len(emitted_wpm) == 1
+        assert emitted_wpm[0] == 80.0
+
+    def test_notify_exceptional_burst_high_backspace_ratio(self, notification_handler):
+        """Test no notification with high backspace ratio (> 30%)."""
+        emitted_wpm = []
+        notification_handler.signal_exceptional_burst.connect(
+            lambda wpm: emitted_wpm.append(wpm)
+        )
+
+        # High WPM, sufficient duration, but high backspace ratio (40%)
+        notification_handler.notify_exceptional_burst(
+            wpm=80.0, key_count=200, duration_ms=15000, backspace_ratio=0.4
+        )
+
+        assert len(emitted_wpm) == 0
+
+    def test_notify_exceptional_burst_exact_threshold_ratio(self, notification_handler):
+        """Test notification at exact backspace ratio threshold (30%)."""
+        emitted_wpm = []
+        notification_handler.signal_exceptional_burst.connect(
+            lambda wpm: emitted_wpm.append(wpm)
+        )
+
+        # Exactly at threshold - should notify
+        notification_handler.notify_exceptional_burst(
+            wpm=80.0, key_count=200, duration_ms=15000, backspace_ratio=0.3
+        )
+
+        assert len(emitted_wpm) == 1
+
+    def test_notify_exceptional_burst_custom_max_ratio(
+        self, mock_summary_getter, storage
+    ):
+        """Test notification with custom max_backspace_ratio."""
+        handler = NotificationHandler(
+            summary_getter=mock_summary_getter,
+            storage=storage,
+            min_burst_ms=10000,
+            max_backspace_ratio=0.25,  # Stricter 25% threshold
+        )
+
+        emitted_wpm = []
+        handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
+
+        # 30% backspace ratio - should be filtered with custom 25% threshold
+        handler.notify_exceptional_burst(
+            wpm=80.0, key_count=200, duration_ms=15000, backspace_ratio=0.3
+        )
+
+        assert len(emitted_wpm) == 0
+
+        # 20% backspace ratio - should notify with custom 25% threshold
+        handler.notify_exceptional_burst(
+            wpm=80.0, key_count=200, duration_ms=15000, backspace_ratio=0.2
+        )
+
         assert len(emitted_wpm) == 1
 
 

@@ -1,5 +1,7 @@
 """Tests for BurstDetector class."""
 
+import pytest
+
 from core.burst_detector import Burst, BurstDetector
 from core.burst_config import BurstDetectorConfig
 
@@ -165,3 +167,98 @@ class TestBurstDetector:
         # Should qualify because duration > 10 seconds
         # (start_time to last event is > 10 seconds)
         assert result.qualifies_for_high_score
+
+    def test_backspace_ratio_calculation(self):
+        """Test that backspace ratio is calculated correctly."""
+        burst_completed = []
+
+        config = BurstDetectorConfig(
+            burst_timeout_ms=3000,
+            high_score_min_duration_ms=10000,
+            min_key_count=5,
+            min_duration_ms=1000,
+        )
+
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
+        )
+
+        # Simulate typing with 30% backspaces (13 total keys, 3 backspaces)
+        detector.process_key_event(1000, True, is_backspace=False)  # 1
+        detector.process_key_event(1200, True, is_backspace=False)  # 2
+        detector.process_key_event(1400, True, is_backspace=True)  # backspace 1
+        detector.process_key_event(1600, True, is_backspace=False)  # 3
+        detector.process_key_event(1800, True, is_backspace=False)  # 4
+        detector.process_key_event(2000, True, is_backspace=True)  # backspace 2
+        detector.process_key_event(2200, True, is_backspace=False)  # 5
+        detector.process_key_event(2400, True, is_backspace=False)  # 6
+        detector.process_key_event(2600, True, is_backspace=False)  # 7
+        detector.process_key_event(2800, True, is_backspace=True)  # backspace 3
+        detector.process_key_event(3000, True, is_backspace=False)  # 8
+        detector.process_key_event(3200, True, is_backspace=False)  # 9
+        detector.process_key_event(3400, True, is_backspace=False)  # 10
+
+        # Complete the burst
+        result = detector.process_key_event(15000, True)
+
+        assert result is not None
+        assert result.key_count == 13  # 13 total keys (including backspaces)
+        assert result.backspace_count == 3
+        assert result.backspace_ratio == pytest.approx(0.2308, rel=0.01)  # 3/13
+
+    def test_backspace_ratio_zero_when_no_backspaces(self):
+        """Test that backspace ratio is 0 when there are no backspaces."""
+        burst_completed = []
+
+        config = BurstDetectorConfig(
+            burst_timeout_ms=3000,
+            high_score_min_duration_ms=10000,
+            min_key_count=5,
+            min_duration_ms=1000,
+        )
+
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
+        )
+
+        # Simulate typing with no backspaces
+        for i in range(10):
+            detector.process_key_event(1000 + (i * 200), True, is_backspace=False)
+
+        # Complete the burst
+        result = detector.process_key_event(15000, True)
+
+        assert result is not None
+        assert result.backspace_count == 0
+        assert result.backspace_ratio == 0.0
+
+    def test_backspace_ratio_with_all_backspaces(self):
+        """Test that backspace ratio is 1.0 when all keys are backspaces."""
+        burst_completed = []
+
+        config = BurstDetectorConfig(
+            burst_timeout_ms=3000,
+            high_score_min_duration_ms=10000,
+            min_key_count=5,
+            min_duration_ms=500,  # Lower threshold for test (500ms)
+        )
+
+        detector = BurstDetector(
+            config=config,
+            on_burst_complete=lambda b: burst_completed.append(b),
+        )
+
+        # Simulate pressing only backspace (spaced out to meet duration)
+        for i in range(5):
+            # Space them 200ms apart, total duration = 800ms
+            detector.process_key_event(1000 + (i * 200), True, is_backspace=True)
+
+        # Complete the burst
+        result = detector.process_key_event(15000, True)
+
+        assert result is not None
+        assert result.backspace_count == 5
+        assert result.key_count == 5
+        assert result.backspace_ratio == 1.0

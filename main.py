@@ -367,9 +367,9 @@ class Application(QObject):
             self._schedule_stats_update()
 
         if burst.qualifies_for_high_score:
-            wpm = self._calculate_wpm(burst.key_count, burst.duration_ms)
+            wpm = self._calculate_wpm(burst.net_key_count, burst.duration_ms)
             self.notification_handler.notify_exceptional_burst(
-                wpm, burst.key_count, burst.duration_ms
+                wpm, burst.net_key_count, burst.duration_ms, burst.backspace_ratio
             )
 
     def on_layout_changed(self, new_layout: str) -> None:
