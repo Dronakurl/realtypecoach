@@ -23,6 +23,7 @@ class WordState:
     backspace_count: int = field(default=0)
     editing_time_ms: int = field(default=0)
     layout: str = field(default="us")
+    max_correction_window_ms: int = field(default=3000)
 
     def add_keystroke(
         self, key_name: str, timestamp_ms: int, keycode: int | None = None
@@ -53,7 +54,9 @@ class WordState:
 
             if self.last_keystroke_time_ms > 0:
                 time_since_last = timestamp_ms - self.last_keystroke_time_ms
-                self.editing_time_ms += time_since_last
+                # Only count as editing time if within correction window
+                if time_since_last <= self.max_correction_window_ms:
+                    self.editing_time_ms += time_since_last
 
             self.word = self.word[:-1]
             self.keystrokes.append(
@@ -72,12 +75,18 @@ class WordState:
         """
         return end_time_ms - self.start_time_ms
 
-    def reset(self, start_time_ms: int, layout: str = "us") -> None:
+    def reset(
+        self,
+        start_time_ms: int,
+        layout: str = "us",
+        max_correction_window_ms: int = 3000,
+    ) -> None:
         """Reset word state for new word.
 
         Args:
             start_time_ms: Timestamp of first keystroke for new word
             layout: Keyboard layout
+            max_correction_window_ms: Max time for backspace to count as editing (ms)
         """
         self.word = ""
         self.start_time_ms = start_time_ms
@@ -86,20 +95,28 @@ class WordState:
         self.backspace_count = 0
         self.editing_time_ms = 0
         self.layout = layout
+        self.max_correction_window_ms = max_correction_window_ms
 
 
 class WordDetector:
     """Detects words and tracks backspace editing."""
 
-    def __init__(self, word_boundary_timeout_ms: int = 1000, min_word_length: int = 3):
+    def __init__(
+        self,
+        word_boundary_timeout_ms: int = 1000,
+        min_word_length: int = 3,
+        max_correction_window_ms: int = 3000,
+    ):
         """Initialize word detector.
 
         Args:
             word_boundary_timeout_ms: Max pause before word splits (ms)
             min_word_length: Minimum letters for a word to be stored
+            max_correction_window_ms: Max time for backspace to count as editing (ms)
         """
         self.word_boundary_timeout_ms = word_boundary_timeout_ms
         self.min_word_length = min_word_length
+        self.max_correction_window_ms = max_correction_window_ms
         self.current_state: Optional[WordState] = None
 
     def process_keystroke(
@@ -144,7 +161,11 @@ class WordDetector:
             WordInfo if timeout triggered and existing word finalized, None otherwise
         """
         if not self.current_state:
-            self.current_state = WordState(start_time_ms=timestamp_ms, layout=layout)
+            self.current_state = WordState(
+                start_time_ms=timestamp_ms,
+                layout=layout,
+                max_correction_window_ms=self.max_correction_window_ms,
+            )
             self.current_state.add_keystroke(key_name, timestamp_ms, keycode)
             return None
 
@@ -156,7 +177,9 @@ class WordDetector:
             if pause > self.word_boundary_timeout_ms:
                 finalized = self._finalize_current_state()
                 self.current_state = WordState(
-                    start_time_ms=timestamp_ms, layout=layout
+                    start_time_ms=timestamp_ms,
+                    layout=layout,
+                    max_correction_window_ms=self.max_correction_window_ms,
                 )
                 self.current_state.add_keystroke(key_name, timestamp_ms, keycode)
                 return finalized

@@ -91,7 +91,7 @@ class TypingTimeGraph(QWidget):
         # Y-axis starts at 0, auto-range enabled
         self.plot_time.setYRange(0, 1, padding=0.1)
         # Hide X-axis on top plot (bottom plot shows it for both)
-        self.plot_time.hideAxis('bottom')
+        self.plot_time.hideAxis("bottom")
 
         self.plot_wpm = self.plot_widget.addPlot(row=1, col=0)
         self.plot_wpm.setLabel("left", "Average WPM")
@@ -230,6 +230,7 @@ class TypingTimeGraph(QWidget):
             display_labels = period_labels
             if self.current_granularity == TimeGranularity.DAY:
                 from datetime import datetime
+
                 display_labels = []
                 for label in period_labels:
                     try:
