@@ -405,7 +405,10 @@ class Application(QObject):
         self._stats_update_timer.start(500)
 
     def _calculate_wpm(self, key_count: int, duration_ms: int) -> float:
-        """Calculate words per minute."""
+        """Calculate words per minute.
+
+        Note: key_count should already be net_key_count (with backspaces subtracted).
+        """
         if duration_ms == 0:
             return 0.0
 

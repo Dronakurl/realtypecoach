@@ -200,7 +200,8 @@ class Analyzer:
     ) -> float:
         """Calculate words per minute.
 
-        Uses NET productive keystrokes (total - backspaces).
+        Uses NET productive keystrokes (total - 2*backspaces).
+        Each backspace subtracts 2: 1 for the backspace itself, 1 for the deleted character.
 
         Standard: 5 characters = 1 word
 
@@ -216,7 +217,8 @@ class Analyzer:
             return 0.0
 
         # Calculate productive keystrokes
-        net_keystrokes = max(0, key_count - backspace_count)
+        # Each backspace removes 1 character + the backspace itself = 2 net reduction
+        net_keystrokes = max(0, key_count - (backspace_count * 2))
 
         words = net_keystrokes / 5.0
         minutes = duration_ms / 60000.0

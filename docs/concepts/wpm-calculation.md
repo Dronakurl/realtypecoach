@@ -93,24 +93,32 @@ This represents your **peak performance** for the day.
 
 ### What Counts as a "Keystroke"?
 
-**Counted:**
+**Productive keystrokes counted:**
 - Letters (a-z)
 - Numbers (0-9)
 - Punctuation (. , ; : etc.)
 - Spaces
 - Enter key
-- Backspace/delete
 
-**All key presses are counted equally** - we don't penalize mistakes.
+**Corrected keystrokes (backspaces):**
+Each backspace removes TWO characters from the count:
+- **-1** for the backspace keystroke itself
+- **-1** for the character it deleted
 
-### Why Not Penalize Mistakes?
+Example: If you type "ABC" then press backspace and type "D":
+- Total keystrokes: 5 (A, B, C, Backspace, D)
+- Backspaces: 1
+- **Net keystrokes: 5 - (1 × 2) = 3** (which equals "ABD")
+- This matches industry standards like monkeytype
 
-Traditional typing tests subtract errors, but RealTypeCoach **doesn't** because:
+### Why Count This Way?
 
-1. **Real-world typing**: You use backspace in real typing
-2. **Focus on speed**: First step is building raw speed
-3. **Natural accuracy**: Speed and accuracy improve together
-4. **Not a test**: This is practice, not an exam
+This method reflects the **actual text produced**, not the effort:
+
+1. **Fair comparison**: Matches how typing tests like monkeytype calculate WPM
+2. **Realistic measurement**: Counts what actually appears on screen
+3. **Encourages accuracy**: Corrections reduce the final count naturally
+4. **Standard compliance**: Aligns with professional typing measurement tools
 
 ### What's NOT Counted
 
@@ -123,11 +131,19 @@ Traditional typing tests subtract errors, but RealTypeCoach **doesn't** because:
 ### For a Burst
 
 ```python
-def calculate_wpm(key_count: int, duration_ms: int) -> float:
-    words = key_count / 5.0
+def calculate_wpm(key_count: int, backspace_count: int, duration_ms: int) -> float:
+    # Each backspace removes 1 character + itself = 2 net reduction
+    net_keystrokes = key_count - (backspace_count * 2)
+    words = net_keystrokes / 5.0
     minutes = duration_ms / 60000.0  # Convert ms to minutes
     return words / minutes if minutes > 0 else 0.0
 ```
+
+Example: 150 keystrokes, 10 backspaces, 30 seconds
+- Net: 150 - (10 × 2) = 130 keystrokes
+- Words: 130 / 5 = 26 words
+- Minutes: 30 / 60 = 0.5 minutes
+- **WPM: 26 / 0.5 = 52 WPM**
 
 ### For Daily Average
 
@@ -142,13 +158,15 @@ avg_wpm = 1084 / 10 = 108.4 WPM
 
 ## Comparison to Typing Tests
 
-| Aspect | Typing Tests | RealTypeCoach |
+| Aspect | Typing Tests (e.g., monkeytype) | RealTypeCoach |
 |--------|--------------|---------------|
 | Duration | Fixed (1-5 min) | Variable (real usage) |
 | Text | Prescribed text | Your natural typing |
-| Errors | Penalized | Not penalized |
+| Errors | Only correct characters count | Only correct characters count ✓ |
 | Environment | Artificial | Real work/usage |
 | Goal | Test score | Ongoing improvement |
+
+**Note**: RealTypeCoach's WPM calculation now matches industry standards like monkeytype by counting only the final, corrected characters.
 
 ## Improving Your WPM
 

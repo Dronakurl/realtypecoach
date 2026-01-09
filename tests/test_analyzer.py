@@ -152,11 +152,12 @@ class TestAnalyzer:
         assert abs(wpm - 40.0) < 0.1
 
     def test_calculate_wpm_with_backspaces(self, analyzer):
-        """Test WPM calculation subtracts backspaces."""
+        """Test WPM calculation subtracts 2 for each backspace."""
         # 100 keystrokes in 30 seconds, but 20 were backspaces
-        # Net: 80 keystrokes = 16 words / 0.5 min = 32 WPM
+        # Each backspace removes 1 character + itself = 2 net reduction
+        # Net: 100 - (20*2) = 60 keystrokes = 12 words / 0.5 min = 24 WPM
         wpm = analyzer._calculate_wpm(100, 30000, 20)
-        assert abs(wpm - 32.0) < 0.1
+        assert abs(wpm - 24.0) < 0.1
 
     def test_calculate_wpm_all_backspaces(self, analyzer):
         """Test WPM calculation when all keystrokes are backspaces."""
@@ -173,7 +174,7 @@ class TestAnalyzer:
             end_time_ms=base + 30000,  # 30 seconds
             key_count=100,  # Total keystrokes
             backspace_count=20,  # 20 backspaces
-            net_key_count=80,  # 80 productive keystrokes
+            net_key_count=60,  # 100 - (20*2) = 60 productive keystrokes
             duration_ms=30000,
             qualifies_for_high_score=True,
         )
@@ -181,8 +182,8 @@ class TestAnalyzer:
         analyzer.process_burst(burst)
 
         # WPM should be calculated from net keystrokes
-        # 80 net keystrokes = 16 words / 0.5 min = 32 WPM
-        assert abs(analyzer.current_burst_wpm - 32.0) < 0.1
+        # 60 net keystrokes = 12 words / 0.5 min = 24 WPM
+        assert abs(analyzer.current_burst_wpm - 24.0) < 0.1
 
         # Verify storage received correct data
         with analyzer.storage._get_connection() as conn:
@@ -194,8 +195,8 @@ class TestAnalyzer:
 
             assert result[0] == 100  # key_count
             assert result[1] == 20  # backspace_count
-            assert result[2] == 80  # net_key_count
-            assert abs(result[3] - 32.0) < 0.1  # avg_wpm calculated from net
+            assert result[2] == 60  # net_key_count (100 - 20*2)
+            assert abs(result[3] - 24.0) < 0.1  # avg_wpm calculated from net
 
     def test_get_statistics_returns_correct_types(self, analyzer):
         """Test that get_statistics returns correct types."""
