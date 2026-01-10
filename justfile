@@ -106,6 +106,15 @@ test-imports:
         from PySide6.QtWidgets import QApplication; \
         print("✓ All imports successful")'
 
+# Development Setup
+# Setup zellij with claude and shell panes
+dev-setup:
+    zellij action rename-tab realtypecoach
+    zellij action rename-pane shell
+    zellij action new-pane --direction right -- claude --dangerously-skip-permissions
+    zellij action rename-pane claude
+    zellij action focus-previous-pane
+
 # Diagnostic: Test keyboard event capture
 test-evdev:
     #!/usr/bin/env python3
