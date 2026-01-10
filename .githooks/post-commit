@@ -1,0 +1,13 @@
+#!/bin/bash
+# Post-commit hook to update VERSION file with commit timestamp
+
+# Get the Unix timestamp of the commit we just made
+COMMIT_TIMESTAMP=$(git log -1 --format=%ct)
+
+# Write to VERSION file in core directory
+echo "$COMMIT_TIMESTAMP" > core/VERSION
+
+# Add VERSION to the commit (but don't amend - it goes into next commit)
+git add core/VERSION
+
+exit 0

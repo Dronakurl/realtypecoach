@@ -167,6 +167,7 @@ class Analyzer:
         ):
             with self.storage._get_connection() as conn:
                 self.storage._store_word_from_state(conn, word_info)
+                conn.commit()
 
         with self._lock:
             self.today_stats["total_keystrokes"] += 1
@@ -201,7 +202,7 @@ class Analyzer:
         """Calculate words per minute.
 
         Uses NET productive keystrokes (total - 2*backspaces).
-        Each backspace subtracts 2: 1 for the backspace itself, 1 for the deleted character.
+        Each backspace subtracts 2: 1 for the deleted character, 1 for the backspace itself.
 
         Standard: 5 characters = 1 word
 

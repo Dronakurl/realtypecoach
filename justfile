@@ -60,6 +60,18 @@ reset:
     @rm -f ~/.local/share/realtypecoach/typing_data.db-wal
     @echo "Database reset"
 
+# Query encrypted database
+db-query query:
+    @.venv/bin/python3 scripts/db_query.py "{{query}}"
+
+# Show database schema
+db-schema:
+    @.venv/bin/python3 scripts/db_query.py --schema
+
+# Show table contents
+db-table table limit="10":
+    @.venv/bin/python3 scripts/db_query.py --table {{table}} --limit {{limit}}
+
 # Seed database with realistic typing data
 seed-database days:
     @.venv/bin/python3 scripts/seed_database.py --days {{days}}

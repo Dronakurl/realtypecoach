@@ -8,6 +8,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
     QVBoxLayout,
     QWidget,
 )
@@ -43,6 +46,8 @@ class BurstSpeedHistogram(QWidget):
 
         # PyQtGraph plot widget
         self.plot_widget = GraphicsLayoutWidget()
+        self.plot_widget.setMinimumHeight(200)  # Smaller histogram
+        self.plot_widget.setMaximumHeight(250)
         self.plot = self.plot_widget.addPlot(row=0, col=0)
         self.plot.setLabel("left", "Number of Bursts")
         self.plot.setLabel("bottom", "WPM")
@@ -85,10 +90,35 @@ class BurstSpeedHistogram(QWidget):
 
         layout.addLayout(controls_layout)
 
-        # Info label
-        self.info_label = QLabel("Showing: No data")
-        self.info_label.setStyleSheet("font-size: 11px; color: #888;")
-        layout.addWidget(self.info_label)
+        # Recent Bursts section
+        recent_title = QLabel("Last 3 Bursts")
+        recent_title.setStyleSheet(
+            "font-size: 14px; font-weight: bold; margin-top: 10px;"
+        )
+        layout.addWidget(recent_title)
+
+        # Recent bursts table
+        self.recent_table = QTableWidget()
+        self.recent_table.setColumnCount(5)
+        self.recent_table.setHorizontalHeaderLabels(
+            ["WPM", "Net Chars", "Duration", "Backspaces", "Time"]
+        )
+        self.recent_table.verticalHeader().setVisible(False)
+        self.recent_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.recent_table.setRowCount(3)
+        # Increased height for better visibility
+        self.recent_table.setFixedHeight(130)  # Header (30) + 3 rows (33 each) = 130
+        self.recent_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # Initialize with empty rows
+        for i in range(3):
+            self.recent_table.setItem(i, 0, QTableWidgetItem("--"))
+            self.recent_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.recent_table.setItem(i, 2, QTableWidgetItem("--"))
+            self.recent_table.setItem(i, 3, QTableWidgetItem("--"))
+            self.recent_table.setItem(i, 4, QTableWidgetItem("--"))
+
+        layout.addWidget(self.recent_table)
 
         self.setLayout(layout)
 
@@ -144,7 +174,6 @@ class BurstSpeedHistogram(QWidget):
 
         if not histogram_data:
             self.bar_item.setOpts(x=[], height=[])
-            self.info_label.setText("Showing: No data")
             return
 
         # Extract x (bin centers) and y (counts)
@@ -162,11 +191,41 @@ class BurstSpeedHistogram(QWidget):
         # Auto-scale axes
         self.plot.enableAutoRange(axis="xy", enable=True)
 
-        # Update info label
-        total_bursts = sum(counts)
-        min_wpm = min(bin_centers) if bin_centers else 0
-        max_wpm = max(bin_centers) if bin_centers else 0
-        self.info_label.setText(
-            f"Showing: {len(histogram_data)} bins across {total_bursts} bursts "
-            f"(WPM range: {min_wpm:.0f} - {max_wpm:.0f})"
-        )
+    def update_recent_bursts(
+        self,
+        recent_bursts: List[
+            Tuple[int, float, int, int, int, int, str]
+        ],  # (id, wpm, net_chars, duration_ms, backspaces, start_time_ms, time_str)
+    ) -> None:
+        """Update the recent bursts table.
+
+        Args:
+            recent_bursts: List of tuples with burst data
+        """
+        for i in range(3):
+            if i < len(recent_bursts):
+                (
+                    burst_id,
+                    wpm,
+                    net_chars,
+                    duration_ms,
+                    backspaces,
+                    start_time_ms,
+                    time_str,
+                ) = recent_bursts[i]
+
+                # Format duration
+                if duration_ms >= 1000:
+                    duration_str = f"{duration_ms / 1000:.1f}s"
+                else:
+                    duration_str = f"{duration_ms}ms"
+
+                self.recent_table.setItem(i, 0, QTableWidgetItem(f"{wpm:.1f}"))
+                self.recent_table.setItem(i, 1, QTableWidgetItem(str(net_chars)))
+                self.recent_table.setItem(i, 2, QTableWidgetItem(duration_str))
+                self.recent_table.setItem(i, 3, QTableWidgetItem(str(backspaces)))
+                self.recent_table.setItem(i, 4, QTableWidgetItem(time_str))
+            else:
+                # Clear unused rows
+                for col in range(5):
+                    self.recent_table.setItem(i, col, QTableWidgetItem("--"))

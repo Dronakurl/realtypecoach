@@ -56,6 +56,7 @@ from core.notification_handler import NotificationHandler  # noqa: E402
 from core.storage import Storage  # noqa: E402
 from ui.settings_dialog import SettingsDialog  # noqa: E402
 from ui.stats_panel import StatsPanel  # noqa: E402
+from ui.about_dialog import AboutDialog  # noqa: E402
 from ui.tray_icon import TrayIcon  # noqa: E402
 from utils.config import Config  # noqa: E402
 from utils.crypto import CryptoManager  # noqa: E402
@@ -82,6 +83,7 @@ class Application(QObject):
     signal_settings_changed = Signal(dict)
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
     signal_update_histogram_graph = Signal(list)  # For histogram data
+    signal_update_recent_bursts = Signal(list)  # For recent bursts data
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -323,6 +325,10 @@ class Application(QObject):
             self.stats_panel.update_histogram_graph,
             Qt.ConnectionType.QueuedConnection,
         )
+        self.signal_update_recent_bursts.connect(
+            self.stats_panel.update_recent_bursts,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         self.notification_handler.signal_daily_summary.connect(
             self.show_daily_notification
@@ -341,6 +347,7 @@ class Application(QObject):
         self.tray_icon.settings_changed.connect(self.apply_settings)
         self.tray_icon.settings_requested.connect(self.show_settings_dialog)
         self.tray_icon.stats_requested.connect(self.update_statistics)
+        self.tray_icon.about_requested.connect(self.show_about_dialog)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
@@ -371,6 +378,13 @@ class Application(QObject):
         )
         if is_visible:
             self._schedule_stats_update()
+
+        # Update recent bursts display immediately (lightweight query)
+        try:
+            recent_bursts = self.storage.get_recent_bursts(limit=3)
+            self.signal_update_recent_bursts.emit(recent_bursts)
+        except Exception as e:
+            log.warning(f"Failed to update recent bursts: {e}")
 
         if burst.qualifies_for_high_score:
             wpm = self._calculate_wpm(burst.net_key_count, burst.duration_ms)
@@ -855,6 +869,11 @@ class Application(QObject):
             else:
                 new_settings = dialog.get_settings()
             self.apply_settings(new_settings)
+
+    def show_about_dialog(self) -> None:
+        """Show about dialog."""
+        dialog = AboutDialog()
+        dialog.exec()
 
     def start(self) -> None:
         """Start all components."""

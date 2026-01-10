@@ -854,6 +854,16 @@ class StatsPanel(QWidget):
         """
         self.burst_histogram.update_graph(data)
 
+    def update_recent_bursts(
+        self, recent_bursts: List[Tuple[int, float, int, int, int, int, str]]
+    ) -> None:
+        """Update recent bursts display.
+
+        Args:
+            recent_bursts: List of tuples with burst data
+        """
+        self.burst_histogram.update_recent_bursts(recent_bursts)
+
     def _on_tab_changed(self, index: int) -> None:
         """Handle tab change - load graph data lazily when tab is first viewed.
 

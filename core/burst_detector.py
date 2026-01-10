@@ -86,7 +86,7 @@ class BurstDetector:
                 self.current_burst.key_count += 1
                 if is_backspace:
                     self.current_burst.backspace_count += 1
-                # Each backspace removes 1 character + itself = 2 net reduction
+                # Net characters: each backspace removes 1 character + the backspace itself = 2
                 self.current_burst.net_key_count = self.current_burst.key_count - (
                     self.current_burst.backspace_count * 2
                 )

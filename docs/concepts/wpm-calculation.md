@@ -4,6 +4,30 @@
 
 RealTypeCoach calculates typing speed using the **industry-standard WPM formula**, consistent with typing tests and professional typing measurement tools.
 
+## ⚠️ Important: Backspace Calculation
+
+**CRITICAL IMPLEMENTATION NOTE**: The formula for calculating net characters is:
+
+```
+net_characters = keystrokes - (backspaces × 2)
+```
+
+Each backspace removes **TWO** characters from the count:
+1. The backspace keystroke itself
+2. The character it deleted
+
+**Example**: Type `A B C <Backspace> D`
+- Keystrokes: 5 (A, B, C, Backspace, D)
+- Backspaces: 1
+- Net: 5 - (1 × 2) = **3 characters** (which equals "ABD")
+
+**This is implemented in 3 locations** (all must use the same formula):
+- `core/burst_detector.py:90-92` - Calculates net_key_count during burst detection
+- `core/analyzer.py:222` - Calculates WPM from keystrokes
+- `tests/test_notification_handler.py:28` - Helper function for test data
+
+**Do NOT change this formula** to `keystrokes - backspaces` - that would incorrectly count corrections!
+
 ## The Standard Formula
 
 ```

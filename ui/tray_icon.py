@@ -14,6 +14,7 @@ class TrayIcon(QSystemTrayIcon):
     settings_changed = Signal(dict)
     settings_requested = Signal()  # Emitted when settings dialog is requested
     stats_requested = Signal()  # Emitted when stats panel is requested
+    about_requested = Signal()  # Emitted when about dialog is requested
 
     def __init__(
         self,
@@ -61,6 +62,10 @@ class TrayIcon(QSystemTrayIcon):
         settings_action = QAction("⚙️ Settings", self)
         settings_action.triggered.connect(self.show_settings_dialog)
         menu.addAction(settings_action)
+
+        about_action = QAction("ℹ️ About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        menu.addAction(about_action)
 
         menu.addSeparator()
 
@@ -132,6 +137,10 @@ class TrayIcon(QSystemTrayIcon):
     def show_settings_dialog(self) -> None:
         """Request settings dialog to be shown."""
         self.settings_requested.emit()
+
+    def show_about_dialog(self) -> None:
+        """Show about dialog."""
+        self.about_requested.emit()
 
     def show_notification(
         self, title: str, message: str, message_type: str = "info"

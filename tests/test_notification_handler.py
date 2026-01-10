@@ -25,7 +25,7 @@ def create_test_burst(
 ):
     """Helper to create test burst objects."""
     if net_key_count is None:
-        net_key_count = key_count - backspace_count
+        net_key_count = key_count - (backspace_count * 2)
     if backspace_ratio is None:
         backspace_ratio = backspace_count / key_count if key_count > 0 else 0.0
     return Burst(

@@ -160,6 +160,8 @@ class ConnectionPool:
         conn.execute("PRAGMA cipher_memory_security = ON")
         conn.execute("PRAGMA cipher_page_size = 4096")
         conn.execute("PRAGMA cipher_kdf_iter = 256000")
+        # Set busy timeout to handle concurrent access (30 seconds)
+        conn.execute("PRAGMA busy_timeout = 30000")
 
         # Enable REGEXP function
         def regexp(expr, item):
@@ -1498,6 +1500,68 @@ class Storage:
             return [
                 (center, count) for center, count in zip(bin_centers, bins) if count > 0
             ]
+
+    def get_recent_bursts(
+        self, limit: int = 3
+    ) -> List[Tuple[int, float, int, int, int, int, str]]:
+        """Get the most recent bursts.
+
+        Args:
+            limit: Maximum number of bursts to return
+
+        Returns:
+            List of tuples: (id, wpm, net_chars, duration_ms, backspaces, start_time_ms, time_str)
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    avg_wpm,
+                    net_key_count,
+                    duration_ms,
+                    COALESCE(backspace_count, 0) as backspace_count,
+                    start_time
+                FROM bursts
+                ORDER BY start_time DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+
+            bursts = []
+            for row in cursor.fetchall():
+                (
+                    burst_id,
+                    wpm,
+                    net_chars,
+                    duration_ms,
+                    backspaces,
+                    start_time_ms,
+                ) = row
+
+                # Format time as readable string
+                try:
+                    dt = datetime.fromtimestamp(start_time_ms / 1000)
+                    time_str = dt.strftime("%H:%M:%S")
+                except (ValueError, OSError):
+                    time_str = "??"
+
+                bursts.append(
+                    (
+                        burst_id,
+                        wpm,
+                        net_chars,
+                        duration_ms,
+                        backspaces,
+                        start_time_ms,
+                        time_str,
+                    )
+                )
+
+            return bursts
 
     def get_typing_time_by_granularity(
         self,
