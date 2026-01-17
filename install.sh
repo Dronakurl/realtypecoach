@@ -67,6 +67,19 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" 
 fi
 print_status "OK" "Python version is 3.10+"
 
+# Check if user is in the 'input' group
+if groups | grep -q '\binput\b'; then
+    print_status "OK" "User is in the 'input' group"
+else
+    print_status "WARN" "User is not in the 'input' group - the application will not work without it!"
+    echo ""
+    echo -e "${YELLOW}To fix this, run:${NC}"
+    echo "  sudo usermod -aG input \$USER"
+    echo ""
+    echo "Then log out and log back in for the changes to take effect."
+    echo ""
+fi
+
 echo ""
 echo "Step 2: Setting up virtual environment..."
 echo "------------------------------------------"
