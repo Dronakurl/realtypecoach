@@ -217,7 +217,8 @@ class WordDetector:
             WordInfo if word was finalized, None otherwise
         """
         if self.current_state:
-            finalized = self._finalize_current_state(timestamp_ms)
+            # Use last keystroke time, not boundary key time, to avoid counting pre-space pause
+            finalized = self._finalize_current_state(None)
             self.current_state = None
             return finalized
 

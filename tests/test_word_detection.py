@@ -95,7 +95,9 @@ class TestWordDetector:
         assert (
             result.editing_time_ms == 100
         )  # Time between 's' (1400) and backspace (1500)
-        assert result.total_duration_ms == 700  # From first 's' (1000) to space (1700)
+        assert (
+            result.total_duration_ms == 600
+        )  # From first 's' (1000) to last 's' (1600)
 
     def test_short_words_ignored(self):
         """Test that words < 3 letters are ignored."""
@@ -159,7 +161,9 @@ class TestWordDetector:
         assert result is not None
         assert result.word == "shoes"
         assert result.backspace_count == 3
-        assert result.total_duration_ms == 550
+        assert (
+            result.total_duration_ms == 500
+        )  # From first 's' (base_time) to last 's' (base_time + 500)
         assert result.editing_time_ms > 0
         assert result.num_letters == 5
 
