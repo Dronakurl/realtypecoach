@@ -9,6 +9,7 @@ import threading
 
 from core.storage import Storage
 from core.burst_detector import Burst
+from core.smoothing import apply_moving_average
 from core.models import (
     DailySummaryDB,
     KeyPerformance,
@@ -541,16 +542,16 @@ class Analyzer:
         """
         return self.storage.get_daily_summary(date)
 
-    def get_wpm_burst_sequence(self, window_size: int = 1) -> List[float]:
-        """Get WPM values over burst sequence with sliding window aggregation.
+    def get_wpm_burst_sequence(self, smoothness: int = 1) -> Tuple[List[float], List[int]]:
+        """Get WPM values over burst sequence with moving average smoothing.
 
         Args:
-            window_size: Number of bursts to aggregate (1-200)
-                        1 = no aggregation (each burst is one point)
-                        200 = 200-burst sliding average
+            smoothness: Smoothing level (1-100)
+                        1 = raw data (no smoothing)
+                        100 = maximum smoothing (adaptive window size)
 
         Returns:
-            List of WPM values (one per data point)
+            Tuple of (wpm_values, x_positions) where x_positions are burst numbers
         """
         # Get all bursts ordered by time
         with self.storage._get_connection() as conn:
@@ -559,20 +560,9 @@ class Analyzer:
             raw_wpm = [row[0] for row in cursor.fetchall() if row[0] is not None]
 
         if not raw_wpm:
-            return []
+            return [], []
 
-        # Apply sliding window if window_size > 1
-        if window_size == 1:
-            return raw_wpm
-        else:
-            # Calculate sliding window average (looking back at previous bursts)
-            import pandas as pd
-
-            series = pd.Series(raw_wpm)
-            rolling_avg = series.rolling(
-                window=window_size, center=False, min_periods=1
-            ).mean()
-            return rolling_avg.tolist()
+        return apply_moving_average(raw_wpm, smoothness)
 
     def get_typing_time_data(
         self,

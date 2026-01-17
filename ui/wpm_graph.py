@@ -4,7 +4,7 @@ import pyqtgraph as pg
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider
 from PySide6.QtCore import Qt, QTimer
 from pyqtgraph import GraphicsLayoutWidget
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Tuple
 
 
 class WPMTimeSeriesGraph(QWidget):
@@ -13,10 +13,11 @@ class WPMTimeSeriesGraph(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.data: List[float] = []
-        self.current_window_size = 10  # Default 10-burst average
+        self.current_smoothness = 1  # Default to raw data
         self._data_callback: Optional[Callable[[int], None]] = None
         self._update_timer: Optional[QTimer] = None
         self.plot_item = None
+        self._y_range: Optional[Tuple[float, float]] = None  # Store initial y-range
 
         self.init_ui()
 
@@ -56,15 +57,15 @@ class WPMTimeSeriesGraph(QWidget):
 
         slider_control_layout = QHBoxLayout()
 
-        left_label = QLabel("Per Burst")
+        left_label = QLabel("Raw Data")
         left_label.setStyleSheet("font-size: 11px; color: palette(text);")
 
         self.resolution_slider = QSlider(Qt.Horizontal)
-        self.resolution_slider.setRange(0, 100)
-        self.resolution_slider.setValue(5)  # Default to ~10 burst average
+        self.resolution_slider.setRange(1, 100)
+        self.resolution_slider.setValue(1)  # Default to raw data
         self.resolution_slider.valueChanged.connect(self.on_resolution_changed)
 
-        right_label = QLabel("200-Burst Avg")
+        right_label = QLabel("Trend Line")
         right_label.setStyleSheet("font-size: 11px; color: palette(text);")
 
         slider_control_layout.addWidget(left_label)
@@ -92,14 +93,11 @@ class WPMTimeSeriesGraph(QWidget):
 
     def _update_resolution(self, value: int) -> None:
         """Update graph with new window size."""
-        # Map slider value (0-100) to window size (1-200)
-        window_size = max(1, int((value / 100) * 200))
-
-        self.current_window_size = window_size
+        self.current_smoothness = value
 
         # Request new data with this window size
         if self._data_callback:
-            self._data_callback(window_size)
+            self._data_callback(value)
 
     def set_data_callback(
         self, callback: Callable[[int], None], load_immediately: bool = False
@@ -107,35 +105,42 @@ class WPMTimeSeriesGraph(QWidget):
         """Set callback for requesting new data.
 
         Args:
-            callback: Function to call with window size
+            callback: Function to call with smoothness level (1-100)
             load_immediately: If True, load data immediately. If False, wait for explicit request.
         """
         self._data_callback = callback
         # Load initial data only if requested
         if load_immediately and self._data_callback:
-            self._data_callback(self.current_window_size)
+            self._data_callback(self.current_smoothness)
 
-    def update_graph(self, wpm_values: List[float]) -> None:
+    def update_graph(self, data: Tuple[List[float], List[int]]) -> None:
         """Update graph with WPM values over burst sequence.
 
         Args:
-            wpm_values: List of WPM values (one per data point)
+            data: Tuple of (wpm_values, x_positions)
         """
+        wpm_values, x_positions = data
         self.data = wpm_values
 
         if not wpm_values:
             self.plot_item.setData([], [])
             self.info_label.setText("Showing: No data")
+            self._y_range = None
             return
 
-        # Create x-axis as burst numbers
-        burst_numbers = list(range(1, len(wpm_values) + 1))
+        # Store y-range on first load
+        if self._y_range is None:
+            y_min = min(wpm_values)
+            y_max = max(wpm_values)
+            # Add some padding (10% on each side)
+            padding = (y_max - y_min) * 0.1
+            self._y_range = (y_min - padding, y_max + padding)
 
-        # Update plot data
-        self.plot_item.setData(burst_numbers, wpm_values)
+        # Update plot data with actual burst positions
+        self.plot_item.setData(x_positions, wpm_values)
 
-        # Enable auto-range with padding after data update
-        self.plot.enableAutoRange(axis="xy", enable=True)
+        # Maintain y-axis range for consistent visualization
+        self.plot.setYRange(self._y_range[0], self._y_range[1], padding=0)
 
         # Update info label
         self.info_label.setText(f"Showing: {len(wpm_values)} data points")

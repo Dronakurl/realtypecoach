@@ -4,6 +4,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from datetime import datetime
+import numpy as np
 
 from core.storage import Storage
 from core.analyzer import Analyzer
@@ -237,3 +238,65 @@ class TestAnalyzer:
         assert summary is not None
         # total_typing_sec should be in seconds
         assert summary.total_typing_sec == 10  # 10 seconds, not 10000
+
+    def test_wpm_burst_sequence_no_smoothing(self, analyzer):
+        """Test that smoothness=1 returns raw data with same number of points."""
+        # Create test data with varying WPM values
+        base = get_today_timestamp_ms()
+        wpm_values = [40.0, 60.0, 35.0, 70.0, 45.0, 80.0, 50.0, 65.0, 30.0, 75.0]
+
+        for i, wpm in enumerate(wpm_values):
+            # Create bursts that result in the desired WPM
+            burst = Burst(
+                start_time_ms=base + (i * 6000),
+                end_time_ms=base + (i * 6000) + 5000,
+                key_count=int(wpm * 5 / 12),  # Approximate to get target WPM
+                backspace_count=0,
+                net_key_count=int(wpm * 5 / 12),
+                duration_ms=5000,
+                qualifies_for_high_score=False,
+            )
+            analyzer.process_burst(burst)
+
+        # Get raw data (smoothness=1)
+        result_wpm, result_x = analyzer.get_wpm_burst_sequence(smoothness=1)
+
+        # Should have same number of points as input
+        assert len(result_wpm) == len(wpm_values)
+        # X positions should be 1-indexed burst numbers
+        assert result_x == list(range(1, 11))
+        # Verify values match closely (actual WPM calculation may vary slightly)
+        for actual, expected in zip(result_wpm, wpm_values):
+            assert abs(actual - expected) < 5.0  # Allow 5 WPM tolerance
+
+    def test_wpm_burst_sequence_moving_average(self, analyzer):
+        """Test that moving average smooths while keeping all points."""
+        # Create test data with 100 bursts
+        base = get_today_timestamp_ms()
+        wpm_values = []
+        for i in range(100):
+            wpm = 40.0 + (i % 10) * 5.0  # Varying WPM between 40-85
+            wpm_values.append(wpm)
+            burst = Burst(
+                start_time_ms=base + (i * 6000),
+                end_time_ms=base + (i * 6000) + 5000,
+                key_count=int(wpm * 5 / 12),
+                backspace_count=0,
+                net_key_count=int(wpm * 5 / 12),
+                duration_ms=5000,
+                qualifies_for_high_score=False,
+            )
+            analyzer.process_burst(burst)
+
+        # Get smoothed data with maximum smoothness
+        result_wpm, result_x = analyzer.get_wpm_burst_sequence(smoothness=100)
+
+        # Should keep all 100 points
+        assert len(result_wpm) == 100
+        # X positions should be 1-100
+        assert result_x == list(range(1, 101))
+        # Calculate variance - smoothed should have less variance
+        raw_variance = np.var(wpm_values)
+        smoothed_variance = np.var(result_wpm)
+        assert smoothed_variance < raw_variance
+

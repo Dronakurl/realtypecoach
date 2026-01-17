@@ -578,16 +578,16 @@ class Application(QObject):
                     None, "Export Failed", f"Failed to export data: {e}"
                 )
 
-    def provide_trend_data(self, window_size: int) -> None:
+    def provide_trend_data(self, smoothness: int) -> None:
         """Provide trend data to stats panel.
 
         Args:
-            window_size: Number of bursts to aggregate (1-200)
+            smoothness: Smoothing level (1-100)
         """
 
         def fetch_data():
             try:
-                data = self.analyzer.get_wpm_burst_sequence(window_size=window_size)
+                data = self.analyzer.get_wpm_burst_sequence(smoothness=smoothness)
                 self.signal_update_trend_data.emit(data)
             except Exception as e:
                 log.error(f"Error fetching trend data: {e}")

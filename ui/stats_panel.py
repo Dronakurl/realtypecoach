@@ -875,7 +875,7 @@ class StatsPanel(QWidget):
             self._trend_data_loaded = True
             # Trigger data load via callback
             if self._trend_data_callback is not None:
-                self._trend_data_callback(self.wpm_graph.current_window_size)
+                self._trend_data_callback(self.wpm_graph.current_smoothness)
 
         # Tab 4 is Typing Time (index 4)
         if index == 4 and not self._typing_time_data_loaded:
