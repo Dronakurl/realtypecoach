@@ -882,7 +882,23 @@ class Application(QObject):
         self.running = True
 
         log.info("Starting event handler...")
-        self.event_handler.start()
+        try:
+            self.event_handler.start()
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "input" in error_msg.lower() and "group" in error_msg.lower():
+                QMessageBox.critical(
+                    None,
+                    "RealTypeCoach - Permission Error",
+                    "RealTypeCoach requires access to keyboard devices.\n\n"
+                    "You need to be in the 'input' group:\n"
+                    "  sudo usermod -aG input $USER\n\n"
+                    "Then log out and log back in for the changes to take effect.",
+                )
+                log.error(f"Input group missing: {error_msg}")
+                sys.exit(1)
+            else:
+                raise
 
         log.info("Starting layout monitor...")
         self.layout_monitor.start()
