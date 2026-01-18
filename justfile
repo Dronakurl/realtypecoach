@@ -38,6 +38,34 @@ status:
 monitor-log:
     @tail -f ~/.local/state/realtypecoach/realtypecoach.log
 
+# Monitor CPU usage over 5 seconds
+monitor-cpu:
+    #!/usr/bin/env bash
+    pid=$(ps aux | grep "main.py" | grep -v grep | awk '$11 ~ /python3$/ {print $2}' | head -n 1)
+    if [ -z "$pid" ]; then
+        echo "RealTypeCoach is not running"
+        exit 1
+    fi
+    echo "Monitoring CPU usage for PID $pid over 5 seconds..."
+    echo ""
+    total=0
+    count=0
+    for i in {1..5}; do
+        cpu=$(pidstat -p "$pid" 1 1 | tail -n +4 | head -n -1 | awk '{print $8}' | tr ',' '.')
+        echo "  Sample $i: ${cpu}%"
+        if [ -n "$cpu" ]; then
+            total=$(echo "$total + $cpu" | LC_ALL=C bc)
+            ((count++))
+        fi
+    done
+    echo ""
+    if [ $count -gt 0 ]; then
+        avg=$(echo "scale=2; $total / $count" | LC_ALL=C bc)
+        echo "Average CPU usage (last 5s): ${avg}%"
+    fi
+    lifetime_avg=$(ps -p "$pid" -o %cpu --no-headers | tr -d ' ')
+    echo "Lifetime average CPU usage: ${lifetime_avg}% (average since process start)"
+
 # Testing
 # Syntax check Python files
 check:

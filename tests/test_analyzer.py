@@ -299,4 +299,3 @@ class TestAnalyzer:
         raw_variance = np.var(wpm_values)
         smoothed_variance = np.var(result_wpm)
         assert smoothed_variance < raw_variance
-

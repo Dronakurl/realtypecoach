@@ -542,7 +542,9 @@ class Analyzer:
         """
         return self.storage.get_daily_summary(date)
 
-    def get_wpm_burst_sequence(self, smoothness: int = 1) -> Tuple[List[float], List[int]]:
+    def get_wpm_burst_sequence(
+        self, smoothness: int = 1
+    ) -> Tuple[List[float], List[int]]:
         """Get WPM values over burst sequence with moving average smoothing.
 
         Args:
