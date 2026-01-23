@@ -97,6 +97,8 @@ class Application(QObject):
         self._executor = ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="data_fetcher"
         )
+        # Thread-safe flag for stats panel visibility (avoid calling Qt methods from background threads)
+        self._stats_panel_visible: bool = False
 
         self.init_data_directory()
         self.init_components()
@@ -241,7 +243,7 @@ class Application(QObject):
         self.event_handler = EvdevHandler(
             event_queue=self.event_queue,
             layout_getter=self.get_current_layout,
-            stats_panel_visible_getter=lambda: self.stats_panel.isVisible(),
+            stats_panel_visible_getter=lambda: self._stats_panel_visible,
         )
 
         self.analyzer = Analyzer(self.storage)
@@ -360,12 +362,26 @@ class Application(QObject):
             Qt.ConnectionType.QueuedConnection,
         )
 
+        # Connect stats panel visibility signal to update thread-safe flag
+        self.stats_panel.visibility_changed.connect(self._on_stats_panel_visibility_changed)
+
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
         layout = self.config.get("keyboard_layout", "auto")
         if layout == "auto":
             return get_current_layout()
         return layout
+
+    def _on_stats_panel_visibility_changed(self, visible: bool) -> None:
+        """Handle stats panel visibility changes.
+
+        Updates the thread-safe flag used by background threads to avoid
+        calling Qt methods from non-GUI threads.
+
+        Args:
+            visible: True if panel is now visible, False if hidden
+        """
+        self._stats_panel_visible = visible
 
     def on_burst_complete(self, burst) -> None:
         """Handle burst completion."""

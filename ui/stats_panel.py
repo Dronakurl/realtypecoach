@@ -26,6 +26,7 @@ class StatsPanel(QWidget):
     """Real-time statistics display panel."""
 
     settings_requested = Signal()
+    visibility_changed = Signal(bool)  # Emitted when panel visibility changes
 
     def __init__(self, icon_path: str = None):
         """Initialize statistics panel.
@@ -948,3 +949,13 @@ class StatsPanel(QWidget):
         """Slot called when clipboard words are ready."""
         if hasattr(self, "_clipboard_callback"):
             self._clipboard_callback(words)
+
+    def showEvent(self, event) -> None:
+        """Override to emit visibility signal when shown."""
+        super().showEvent(event)
+        self.visibility_changed.emit(True)
+
+    def hideEvent(self, event) -> None:
+        """Override to emit visibility signal when hidden."""
+        super().hideEvent(event)
+        self.visibility_changed.emit(False)
