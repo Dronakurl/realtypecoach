@@ -1,8 +1,9 @@
 """Tests for word statistics functionality (updated for dictionary validation)."""
 
-import pytest
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from core.storage import Storage
 from utils.config import Config

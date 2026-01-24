@@ -1,14 +1,15 @@
 """Tests for Analyzer class."""
 
-import pytest
 import tempfile
-from pathlib import Path
 from datetime import datetime
-import numpy as np
+from pathlib import Path
 
-from core.storage import Storage
+import numpy as np
+import pytest
+
 from core.analyzer import Analyzer
 from core.burst_detector import Burst
+from core.storage import Storage
 from utils.config import Config
 from utils.crypto import CryptoManager
 
@@ -189,9 +190,7 @@ class TestAnalyzer:
         # Verify storage received correct data
         with analyzer.storage._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT key_count, backspace_count, net_key_count, avg_wpm FROM bursts"
-            )
+            cursor.execute("SELECT key_count, backspace_count, net_key_count, avg_wpm FROM bursts")
             result = cursor.fetchone()
 
             assert result[0] == 100  # key_count
@@ -266,7 +265,7 @@ class TestAnalyzer:
         # X positions should be 1-indexed burst numbers
         assert result_x == list(range(1, 11))
         # Verify values match closely (actual WPM calculation may vary slightly)
-        for actual, expected in zip(result_wpm, wpm_values):
+        for actual, expected in zip(result_wpm, wpm_values, strict=False):
             assert abs(actual - expected) < 5.0  # Allow 5 WPM tolerance
 
     def test_wpm_burst_sequence_moving_average(self, analyzer):

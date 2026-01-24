@@ -1,12 +1,13 @@
 """Tests for encryption key management."""
 
-import pytest
 import secrets
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
+import sqlcipher3 as sqlite3
 
 from utils.crypto import CryptoManager
-import sqlcipher3 as sqlite3
 
 
 def test_crypto_manager_initialization():
@@ -324,8 +325,9 @@ def test_legacy_key_migration():
         # Create a legacy-style key using the old hardcoded identifiers
         try:
             legacy_key = secrets.token_bytes(32)
-            from utils.crypto import KEY_SERVICE, KEY_USERNAME
             import keyring
+
+            from utils.crypto import KEY_SERVICE, KEY_USERNAME
 
             keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())
 
@@ -341,9 +343,7 @@ def test_legacy_key_migration():
             assert not crypto_new.key_exists()
 
             # The legacy key should still exist (not deleted by delete_key())
-            legacy_key_still_exists = (
-                keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
-            )
+            legacy_key_still_exists = keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
             assert legacy_key_still_exists
         finally:
             # Clean up both the path-based key and the legacy key
@@ -367,8 +367,9 @@ def test_delete_legacy_key_method():
 
         # Create a legacy-style key
         try:
-            from utils.crypto import KEY_SERVICE, KEY_USERNAME
             import keyring
+
+            from utils.crypto import KEY_SERVICE, KEY_USERNAME
 
             legacy_key = secrets.token_bytes(32)
             keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())

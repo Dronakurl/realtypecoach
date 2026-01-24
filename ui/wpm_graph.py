@@ -1,10 +1,11 @@
 """WPM burst sequence graph widget for RealTypeCoach."""
 
+from collections.abc import Callable
+
 import pyqtgraph as pg
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider
-from PySide6.QtCore import Qt, QTimer
 from pyqtgraph import GraphicsLayoutWidget
-from typing import List, Callable, Optional, Tuple
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
 
 class WPMTimeSeriesGraph(QWidget):
@@ -12,12 +13,12 @@ class WPMTimeSeriesGraph(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.data: List[float] = []
+        self.data: list[float] = []
         self.current_smoothness = 1  # Default to raw data
-        self._data_callback: Optional[Callable[[int], None]] = None
-        self._update_timer: Optional[QTimer] = None
+        self._data_callback: Callable[[int], None] | None = None
+        self._update_timer: QTimer | None = None
         self.plot_item = None
-        self._y_range: Optional[Tuple[float, float]] = None  # Store initial y-range
+        self._y_range: tuple[float, float] | None = None  # Store initial y-range
 
         self.init_ui()
 
@@ -113,7 +114,7 @@ class WPMTimeSeriesGraph(QWidget):
         if load_immediately and self._data_callback:
             self._data_callback(self.current_smoothness)
 
-    def update_graph(self, data: Tuple[List[float], List[int]]) -> None:
+    def update_graph(self, data: tuple[list[float], list[int]]) -> None:
         """Update graph with WPM values over burst sequence.
 
         Args:

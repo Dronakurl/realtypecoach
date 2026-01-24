@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 # Default fallback version (updated by post-commit hook)
 DEFAULT_VERSION = "unknown"
 VERSION_FILE = Path(__file__).parent / "VERSION"
 
 # Cached version (module-level, computed once on import)
-_cached_version: Optional[str] = None
+_cached_version: str | None = None
 
 
 def get_version() -> str:
@@ -39,7 +38,7 @@ def get_version() -> str:
             timestamp_str = VERSION_FILE.read_text().strip()
             # Convert Unix timestamp to formatted date
             ts = int(timestamp_str)
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            dt = datetime.fromtimestamp(ts, tz=UTC)
             _cached_version = dt.strftime("%B %d, %Y at %H:%M")
             return _cached_version
         except (ValueError, OSError):
@@ -58,7 +57,7 @@ def get_version() -> str:
         timestamp_str = result.stdout.strip()
         if timestamp_str:
             ts = int(timestamp_str)
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            dt = datetime.fromtimestamp(ts, tz=UTC)
             _cached_version = dt.strftime("%B %d, %Y at %H:%M")
             return _cached_version
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError, TimeoutError):

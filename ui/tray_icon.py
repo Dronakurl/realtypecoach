@@ -1,9 +1,10 @@
 """System tray icon for RealTypeCoach."""
 
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
-from PySide6.QtGui import QIcon, QAction
-from PySide6.QtCore import Signal, QTimer
 from pathlib import Path
+
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from ui.stats_panel import StatsPanel
 
@@ -142,9 +143,7 @@ class TrayIcon(QSystemTrayIcon):
         """Show about dialog."""
         self.about_requested.emit()
 
-    def show_notification(
-        self, title: str, message: str, message_type: str = "info"
-    ) -> None:
+    def show_notification(self, title: str, message: str, message_type: str = "info") -> None:
         """Show desktop notification.
 
         Args:

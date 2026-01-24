@@ -10,13 +10,10 @@ from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Optional
 
 # Path constants (must be defined before logging setup)
 DATA_DIR = Path.home() / ".local" / "share" / "realtypecoach"
-XDG_STATE_HOME = Path(
-    os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
-)
+XDG_STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
 LOG_DIR = XDG_STATE_HOME / "realtypecoach"
 
 # Setup logging with XDG state directory
@@ -54,9 +51,9 @@ from core.dictionary_config import DictionaryConfig  # noqa: E402
 from core.evdev_handler import EvdevHandler  # noqa: E402
 from core.notification_handler import NotificationHandler  # noqa: E402
 from core.storage import Storage  # noqa: E402
+from ui.about_dialog import AboutDialog  # noqa: E402
 from ui.settings_dialog import SettingsDialog  # noqa: E402
 from ui.stats_panel import StatsPanel  # noqa: E402
-from ui.about_dialog import AboutDialog  # noqa: E402
 from ui.tray_icon import TrayIcon  # noqa: E402
 from utils.config import Config  # noqa: E402
 from utils.crypto import CryptoManager  # noqa: E402
@@ -92,11 +89,9 @@ class Application(QObject):
         self.running = False
         self._last_stats_update: int = 0
         self._last_activity_time: int = int(time.time())
-        self._stats_update_timer: Optional[QTimer] = None
+        self._stats_update_timer: QTimer | None = None
         # Thread pool for background data fetching (limit to prevent thread leaks)
-        self._executor = ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="data_fetcher"
-        )
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="data_fetcher")
         # Thread-safe flag for stats panel visibility (avoid calling Qt methods from background threads)
         self._stats_panel_visible: bool = False
 
@@ -164,9 +159,7 @@ class Application(QObject):
             # If database exists but cannot be decrypted, backup and create new
             if not is_encrypted:
                 backup_path = self.db_path.with_suffix(f".db.{uuid.uuid4()}.backup")
-                log.info(
-                    f"Old undecryptable database detected, backing up to {backup_path.name}"
-                )
+                log.info(f"Old undecryptable database detected, backing up to {backup_path.name}")
                 try:
                     self.db_path.rename(backup_path)
                     log.info(f"Backed up old database to {backup_path}")
@@ -188,8 +181,7 @@ class Application(QObject):
                 QMessageBox.critical(
                     None,
                     "Keyring Not Available",
-                    f"{e}\n\n"
-                    "A system keyring is required to encrypt your typing data securely.",
+                    f"{e}\n\nA system keyring is required to encrypt your typing data securely.",
                 )
                 sys.exit(1)
             raise
@@ -197,9 +189,7 @@ class Application(QObject):
         # Build dictionary configuration
         enabled_languages = self.config.get_list("enabled_languages")
         enabled_dictionaries = self.config.get("enabled_dictionaries", "")
-        enabled_dictionary_paths = (
-            enabled_dictionaries.split(",") if enabled_dictionaries else []
-        )
+        enabled_dictionary_paths = enabled_dictionaries.split(",") if enabled_dictionaries else []
         accept_all_mode = self.config.get("dictionary_mode") == "accept_all"
 
         dictionary_config = DictionaryConfig(
@@ -210,9 +200,7 @@ class Application(QObject):
 
         self.storage = Storage(
             self.db_path,
-            word_boundary_timeout_ms=self.config.get_int(
-                "word_boundary_timeout_ms", 1000
-            ),
+            word_boundary_timeout_ms=self.config.get_int("word_boundary_timeout_ms", 1000),
             dictionary_config=dictionary_config,
             config=self.config,
         )
@@ -222,15 +210,9 @@ class Application(QObject):
 
         burst_config = BurstDetectorConfig(
             burst_timeout_ms=self.config.get_int("burst_timeout_ms", 1000),
-            high_score_min_duration_ms=self.config.get_int(
-                "high_score_min_duration_ms", 5000
-            ),
-            duration_calculation_method=self.config.get(
-                "burst_duration_calculation", "total_time"
-            ),
-            active_time_threshold_ms=self.config.get_int(
-                "active_time_threshold_ms", 500
-            ),
+            high_score_min_duration_ms=self.config.get_int("high_score_min_duration_ms", 5000),
+            duration_calculation_method=self.config.get("burst_duration_calculation", "total_time"),
+            active_time_threshold_ms=self.config.get_int("active_time_threshold_ms", 500),
             min_key_count=self.config.get_int("min_burst_key_count", 10),
             min_duration_ms=self.config.get_int("min_burst_duration_ms", 5000),
         )
@@ -253,14 +235,10 @@ class Application(QObject):
             storage=self.storage,
             min_burst_ms=self.config.get_int("notification_min_burst_ms", 10000),
             threshold_days=self.config.get_int("notification_threshold_days", 30),
-            threshold_update_sec=self.config.get_int(
-                "notification_threshold_update_sec", 300
-            ),
+            threshold_update_sec=self.config.get_int("notification_threshold_update_sec", 300),
         )
 
-        self.layout_monitor = LayoutMonitor(
-            callback=self.on_layout_changed, poll_interval=60
-        )
+        self.layout_monitor = LayoutMonitor(callback=self.on_layout_changed, poll_interval=60)
 
         self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
         self.tray_icon = TrayIcon(
@@ -332,9 +310,7 @@ class Application(QObject):
             Qt.ConnectionType.QueuedConnection,
         )
 
-        self.notification_handler.signal_daily_summary.connect(
-            self.show_daily_notification
-        )
+        self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
         self.notification_handler.signal_exceptional_burst.connect(
             self.show_exceptional_notification
         )
@@ -490,9 +466,7 @@ class Application(QObject):
             )
             icon_type = "warning"
 
-        self.tray_icon.show_notification(
-            "🔤 Hardest Letter Changed", message, icon_type
-        )
+        self.tray_icon.show_notification("🔤 Hardest Letter Changed", message, icon_type)
 
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
@@ -500,9 +474,7 @@ class Application(QObject):
         special_keys = {"__clear_database__", "export_csv_path"}
 
         if "enabled_dictionaries" in new_settings:
-            log.info(
-                f"Saving enabled_dictionaries: {new_settings['enabled_dictionaries']!r}"
-            )
+            log.info(f"Saving enabled_dictionaries: {new_settings['enabled_dictionaries']!r}")
 
         for key, value in new_settings.items():
             if key not in special_keys:
@@ -514,19 +486,15 @@ class Application(QObject):
             or "enabled_languages" in new_settings
             or "enabled_dictionaries" in new_settings
         ):
-            log.info(
-                "Dictionary configuration changed, storage will reload on next restart"
-            )
+            log.info("Dictionary configuration changed, storage will reload on next restart")
 
         # Update worst letter notification settings
         if "worst_letter_notifications_enabled" in new_settings:
-            self.notification_handler.worst_letter_notifications_enabled = (
-                self.config.get_bool("worst_letter_notifications_enabled", False)
+            self.notification_handler.worst_letter_notifications_enabled = self.config.get_bool(
+                "worst_letter_notifications_enabled", False
             )
         if "worst_letter_notification_debounce_min" in new_settings:
-            debounce_min = self.config.get_int(
-                "worst_letter_notification_debounce_min", 5
-            )
+            debounce_min = self.config.get_int("worst_letter_notification_debounce_min", 5)
             self.analyzer.worst_letter_debounce_ms = debounce_min * 60 * 1000
 
         # Update daily summary settings
@@ -571,9 +539,7 @@ class Application(QObject):
                     pixmap = icon.pixmap(button.iconSize())
                     painter = QPainter(pixmap)
                     painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-                    painter.fillRect(
-                        pixmap.rect(), button.palette().color(QPalette.ButtonText)
-                    )
+                    painter.fillRect(pixmap.rect(), button.palette().color(QPalette.ButtonText))
                     painter.end()
                     button.setIcon(QIcon(pixmap))
             msg_box.exec()
@@ -590,9 +556,7 @@ class Application(QObject):
                     None, "Export Complete", f"Exported {count:,} events to CSV."
                 )
             except Exception as e:
-                QMessageBox.critical(
-                    None, "Export Failed", f"Failed to export data: {e}"
-                )
+                QMessageBox.critical(None, "Export Failed", f"Failed to export data: {e}")
 
     def provide_trend_data(self, smoothness: int) -> None:
         """Provide trend data to stats panel.
@@ -686,9 +650,7 @@ class Application(QObject):
                     # Don't log actual letter/number characters - just log the type of key
                     if len(key_event.key_name) == 1:
                         key_type = (
-                            "CHARACTER"
-                            if key_event.key_name.isalnum()
-                            else key_event.key_name
+                            "CHARACTER" if key_event.key_name.isalnum() else key_event.key_name
                         )
                     else:
                         key_type = (
@@ -699,9 +661,7 @@ class Application(QObject):
 
                 # Detect if key is backspace
                 is_backspace = key_event.key_name == "BACKSPACE"
-                self.burst_detector.process_key_event(
-                    key_event.timestamp_ms, True, is_backspace
-                )
+                self.burst_detector.process_key_event(key_event.timestamp_ms, True, is_backspace)
 
                 self.analyzer.process_key_event(
                     key_event.keycode,
@@ -729,14 +689,10 @@ class Application(QObject):
 
             if idle_time >= idle_threshold:
                 # Idle - use slower update interval
-                stats_interval = self.config.get_int(
-                    "stats_update_interval_idle_sec", 15
-                )
+                stats_interval = self.config.get_int("stats_update_interval_idle_sec", 15)
             else:
                 # Active or recently active - use normal update interval
-                stats_interval = self.config.get_int(
-                    "stats_update_interval_active_sec", 5
-                )
+                stats_interval = self.config.get_int("stats_update_interval_active_sec", 5)
 
             if current_time - self._last_stats_update >= stats_interval:
                 self.update_statistics()
@@ -759,9 +715,7 @@ class Application(QObject):
 
         # Only update if interval changed
         if self.process_queue_timer.interval() != new_interval:
-            log.debug(
-                f"Adjusting queue poll interval to {new_interval}ms (idle: {idle_time:.1f}s)"
-            )
+            log.debug(f"Adjusting queue poll interval to {new_interval}ms (idle: {idle_time:.1f}s)")
             self.process_queue_timer.setInterval(new_interval)
 
     def update_statistics(self) -> None:
@@ -794,23 +748,17 @@ class Application(QObject):
         )
         self.signal_update_fastest_keys.emit(fastest_keys)
 
-        hardest_words = self.analyzer.get_slowest_words(
-            limit=10, layout=self.get_current_layout()
-        )
+        hardest_words = self.analyzer.get_slowest_words(limit=10, layout=self.get_current_layout())
         self.signal_update_hardest_words.emit(hardest_words)
 
-        fastest_words = self.analyzer.get_fastest_words(
-            limit=10, layout=self.get_current_layout()
-        )
+        fastest_words = self.analyzer.get_fastest_words(limit=10, layout=self.get_current_layout())
         self.signal_update_fastest_words_stats.emit(fastest_words)
 
         # Update typing time display (today + all-time excluding today)
         all_time_typing_sec = self.storage.get_all_time_typing_time(
             exclude_today=stats["date"]
         ) + int(stats["total_typing_sec"])
-        self.signal_update_typing_time_display.emit(
-            stats["total_typing_sec"], all_time_typing_sec
-        )
+        self.signal_update_typing_time_display.emit(stats["total_typing_sec"], all_time_typing_sec)
 
         # Get worst letter and update display (reuse slowest_keys from above)
         if slowest_keys:
@@ -858,12 +806,8 @@ class Application(QObject):
             "burst_duration_calculation": self.config.get(
                 "burst_duration_calculation", "total_time"
             ),
-            "active_time_threshold_ms": self.config.get_int(
-                "active_time_threshold_ms", 500
-            ),
-            "high_score_min_duration_ms": self.config.get_int(
-                "high_score_min_duration_ms", 5000
-            ),
+            "active_time_threshold_ms": self.config.get_int("active_time_threshold_ms", 500),
+            "high_score_min_duration_ms": self.config.get_int("high_score_min_duration_ms", 5000),
             "keyboard_layout": self.config.get("keyboard_layout", "auto"),
             "notification_time_hour": self.config.get_int("notification_time_hour", 18),
             "worst_letter_notifications_enabled": self.config.get_bool(
@@ -982,7 +926,7 @@ def check_single_instance() -> bool:
 
     if pid_file.exists():
         try:
-            with open(pid_file, "r") as f:
+            with open(pid_file) as f:
                 pid = int(f.read().strip())
             try:
                 os.kill(pid, 0)  # Check if process is alive
@@ -1012,7 +956,7 @@ def check_single_instance() -> bool:
             except ProcessLookupError:
                 print("Stale PID file found, cleaning up...")
                 pid_file.unlink()
-        except (ValueError, IOError):
+        except (OSError, ValueError):
             pass
 
     return True

@@ -1,12 +1,12 @@
 """Tests for utils.keyboard_detector module."""
 
-from unittest.mock import patch, MagicMock, mock_open
 import time
+from unittest.mock import MagicMock, mock_open, patch
 
 from utils.keyboard_detector import (
-    get_current_layout,
-    get_available_layouts,
     LayoutMonitor,
+    get_available_layouts,
+    get_current_layout,
 )
 
 

@@ -1,10 +1,11 @@
 """Tests for utils.config module."""
 
-import pytest
 import tempfile
 from pathlib import Path
 
-from utils.config import Config, AppSettings
+import pytest
+
+from utils.config import AppSettings, Config
 from utils.crypto import CryptoManager
 
 
@@ -34,9 +35,7 @@ class TestConfigInit:
         """Test that settings table is created on initialization."""
         with config._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='settings'"
-            )
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
             result = cursor.fetchone()
             assert result is not None
 
@@ -188,9 +187,7 @@ class TestConfigTypeGetters:
         # Integer 1 should now be treated as True
         config.set("test_bool_int", "1")  # Stored as string '1', parsed to int 1
         assert config.get("test_bool_int") == 1  # get() returns int
-        assert (
-            config.get_bool("test_bool_int") is True
-        )  # get_bool() handles int 1 as True
+        assert config.get_bool("test_bool_int") is True  # get_bool() handles int 1 as True
 
     def test_get_bool_false_values(self, config):
         """Test get_bool with various false representations."""
@@ -202,9 +199,7 @@ class TestConfigTypeGetters:
         # Integer 0 should be treated as False
         config.set("test_bool_int", 0)  # Set as int 0
         assert config.get("test_bool_int") == 0  # get() returns int 0
-        assert (
-            config.get_bool("test_bool_int") is False
-        )  # get_bool() handles int 0 as False
+        assert config.get_bool("test_bool_int") is False  # get_bool() handles int 0 as False
 
     def test_get_bool_actual_boolean(self, config):
         """Test get_bool with actual boolean values."""
@@ -427,9 +422,7 @@ class TestConfigValidation:
 
     def test_set_rejects_invalid_hour(self, config):
         """Test that set() rejects invalid hour values."""
-        with pytest.raises(
-            ValueError, match="Invalid value for notification_time_hour"
-        ):
+        with pytest.raises(ValueError, match="Invalid value for notification_time_hour"):
             config.set("notification_time_hour", 24)
 
     def test_cross_field_validation_active_threshold_too_high(self, config):

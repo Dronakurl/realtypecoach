@@ -1,18 +1,20 @@
 """Typing time graph widget for RealTypeCoach."""
 
+from collections.abc import Callable
 from enum import Enum
-from typing import List, Callable, Optional
+
+import pyqtgraph as pg
+from pyqtgraph import BarGraphItem, GraphicsLayoutWidget
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QComboBox,
     QHBoxLayout,
     QLabel,
-    QComboBox,
     QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import QTimer
-import pyqtgraph as pg
-from pyqtgraph import GraphicsLayoutWidget, BarGraphItem
+
 from core.models import TypingTimeDataPoint
 
 
@@ -28,7 +30,7 @@ class TimeGranularity(Enum):
 class TypingTimeGraph(QWidget):
     """Dual-plot stacked graph for typing time and WPM over time."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         """Initialize typing time graph widget.
 
         Args:
@@ -38,9 +40,9 @@ class TypingTimeGraph(QWidget):
 
         # State
         self.current_granularity = TimeGranularity.DAY
-        self.data: List[TypingTimeDataPoint] = []
-        self._data_callback: Optional[Callable[[str], None]] = None
-        self._update_timer: Optional[QTimer] = None
+        self.data: list[TypingTimeDataPoint] = []
+        self._data_callback: Callable[[str], None] | None = None
+        self._update_timer: QTimer | None = None
 
         self.init_ui()
 
@@ -137,9 +139,7 @@ class TypingTimeGraph(QWidget):
         # Debounce to avoid excessive queries during rapid selection
         self._update_timer = QTimer()
         self._update_timer.setSingleShot(True)
-        self._update_timer.timeout.connect(
-            lambda: self._update_granularity(granularity)
-        )
+        self._update_timer.timeout.connect(lambda: self._update_granularity(granularity))
         self._update_timer.start(300)  # 300ms debounce
 
     def _update_granularity(self, granularity: TimeGranularity) -> None:
@@ -170,16 +170,14 @@ class TypingTimeGraph(QWidget):
         if load_immediately and self._data_callback:
             from PySide6.QtCore import QTimer
 
-            QTimer.singleShot(
-                0, lambda: self._data_callback(self.current_granularity.value)
-            )
+            QTimer.singleShot(0, lambda: self._data_callback(self.current_granularity.value))
 
     def request_data(self) -> None:
         """Request data update using callback."""
         if self._data_callback:
             self._data_callback(self.current_granularity.value)
 
-    def update_graph(self, data_points: List[TypingTimeDataPoint]) -> None:
+    def update_graph(self, data_points: list[TypingTimeDataPoint]) -> None:
         """Update both plots with typing time and WPM data.
 
         Args:
@@ -243,9 +241,7 @@ class TypingTimeGraph(QWidget):
             if len(data_points) > 7:
                 # Show every Nth label (target ~6 ticks instead of ~10)
                 step = max(1, len(display_labels) // 6)
-                ticks = [
-                    (i, display_labels[i]) for i in range(0, len(display_labels), step)
-                ]
+                ticks = [(i, display_labels[i]) for i in range(0, len(display_labels), step)]
                 self.plot_wpm.getAxis("bottom").setTicks([ticks])
             else:
                 # Show all labels

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -25,7 +26,6 @@ from PySide6.QtWidgets import (
     QToolTip,
     QVBoxLayout,
     QWidget,
-    QInputDialog,
 )
 
 log = logging.getLogger("realtypecoach.settings_dialog")
@@ -206,9 +206,7 @@ class SettingsDialog(QDialog):
         return QIcon(pixmap)
 
     @staticmethod
-    def _create_labeled_icon_widget(
-        label_text: str, tooltip_text: str, parent=None
-    ) -> QWidget:
+    def _create_labeled_icon_widget(label_text: str, tooltip_text: str, parent=None) -> QWidget:
         """Create a label with integrated info icon and tooltip.
 
         Args:
@@ -254,9 +252,7 @@ class SettingsDialog(QDialog):
 
         notification_tab = self.create_notification_tab()
         tabs.addTab(notification_tab, "Notifications")
-        tabs.setTabIcon(
-            1, self._create_palette_aware_icon("preferences-desktop-notification")
-        )
+        tabs.setTabIcon(1, self._create_palette_aware_icon("preferences-desktop-notification"))
 
         data_tab = self.create_data_tab()
         tabs.addTab(data_tab, "Data")
@@ -510,9 +506,7 @@ class SettingsDialog(QDialog):
         worst_letter_group = QGroupBox("Hardest Letter Notifications")
         worst_letter_layout = QFormLayout()
 
-        self.worst_letter_notification_check = QCheckBox(
-            "Notify on worst letter change"
-        )
+        self.worst_letter_notification_check = QCheckBox("Notify on worst letter change")
         self.worst_letter_notification_check.setToolTip(
             "Send notification when your slowest letter key changes.\n"
             "Helps you track which letters need practice.\n"
@@ -596,8 +590,7 @@ class SettingsDialog(QDialog):
 
         self.validate_mode_radio = QCheckBox("Validate words against dictionaries")
         self.validate_mode_radio.setToolTip(
-            "Only store words found in selected dictionaries.\n"
-            "Best for accurate word statistics."
+            "Only store words found in selected dictionaries.\nBest for accurate word statistics."
         )
         self.validate_mode_radio.setChecked(True)
 
@@ -807,7 +800,6 @@ class SettingsDialog(QDialog):
     def set_postgres_password(self) -> None:
         """Set PostgreSQL password in keyring."""
         from utils.crypto import CryptoManager
-        from PySide6.QtWidgets import QInputDialog
 
         # Get current database path
         db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
@@ -845,6 +837,7 @@ class SettingsDialog(QDialog):
         # Get password from keyring
         db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
         from utils.crypto import CryptoManager
+
         crypto = CryptoManager(db_path)
         password = crypto.get_postgres_password()
 
@@ -886,7 +879,9 @@ class SettingsDialog(QDialog):
             cursor.close()
             conn.close()
 
-            self.conn_status_label.setText(f"Connection successful!\nPostgreSQL version: {version[:50]}...")
+            self.conn_status_label.setText(
+                f"Connection successful!\nPostgreSQL version: {version[:50]}..."
+            )
             self.conn_status_label.setStyleSheet("color: green; font-style: italic;")
         except Exception as e:
             self.conn_status_label.setText(f"Connection failed: {str(e)}")
@@ -929,9 +924,7 @@ class SettingsDialog(QDialog):
             self.language_list_widget.setSelectionMode(QListWidget.NoSelection)
 
             # Prioritize UI selections over settings (for rescanning while dialog is open)
-            enabled_dicts_setting = self.current_settings.get(
-                "enabled_dictionaries", ""
-            )
+            enabled_dicts_setting = self.current_settings.get("enabled_dictionaries", "")
             log.info(
                 f"rescan: self.current_settings.get('enabled_dictionaries', '') returned: {enabled_dicts_setting!r}"
             )
@@ -939,9 +932,7 @@ class SettingsDialog(QDialog):
                 selected_set = current_ui_selections
                 log.info(f"rescan: using current UI selections: {selected_set}")
             elif enabled_dicts_setting and enabled_dicts_setting.strip():
-                selected_set = set(
-                    p.strip() for p in enabled_dicts_setting.split(",") if p.strip()
-                )
+                selected_set = set(p.strip() for p in enabled_dicts_setting.split(",") if p.strip())
                 log.info(
                     f"rescan: loaded {len(selected_set)} dictionaries from settings: {selected_set}"
                 )
@@ -975,9 +966,7 @@ class SettingsDialog(QDialog):
                         should_check = True
                         log.info(f"Checking {dict_info.path} (matched saved selection)")
                     else:
-                        log.debug(
-                            f"Not checking {dict_info.path} (not in selected_set)"
-                        )
+                        log.debug(f"Not checking {dict_info.path} (not in selected_set)")
                 else:
                     # Default selections
                     if (
@@ -994,9 +983,7 @@ class SettingsDialog(QDialog):
                         and "American" in dict_info.variant
                     ):
                         should_check = True
-                        log.info(
-                            f"Checking {dict_info.path} (default American English)"
-                        )
+                        log.info(f"Checking {dict_info.path} (default American English)")
 
                 if should_check:
                     item.setCheckState(Qt.Checked)
@@ -1032,17 +1019,13 @@ class SettingsDialog(QDialog):
 
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
-        self.burst_timeout_spin.setValue(
-            self.current_settings.get("burst_timeout_ms", 1000)
-        )
+        self.burst_timeout_spin.setValue(self.current_settings.get("burst_timeout_ms", 1000))
         self.word_boundary_timeout_spin.setValue(
             self.current_settings.get("word_boundary_timeout_ms", 1000)
         )
 
         # Load duration calculation method
-        duration_method = self.current_settings.get(
-            "burst_duration_calculation", "total_time"
-        )
+        duration_method = self.current_settings.get("burst_duration_calculation", "total_time")
         index = self.duration_method_combo.findData(duration_method)
         if index >= 0:
             self.duration_method_combo.setCurrentIndex(index)
@@ -1054,9 +1037,7 @@ class SettingsDialog(QDialog):
         self.high_score_duration_spin.setValue(
             self.current_settings.get("high_score_min_duration_ms", 5000)
         )
-        self.min_key_count_spin.setValue(
-            self.current_settings.get("min_burst_key_count", 10)
-        )
+        self.min_key_count_spin.setValue(self.current_settings.get("min_burst_key_count", 10))
         self.min_burst_duration_spin.setValue(
             self.current_settings.get("min_burst_duration_ms", 5000)
         )
@@ -1102,18 +1083,12 @@ class SettingsDialog(QDialog):
         if index >= 0:
             self.backend_combo.setCurrentIndex(index)
 
-        self.postgres_host_input.setText(
-            self.current_settings.get("postgres_host", "")
-        )
-        self.postgres_port_spin.setValue(
-            self.current_settings.get("postgres_port", 5432)
-        )
+        self.postgres_host_input.setText(self.current_settings.get("postgres_host", ""))
+        self.postgres_port_spin.setValue(self.current_settings.get("postgres_port", 5432))
         self.postgres_database_input.setText(
             self.current_settings.get("postgres_database", "realtypecoach")
         )
-        self.postgres_user_input.setText(
-            self.current_settings.get("postgres_user", "")
-        )
+        self.postgres_user_input.setText(self.current_settings.get("postgres_user", ""))
         sslmode = self.current_settings.get("postgres_sslmode", "require")
         index = self.sslmode_combo.findData(sslmode)
         if index >= 0:
@@ -1143,9 +1118,7 @@ class SettingsDialog(QDialog):
             dict_info = DictionaryDetector.identify_dictionary(path)
             if dict_info:
                 enabled_lang_codes.add(dict_info.language_code)
-        enabled_langs_str = (
-            ",".join(sorted(enabled_lang_codes)) if enabled_lang_codes else "en,de"
-        )
+        enabled_langs_str = ",".join(sorted(enabled_lang_codes)) if enabled_lang_codes else "en,de"
 
         return {
             "burst_timeout_ms": str(self.burst_timeout_spin.value()),
@@ -1157,12 +1130,8 @@ class SettingsDialog(QDialog):
             "min_burst_duration_ms": str(self.min_burst_duration_spin.value()),
             "keyboard_layout": self.keyboard_layout_combo.currentData().lower(),
             "stats_update_interval_sec": str(self.stats_update_interval_spin.value()),
-            "notification_min_burst_ms": str(
-                self.notification_min_burst_spin.value() * 1000
-            ),
-            "notification_threshold_days": str(
-                self.notification_threshold_days_spin.value()
-            ),
+            "notification_min_burst_ms": str(self.notification_min_burst_spin.value() * 1000),
+            "notification_threshold_days": str(self.notification_threshold_days_spin.value()),
             "notification_threshold_update_sec": str(
                 self.notification_threshold_update_spin.value()
             ),
@@ -1171,13 +1140,9 @@ class SettingsDialog(QDialog):
             "worst_letter_notifications_enabled": str(
                 self.worst_letter_notification_check.isChecked()
             ),
-            "worst_letter_notification_debounce_min": str(
-                self.worst_letter_debounce_spin.value()
-            ),
+            "worst_letter_notification_debounce_min": str(self.worst_letter_debounce_spin.value()),
             "data_retention_days": str(self.retention_combo.currentData()),
-            "dictionary_mode": "validate"
-            if self.validate_mode_radio.isChecked()
-            else "accept_all",
+            "dictionary_mode": "validate" if self.validate_mode_radio.isChecked() else "accept_all",
             "enabled_languages": enabled_langs_str,
             "enabled_dictionaries": enabled_dicts_str,
             # Database settings
@@ -1206,8 +1171,7 @@ class SettingsDialog(QDialog):
         msg_box = QMessageBox(
             QMessageBox.Question,
             "Clear All Data",
-            "Are you sure you want to delete all typing data?\n\n"
-            "This action cannot be undone!",
+            "Are you sure you want to delete all typing data?\n\nThis action cannot be undone!",
             QMessageBox.Yes | QMessageBox.No,
             self,
         )
@@ -1233,9 +1197,7 @@ class SettingsDialog(QDialog):
                 pixmap = icon.pixmap(button.iconSize())
                 painter = QPainter(pixmap)
                 painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-                painter.fillRect(
-                    pixmap.rect(), button.palette().color(QPalette.ButtonText)
-                )
+                painter.fillRect(pixmap.rect(), button.palette().color(QPalette.ButtonText))
                 painter.end()
                 button.setIcon(QIcon(pixmap))
 

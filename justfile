@@ -229,4 +229,3 @@ test-evdev:
         traceback.print_exc()
         sys.exit(1)
     '
-

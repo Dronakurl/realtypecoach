@@ -1,23 +1,23 @@
 """Analyzer for typing statistics and high scores."""
 
 import logging
+import threading
 import time
-from typing import Optional, Dict, List, Any, Tuple
 from collections import defaultdict
 from datetime import datetime
-import threading
+from typing import Any
 
-from core.storage import Storage
 from core.burst_detector import Burst
-from core.smoothing import apply_moving_average
 from core.models import (
+    DailyStats,
     DailySummaryDB,
     KeyPerformance,
-    WordStatisticsLite,
-    DailyStats,
-    WorstLetterChange,
     TypingTimeDataPoint,
+    WordStatisticsLite,
+    WorstLetterChange,
 )
+from core.smoothing import apply_moving_average
+from core.storage import Storage
 from utils.keycodes import is_letter_key
 
 log = logging.getLogger("realtypecoach.analyzer")
@@ -38,7 +38,7 @@ class Analyzer:
         """
         self.storage = storage
         self.running = False
-        self.thread: Optional[threading.Thread] = None
+        self.thread: threading.Thread | None = None
 
         self.today_date = datetime.now().strftime("%Y-%m-%d")
         self.today_stats: dict[str, Any] = {
@@ -54,13 +54,13 @@ class Analyzer:
 
         self.current_wpm: float = 0.0
         self.current_burst_wpm: float = 0.0
-        self.personal_best_today: Optional[float] = None
+        self.personal_best_today: float | None = None
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
 
         # Worst letter tracking state
-        self.worst_letter_keycode: Optional[int] = None
-        self.worst_letter_key_name: Optional[str] = None
+        self.worst_letter_keycode: int | None = None
+        self.worst_letter_key_name: str | None = None
         self.worst_letter_avg_time: float = 0.0
         self.last_worst_letter_notification: int = 0  # Timestamp of last notification
         self.worst_letter_debounce_ms: int = 300000  # 5 minutes default
@@ -98,9 +98,7 @@ class Analyzer:
                 self.today_stats["slowest_key_name"] = summary.slowest_key_name
         else:
             # No daily summary yet, calculate from bursts
-            startOfDay = int(
-                datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000
-            )
+            startOfDay = int(datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000)
             endOfDay = startOfDay + 86400000
 
             # Get burst statistics using adapter
@@ -166,9 +164,7 @@ class Analyzer:
         if burst.key_count == 0:
             return
 
-        burst_wpm = self._calculate_wpm(
-            burst.key_count, burst.duration_ms, burst.backspace_count
-        )
+        burst_wpm = self._calculate_wpm(burst.key_count, burst.duration_ms, burst.backspace_count)
 
         with self._lock:
             self.today_stats["total_bursts"] += 1
@@ -181,9 +177,7 @@ class Analyzer:
         if burst.qualifies_for_high_score:
             self._check_high_score(burst_wpm, burst.duration_ms, burst.key_count)
 
-    def _calculate_wpm(
-        self, key_count: int, duration_ms: int, backspace_count: int = 0
-    ) -> float:
+    def _calculate_wpm(self, key_count: int, duration_ms: int, backspace_count: int = 0) -> float:
         """Calculate words per minute.
 
         Uses NET productive keystrokes (total - 2*backspaces).
@@ -308,9 +302,7 @@ class Analyzer:
             return
 
         # Calculate total typing time from database
-        startOfDay = int(
-            datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000
-        )
+        startOfDay = int(datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000)
         endOfDay = startOfDay + 86400000
 
         total_typing_ms = self.storage.get_total_burst_duration(startOfDay, endOfDay)
@@ -324,7 +316,7 @@ class Analyzer:
             self.today_stats["total_keystrokes"], total_typing_ms
         )
 
-    def get_statistics(self) -> Dict:
+    def get_statistics(self) -> dict:
         """Get current statistics summary.
 
         Returns:
@@ -372,9 +364,7 @@ class Analyzer:
             "slowest_ms": slowest_ms,
         }
 
-    def get_slowest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get slowest keys from database.
 
         Args:
@@ -386,9 +376,7 @@ class Analyzer:
         """
         return self.storage.get_slowest_keys(limit, layout)
 
-    def get_fastest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_fastest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get fastest keys from database.
 
         Args:
@@ -401,8 +389,8 @@ class Analyzer:
         return self.storage.get_fastest_keys(limit, layout)
 
     def get_slowest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get slowest words from database.
 
         Args:
@@ -415,8 +403,8 @@ class Analyzer:
         return self.storage.get_slowest_words(limit, layout)
 
     def get_fastest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get fastest words from database.
 
         Args:
@@ -428,7 +416,7 @@ class Analyzer:
         """
         return self.storage.get_fastest_words(limit, layout)
 
-    def get_long_term_average_wpm(self) -> Optional[float]:
+    def get_long_term_average_wpm(self) -> float | None:
         """Get long-term average WPM across all recorded bursts.
 
         Returns:
@@ -445,7 +433,7 @@ class Analyzer:
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
 
-    def get_all_time_high_score(self) -> Optional[float]:
+    def get_all_time_high_score(self) -> float | None:
         """Get all-time highest WPM.
 
         Returns:
@@ -453,7 +441,7 @@ class Analyzer:
         """
         return self.storage.get_all_time_high_score()
 
-    def _check_worst_letter_change(self) -> Optional[WorstLetterChange]:
+    def _check_worst_letter_change(self) -> WorstLetterChange | None:
         """Check if worst letter has changed and return change data.
 
         Returns:
@@ -492,8 +480,7 @@ class Analyzer:
                     previous_time_ms=self.worst_letter_avg_time,
                     new_time_ms=current_worst.avg_press_time,
                     timestamp=current_time_ms,
-                    improvement=current_worst.avg_press_time
-                    < self.worst_letter_avg_time,
+                    improvement=current_worst.avg_press_time < self.worst_letter_avg_time,
                 )
 
                 # Update state
@@ -506,7 +493,7 @@ class Analyzer:
 
         return None
 
-    def get_daily_summary(self, date: str) -> Optional[DailySummaryDB]:
+    def get_daily_summary(self, date: str) -> DailySummaryDB | None:
         """Get daily summary for a date.
 
         Args:
@@ -517,9 +504,7 @@ class Analyzer:
         """
         return self.storage.get_daily_summary(date)
 
-    def get_wpm_burst_sequence(
-        self, smoothness: int = 1
-    ) -> Tuple[List[float], List[int]]:
+    def get_wpm_burst_sequence(self, smoothness: int = 1) -> tuple[list[float], list[int]]:
         """Get WPM values over burst sequence with moving average smoothing.
 
         Args:
@@ -544,10 +529,10 @@ class Analyzer:
     def get_typing_time_data(
         self,
         granularity: str = "day",
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         limit: int = 90,
-    ) -> List[TypingTimeDataPoint]:
+    ) -> list[TypingTimeDataPoint]:
         """Get typing time aggregated by time granularity.
 
         Args:
@@ -566,7 +551,7 @@ class Analyzer:
             limit=limit,
         )
 
-    def get_burst_wpm_histogram(self, bin_count: int = 50) -> List[Tuple[float, int]]:
+    def get_burst_wpm_histogram(self, bin_count: int = 50) -> list[tuple[float, int]]:
         """Get burst WPM distribution as histogram data.
 
         Args:

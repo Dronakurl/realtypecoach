@@ -25,9 +25,7 @@ class DailySummaryDB(BaseModel):
     slowest_keycode: int = Field(..., description="Slowest key keycode")
     slowest_key_name: str = Field(..., description="Slowest key name")
     total_typing_sec: int = Field(..., description="Total typing time in seconds")
-    summary_sent: bool = Field(
-        default=False, description="Whether daily summary was sent"
-    )
+    summary_sent: bool = Field(default=False, description="Whether daily summary was sent")
 
     model_config = ConfigDict(extra="ignore")
 
@@ -47,9 +45,7 @@ class WordStatisticsLite(BaseModel):
     """Lightweight word statistics for lists."""
 
     word: str = Field(..., description="The word")
-    avg_speed_ms_per_letter: float = Field(
-        ..., description="Average speed per letter in ms"
-    )
+    avg_speed_ms_per_letter: float = Field(..., description="Average speed per letter in ms")
     total_duration_ms: int = Field(..., description="Total duration in milliseconds")
     total_letters: int = Field(..., description="Total number of letters")
     rank: int = Field(default=0, description="Frequency rank (1=most frequent)")
@@ -62,9 +58,7 @@ class WordStatisticsFull(BaseModel):
 
     word: str = Field(..., description="The word")
     layout: str = Field(..., description="Keyboard layout")
-    avg_speed_ms_per_letter: float = Field(
-        ..., description="Average speed per letter in ms"
-    )
+    avg_speed_ms_per_letter: float = Field(..., description="Average speed per letter in ms")
     total_letters: int = Field(..., description="Total number of letters")
     total_duration_ms: int = Field(..., description="Total duration in milliseconds")
     observation_count: int = Field(..., description="Number of observations")
@@ -89,9 +83,7 @@ class TypingTimeDataPoint(BaseModel):
 
     period_start: int = Field(..., description="Period start timestamp (ms)")
     period_end: int = Field(..., description="Period end timestamp (ms)")
-    period_label: str = Field(
-        ..., description="Human-readable period label (e.g., '2025-01-15')"
-    )
+    period_label: str = Field(..., description="Human-readable period label (e.g., '2025-01-15')")
     total_typing_ms: int = Field(..., description="Total typing time in milliseconds")
     total_bursts: int = Field(..., description="Number of bursts in period")
     avg_wpm: float = Field(..., description="Average WPM for the period")
@@ -145,9 +137,7 @@ class DailyStats(BaseModel):
     slowest_keycode: int | None = Field(default=None, description="Slowest key keycode")
     slowest_key_name: str | None = Field(default=None, description="Slowest key name")
     slowest_ms: float = Field(default=0.0, description="Slowest key time in ms")
-    keypress_times: dict[int, float] = Field(
-        default_factory=dict, description="Intervals per key"
-    )
+    keypress_times: dict[int, float] = Field(default_factory=dict, description="Intervals per key")
     last_press_time: int = Field(default=0, description="Last press time (global)")
 
     model_config = ConfigDict(extra="ignore")

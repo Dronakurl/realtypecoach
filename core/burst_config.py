@@ -1,6 +1,7 @@
 """Burst detector configuration with Pydantic validation."""
 
 from enum import Enum
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 

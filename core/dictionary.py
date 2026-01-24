@@ -1,7 +1,7 @@
 """Dictionary validation for multiple languages."""
 
-from pathlib import Path
 import logging
+from pathlib import Path
 
 from core.dictionary_config import DictionaryConfig
 
@@ -88,17 +88,13 @@ class Dictionary:
 
         # Log final state
         if self.accept_all_mode:
-            log.warning(
-                "Dictionary in accept-all mode - all words (3+ letters) will be valid"
-            )
+            log.warning("Dictionary in accept-all mode - all words (3+ letters) will be valid")
         else:
             loaded = self.get_loaded_languages()
             if loaded:
                 log.info(f"Dictionary loaded for languages: {', '.join(loaded)}")
 
-    def _determine_languages_to_load(
-        self, config: DictionaryConfig
-    ) -> tuple[dict[str, str], bool]:
+    def _determine_languages_to_load(self, config: DictionaryConfig) -> tuple[dict[str, str], bool]:
         """Determine which languages to load and whether to use accept_all mode.
 
         Args:
@@ -128,29 +124,19 @@ class Dictionary:
                     filename = Path(path).name.lower()
                     if "ngerman" in filename or "german" in filename:
                         resolved_paths["de"] = path
-                    elif (
-                        "american" in filename
-                        or "english" in filename
-                        or "words" in filename
-                    ):
+                    elif "american" in filename or "english" in filename or "words" in filename:
                         resolved_paths["en"] = path
                     else:
                         log.warning(f"Could not detect language for {path}")
 
             if resolved_paths:
-                log.info(
-                    f"Loading specific dictionaries: {list(resolved_paths.keys())}"
-                )
+                log.info(f"Loading specific dictionaries: {list(resolved_paths.keys())}")
                 return resolved_paths, False
             elif config.auto_fallback:
-                log.warning(
-                    "No valid specific dictionaries found, enabling accept-all mode"
-                )
+                log.warning("No valid specific dictionaries found, enabling accept-all mode")
                 return {}, True
             else:
-                log.error(
-                    "No valid specific dictionaries found and auto_fallback is disabled"
-                )
+                log.error("No valid specific dictionaries found and auto_fallback is disabled")
                 return {}, False
 
         # Legacy behavior: use enabled_languages
@@ -199,16 +185,12 @@ class Dictionary:
 
         # Load dictionary
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as f:
-                self.words[language_code] = set(
-                    line.strip().lower() for line in f if line.strip()
-                )
+            with open(path, encoding="utf-8", errors="replace") as f:
+                self.words[language_code] = set(line.strip().lower() for line in f if line.strip())
             self.loaded_paths[language_code] = path
-            log.info(
-                f"Loaded {len(self.words[language_code])} {language_code} words from {path}"
-            )
+            log.info(f"Loaded {len(self.words[language_code])} {language_code} words from {path}")
             return True
-        except (PermissionError, UnicodeDecodeError, OSError, IOError) as e:
+        except (PermissionError, UnicodeDecodeError, OSError) as e:
             log.error(f"Error loading {language_code} dictionary from {path}: {e}")
             return False
 

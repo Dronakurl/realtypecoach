@@ -5,23 +5,21 @@ different database backends (SQLite, PostgreSQL) using the adapter pattern.
 """
 
 import logging
-import time
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from core.database_adapter import DatabaseAdapter, AdapterError
-from core.models import (
-    DailySummaryDB,
-    KeyPerformance,
-    WordStatisticsLite,
-    BurstTimeSeries,
-    WordInfo,
-    TypingTimeDataPoint,
-)
+from core.database_adapter import AdapterError, DatabaseAdapter
 from core.dictionary import Dictionary
 from core.dictionary_config import DictionaryConfig
+from core.models import (
+    BurstTimeSeries,
+    DailySummaryDB,
+    KeyPerformance,
+    TypingTimeDataPoint,
+    WordInfo,
+    WordStatisticsLite,
+)
 from core.word_detector import WordDetector
 from utils.config import Config
 from utils.crypto import CryptoManager
@@ -44,7 +42,7 @@ class Storage:
         db_path: Path,
         config: Config,
         word_boundary_timeout_ms: int = 1000,
-        dictionary_config: Optional[DictionaryConfig] = None,
+        dictionary_config: DictionaryConfig | None = None,
     ):
         """Initialize storage with database adapter.
 
@@ -79,7 +77,7 @@ class Storage:
         )
 
         # Reference to analyzer (set later)
-        self._analyzer: Optional["Analyzer"] = None
+        self._analyzer: Analyzer | None = None
 
     def _create_adapter(self) -> DatabaseAdapter:
         """Create and initialize database adapter based on configuration.
@@ -153,6 +151,7 @@ class Storage:
         # Fallback to secret file (for non-interactive environments)
         # Look in project directory (where this file is located)
         from importlib.util import find_spec
+
         core_spec = find_spec("core.storage")
         if core_spec and core_spec.origin:
             project_dir = Path(core_spec.origin).parent.parent
@@ -162,7 +161,7 @@ class Storage:
         secret_file = project_dir / "dronakurl.postgres.secret"
         if secret_file.exists():
             try:
-                with open(secret_file, "r") as f:
+                with open(secret_file) as f:
                     password = f.read().strip()
                 if password:
                     log.info("Using PostgreSQL password from secret file")
@@ -198,7 +197,7 @@ class Storage:
 
     # ========== Language/Word Detection Methods (Non-Database) ==========
 
-    def _get_language_from_layout(self, layout: str) -> Optional[str]:
+    def _get_language_from_layout(self, layout: str) -> str | None:
         """Get language code from layout identifier.
 
         Also checks loaded dictionaries to ensure language is available.
@@ -263,9 +262,7 @@ class Storage:
 
         return language
 
-    def _store_word_from_state(
-        self, conn, word_info: WordInfo
-    ) -> None:
+    def _store_word_from_state(self, conn, word_info: WordInfo) -> None:
         """Store word from WordDetector state with editing metadata.
 
         Args:
@@ -292,9 +289,7 @@ class Storage:
         # Update key statistics for keystrokes in this valid dictionary word
         self._process_keystroke_timings(conn, word_info)
 
-    def _process_keystroke_timings(
-        self, conn, word_info: WordInfo
-    ) -> None:
+    def _process_keystroke_timings(self, conn, word_info: WordInfo) -> None:
         """Update key statistics from keystrokes in a valid dictionary word.
 
         Only processes letter keystrokes that are part of valid dictionary words.
@@ -307,9 +302,7 @@ class Storage:
         from core.analyzer import BURST_TIMEOUT_MS
 
         letter_keystrokes = [
-            ks
-            for ks in word_info.keystrokes
-            if ks.type == "letter" and ks.keycode is not None
+            ks for ks in word_info.keystrokes if ks.type == "letter" and ks.keycode is not None
         ]
 
         for i in range(len(letter_keystrokes)):
@@ -372,9 +365,7 @@ class Storage:
             qualifies_for_high_score=burst.qualifies_for_high_score,
         )
 
-    def get_bursts_for_timeseries(
-        self, start_ms: int, end_ms: int
-    ) -> List[BurstTimeSeries]:
+    def get_bursts_for_timeseries(self, start_ms: int, end_ms: int) -> list[BurstTimeSeries]:
         """Get burst data for time-series graph.
 
         Args:
@@ -386,7 +377,7 @@ class Storage:
         """
         return self.adapter.get_bursts_for_timeseries(start_ms, end_ms)
 
-    def get_burst_wpm_histogram(self, bin_count: int = 50) -> List[tuple]:
+    def get_burst_wpm_histogram(self, bin_count: int = 50) -> list[tuple]:
         """Get burst WPM distribution as histogram data.
 
         Args:
@@ -397,9 +388,7 @@ class Storage:
         """
         return self.adapter.get_burst_wpm_histogram(bin_count)
 
-    def get_recent_bursts(
-        self, limit: int = 3
-    ) -> List[tuple]:
+    def get_recent_bursts(self, limit: int = 3) -> list[tuple]:
         """Get the most recent bursts.
 
         Args:
@@ -418,9 +407,7 @@ class Storage:
         """
         return self.adapter.get_burst_duration_stats_ms()
 
-    def get_burst_stats_for_date_range(
-        self, start_ms: int, end_ms: int
-    ) -> tuple[int, int]:
+    def get_burst_stats_for_date_range(self, start_ms: int, end_ms: int) -> tuple[int, int]:
         """Get burst statistics for a date range.
 
         Args:
@@ -432,9 +419,7 @@ class Storage:
         """
         return self.adapter.get_burst_stats_for_date_range(start_ms, end_ms)
 
-    def get_burst_wpms_for_threshold(
-        self, start_ms: int, min_duration_ms: int
-    ) -> list[float]:
+    def get_burst_wpms_for_threshold(self, start_ms: int, min_duration_ms: int) -> list[float]:
         """Get burst WPMS for threshold calculation.
 
         Args:
@@ -461,10 +446,10 @@ class Storage:
     def get_typing_time_by_granularity(
         self,
         granularity: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         limit: int = 90,
-    ) -> List[TypingTimeDataPoint]:
+    ) -> list[TypingTimeDataPoint]:
         """Get typing time aggregated by time granularity.
 
         Args:
@@ -476,9 +461,7 @@ class Storage:
         Returns:
             List of TypingTimeDataPoint models ordered by period_start
         """
-        return self.adapter.get_typing_time_by_granularity(
-            granularity, start_date, end_date, limit
-        )
+        return self.adapter.get_typing_time_by_granularity(granularity, start_date, end_date, limit)
 
     # Key Statistics Operations
 
@@ -495,9 +478,7 @@ class Storage:
         """
         self.adapter.update_key_statistics(keycode, key_name, layout, press_time_ms)
 
-    def get_slowest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get slowest keys (highest average press time).
 
         Args:
@@ -509,9 +490,7 @@ class Storage:
         """
         return self.adapter.get_slowest_keys(limit, layout)
 
-    def get_fastest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_fastest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get fastest keys (lowest average press time).
 
         Args:
@@ -549,8 +528,8 @@ class Storage:
         )
 
     def get_slowest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get slowest words (highest average time per letter).
 
         Args:
@@ -563,8 +542,8 @@ class Storage:
         return self.adapter.get_slowest_words(limit, layout)
 
     def get_fastest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get fastest words (lowest average time per letter).
 
         Args:
@@ -578,9 +557,7 @@ class Storage:
 
     # High Score Operations
 
-    def store_high_score(
-        self, date: str, wpm: float, duration_ms: int, key_count: int
-    ) -> None:
+    def store_high_score(self, date: str, wpm: float, duration_ms: int, key_count: int) -> None:
         """Store a high score for a date.
 
         Args:
@@ -591,7 +568,7 @@ class Storage:
         """
         self.adapter.store_high_score(date, wpm, duration_ms, key_count)
 
-    def get_today_high_score(self, date: str) -> Optional[float]:
+    def get_today_high_score(self, date: str) -> float | None:
         """Get today's highest WPM.
 
         Args:
@@ -602,7 +579,7 @@ class Storage:
         """
         return self.adapter.get_today_high_score(date)
 
-    def get_all_time_high_score(self) -> Optional[float]:
+    def get_all_time_high_score(self) -> float | None:
         """Get all-time highest WPM.
 
         Returns:
@@ -634,11 +611,16 @@ class Storage:
             total_typing_sec: Total typing time today (seconds)
         """
         self.adapter.update_daily_summary(
-            date, total_keystrokes, total_bursts, avg_wpm,
-            slowest_keycode, slowest_key_name, total_typing_sec
+            date,
+            total_keystrokes,
+            total_bursts,
+            avg_wpm,
+            slowest_keycode,
+            slowest_key_name,
+            total_typing_sec,
         )
 
-    def get_daily_summary(self, date: str) -> Optional[DailySummaryDB]:
+    def get_daily_summary(self, date: str) -> DailySummaryDB | None:
         """Get daily summary for a date.
 
         Args:
@@ -670,9 +652,7 @@ class Storage:
         """
         return self.adapter.get_all_time_typing_time(exclude_today)
 
-    def get_all_time_keystrokes_and_bursts(
-        self, exclude_today: str = None
-    ) -> tuple[int, int]:
+    def get_all_time_keystrokes_and_bursts(self, exclude_today: str = None) -> tuple[int, int]:
         """Get all-time total keystrokes and bursts from adapter.
 
         Args:

@@ -1,7 +1,7 @@
 """Burst detection for continuous typing periods."""
 
 import logging
-from typing import Callable, Optional, List
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from core.burst_config import BurstDetectorConfig, DurationCalculationMethod
@@ -30,7 +30,7 @@ class BurstDetector:
     def __init__(
         self,
         config: BurstDetectorConfig,
-        on_burst_complete: Optional[Callable[[Burst], None]] = None,
+        on_burst_complete: Callable[[Burst], None] | None = None,
     ):
         """Initialize burst detector.
 
@@ -40,13 +40,13 @@ class BurstDetector:
         """
         self.config = config
         self.on_burst_complete = on_burst_complete
-        self.current_burst: Optional[Burst] = None
-        self.last_key_time_ms: Optional[int] = None
-        self._current_timestamps: List[int] = []
+        self.current_burst: Burst | None = None
+        self.last_key_time_ms: int | None = None
+        self._current_timestamps: list[int] = []
 
     def process_key_event(
         self, timestamp_ms: int, is_press: bool, is_backspace: bool = False
-    ) -> Optional[Burst]:
+    ) -> Burst | None:
         """Process a key event and detect bursts.
 
         Args:
@@ -71,9 +71,7 @@ class BurstDetector:
                 backspace_count=backspace_count,
                 net_key_count=0 if is_backspace else 1,
                 duration_ms=0,
-                backspace_ratio=float(
-                    backspace_count
-                ),  # 1.0 if backspace, 0.0 otherwise
+                backspace_ratio=float(backspace_count),  # 1.0 if backspace, 0.0 otherwise
             )
             return None
 
@@ -93,8 +91,7 @@ class BurstDetector:
                 # Calculate backspace ratio
                 if self.current_burst.key_count > 0:
                     self.current_burst.backspace_ratio = (
-                        self.current_burst.backspace_count
-                        / self.current_burst.key_count
+                        self.current_burst.backspace_count / self.current_burst.key_count
                     )
                 self.current_burst.end_time_ms = timestamp_ms
                 self._current_timestamps.append(timestamp_ms)
@@ -102,9 +99,7 @@ class BurstDetector:
             self.last_key_time_ms = timestamp_ms
             return None
 
-    def _complete_burst(
-        self, timestamp_ms: int, is_backspace: bool = False
-    ) -> Optional[Burst]:
+    def _complete_burst(self, timestamp_ms: int, is_backspace: bool = False) -> Burst | None:
         """Complete current burst and start new one.
 
         Args:
@@ -128,8 +123,7 @@ class BurstDetector:
 
             if meets_min_criteria:
                 self.current_burst.qualifies_for_high_score = (
-                    self.current_burst.duration_ms
-                    >= self.config.high_score_min_duration_ms
+                    self.current_burst.duration_ms >= self.config.high_score_min_duration_ms
                 )
                 completed_burst = self.current_burst
 
@@ -163,10 +157,7 @@ class BurstDetector:
         if not self.current_burst or len(self._current_timestamps) < 2:
             return 0
 
-        if (
-            self.config.duration_calculation_method
-            == DurationCalculationMethod.ACTIVE_TIME
-        ):
+        if self.config.duration_calculation_method == DurationCalculationMethod.ACTIVE_TIME:
             return self._calculate_active_time_duration()
         else:  # TOTAL_TIME
             return self._calculate_total_time_duration()
@@ -199,7 +190,7 @@ class BurstDetector:
 
         return active_duration
 
-    def get_current_burst_info(self) -> Optional[BurstInfo]:
+    def get_current_burst_info(self) -> BurstInfo | None:
         """Get information about current active burst.
 
         Returns:

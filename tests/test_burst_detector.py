@@ -2,8 +2,8 @@
 
 import pytest
 
-from core.burst_detector import Burst, BurstDetector
 from core.burst_config import BurstDetectorConfig
+from core.burst_detector import Burst, BurstDetector
 
 
 class TestBurst:

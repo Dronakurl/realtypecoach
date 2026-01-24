@@ -1,10 +1,9 @@
 """Encryption key management using system keyring."""
 
 import hashlib
-import secrets
 import logging
+import secrets
 from pathlib import Path
-from typing import Optional
 
 try:
     import keyring
@@ -43,7 +42,7 @@ class CryptoManager:
             )
 
         self.db_path = db_path
-        self._cached_key: Optional[bytes] = None
+        self._cached_key: bytes | None = None
 
         # Migrate legacy key for existing databases
         self._migrate_legacy_key_if_needed()
@@ -54,12 +53,10 @@ class CryptoManager:
         Returns:
             Tuple of (service, username) for keyring operations
         """
-        path_hash = hashlib.sha256(str(self.db_path.resolve()).encode()).hexdigest()[
-            :16
-        ]
+        path_hash = hashlib.sha256(str(self.db_path.resolve()).encode()).hexdigest()[:16]
         return f"realtypecoach_{path_hash}", f"db_key_{path_hash}"
 
-    def _get_legacy_key(self) -> Optional[bytes]:
+    def _get_legacy_key(self) -> bytes | None:
         """Get legacy hardcoded key if it exists.
 
         Returns:
@@ -138,7 +135,7 @@ class CryptoManager:
         except KeyringError as e:
             raise RuntimeError(f"Failed to store key in keyring: {e}")
 
-    def get_key(self) -> Optional[bytes]:
+    def get_key(self) -> bytes | None:
         """Retrieve encryption key from keyring.
 
         Returns:
@@ -240,7 +237,7 @@ class CryptoManager:
         except KeyringError as e:
             raise RuntimeError(f"Failed to store PostgreSQL password in keyring: {e}")
 
-    def get_postgres_password(self) -> Optional[str]:
+    def get_postgres_password(self) -> str | None:
         """Retrieve PostgreSQL password from keyring.
 
         Returns:

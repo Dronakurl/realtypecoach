@@ -1,10 +1,9 @@
 """Dictionary detection and language identification."""
 
-from pathlib import Path
-import re
-from typing import List, Optional, Dict
-from dataclasses import dataclass, field
 import logging
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
 
 log = logging.getLogger("realtypecoach.dict_detector")
 
@@ -16,9 +15,9 @@ class DictionaryInfo:
     path: str
     language_code: str  # 'en', 'de', 'fr', etc.
     language_name: str  # 'English', 'German', etc.
-    variant: Optional[str] = field(default=None)  # 'american', 'british', 'swiss', etc.
+    variant: str | None = field(default=None)  # 'american', 'british', 'swiss', etc.
     available: bool = field(default=False)
-    word_count: Optional[int] = field(default=None)
+    word_count: int | None = field(default=None)
 
 
 class DictionaryDetector:
@@ -31,7 +30,7 @@ class DictionaryDetector:
         str(Path.home() / ".local" / "share" / "dict"),
     ]
 
-    LANGUAGE_PATTERNS: Dict[str, List[str]] = {
+    LANGUAGE_PATTERNS: dict[str, list[str]] = {
         "en": [r"words$", r"american-english", r"british-english", r"english"],
         "de": [r"ngerman", r"ogerman", r"german", r"swiss"],
         "fr": [r"french"],
@@ -43,7 +42,7 @@ class DictionaryDetector:
         "ru": [r"russian"],
     }
 
-    LANGUAGE_NAMES: Dict[str, str] = {
+    LANGUAGE_NAMES: dict[str, str] = {
         "en": "English",
         "de": "German",
         "fr": "French",
@@ -55,7 +54,7 @@ class DictionaryDetector:
         "ru": "Russian",
     }
 
-    VARIANTS: Dict[str, Dict[str, str]] = {
+    VARIANTS: dict[str, dict[str, str]] = {
         "en": {
             "words": "General",
             "american-english": "American",
@@ -69,13 +68,12 @@ class DictionaryDetector:
     }
 
     # Pre-compiled regex patterns for performance
-    _COMPILED_PATTERNS: Dict[str, List[re.Pattern]] = {
-        lang: [re.compile(p) for p in patterns]
-        for lang, patterns in LANGUAGE_PATTERNS.items()
+    _COMPILED_PATTERNS: dict[str, list[re.Pattern]] = {
+        lang: [re.compile(p) for p in patterns] for lang, patterns in LANGUAGE_PATTERNS.items()
     }
 
     @staticmethod
-    def detect_available() -> List[DictionaryInfo]:
+    def detect_available() -> list[DictionaryInfo]:
         """Scan system for available dictionary files.
 
         Returns:
@@ -122,7 +120,7 @@ class DictionaryDetector:
         return dictionaries
 
     @staticmethod
-    def identify_dictionary(file_path: str) -> Optional[DictionaryInfo]:
+    def identify_dictionary(file_path: str) -> DictionaryInfo | None:
         """Identify dictionary language and variant from filename.
 
         Args:
@@ -185,7 +183,7 @@ class DictionaryDetector:
 
         try:
             # Check if file is readable and has at least one line
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(path, encoding="utf-8", errors="ignore") as f:
                 line_count = 0
                 MAX_LINES_TO_CHECK = 10  # Don't read entire file for validation
                 for line in f:
@@ -200,7 +198,7 @@ class DictionaryDetector:
             return False
 
     @staticmethod
-    def count_words(path: str) -> Optional[int]:
+    def count_words(path: str) -> int | None:
         """Count number of words in dictionary file.
 
         Args:
@@ -210,8 +208,8 @@ class DictionaryDetector:
             Word count or None if unable to count
         """
         try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(path, encoding="utf-8", errors="ignore") as f:
                 return sum(1 for line in f if line.strip())
-        except (PermissionError, UnicodeDecodeError, OSError, IOError) as e:
+        except (PermissionError, UnicodeDecodeError, OSError) as e:
             log.debug(f"Could not count words in {path}: {e}")
             return None

@@ -182,16 +182,12 @@ class TestWordState:
 
     def test_wordstate_max_correction_window_custom(self):
         """Test that WordState can have custom correction window."""
-        state = WordState(
-            start_time_ms=1000, layout="us", max_correction_window_ms=5000
-        )
+        state = WordState(start_time_ms=1000, layout="us", max_correction_window_ms=5000)
         assert state.max_correction_window_ms == 5000
 
     def test_wordstate_handle_backspace_within_window(self):
         """Test WordState.handle_backspace within correction window."""
-        state = WordState(
-            start_time_ms=1000, layout="us", max_correction_window_ms=3000
-        )
+        state = WordState(start_time_ms=1000, layout="us", max_correction_window_ms=3000)
         state.word = "hello"
         state.last_keystroke_time_ms = 2000
 
@@ -203,9 +199,7 @@ class TestWordState:
 
     def test_wordstate_handle_backspace_outside_window(self):
         """Test WordState.handle_backspace outside correction window."""
-        state = WordState(
-            start_time_ms=1000, layout="us", max_correction_window_ms=3000
-        )
+        state = WordState(start_time_ms=1000, layout="us", max_correction_window_ms=3000)
         state.word = "hello"
         state.last_keystroke_time_ms = 2000
 

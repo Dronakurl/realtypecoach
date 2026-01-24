@@ -1,11 +1,10 @@
 """PostgreSQL adapter for RealTypeCoach database operations."""
 
 import csv
+import logging
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
-import logging
 
 try:
     import psycopg2
@@ -15,13 +14,13 @@ try:
 except ImportError:
     psycopg2 = None
 
-from core.database_adapter import DatabaseAdapter, AdapterError, ConnectionError, QueryError
+from core.database_adapter import AdapterError, ConnectionError, DatabaseAdapter
 from core.models import (
+    BurstTimeSeries,
     DailySummaryDB,
     KeyPerformance,
-    WordStatisticsLite,
-    BurstTimeSeries,
     TypingTimeDataPoint,
+    WordStatisticsLite,
 )
 
 log = logging.getLogger("realtypecoach.postgres_adapter")
@@ -59,8 +58,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """
         if psycopg2 is None:
             raise ImportError(
-                "psycopg2 is not installed. "
-                "Install it with: pip install psycopg2-binary"
+                "psycopg2 is not installed. Install it with: pip install psycopg2-binary"
             )
 
         self.host = host
@@ -72,7 +70,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self.min_connections = min_connections
         self.max_connections = max_connections
 
-        self._connection_pool: Optional[pool.SimpleConnectionPool] = None
+        self._connection_pool: pool.SimpleConnectionPool | None = None
 
         # Initialize cache for all-time statistics
         self._cache_all_time_typing_sec = 0
@@ -156,9 +154,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 net_key_count INTEGER DEFAULT 0
             )
         """)
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_bursts_start_time ON bursts(start_time)"
-        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_bursts_start_time ON bursts(start_time)")
 
     def _create_statistics_table(self, conn: connection) -> None:
         """Create statistics table."""
@@ -281,9 +277,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self._cache_all_time_keystrokes += net_key_count
         self._cache_all_time_bursts += 1
 
-    def get_bursts_for_timeseries(
-        self, start_ms: int, end_ms: int
-    ) -> List[BurstTimeSeries]:
+    def get_bursts_for_timeseries(self, start_ms: int, end_ms: int) -> list[BurstTimeSeries]:
         """Get burst data for time-series graph."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -299,15 +293,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
             rows = cursor.fetchall()
             return [BurstTimeSeries(timestamp_ms=r[0], avg_wpm=r[1]) for r in rows]
 
-    def get_burst_wpm_histogram(self, bin_count: int = 50) -> List[Tuple[float, int]]:
+    def get_burst_wpm_histogram(self, bin_count: int = 50) -> list[tuple[float, int]]:
         """Get burst WPM distribution as histogram data."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
             # Get all WPM values
-            cursor.execute(
-                "SELECT avg_wpm FROM bursts WHERE avg_wpm IS NOT NULL ORDER BY avg_wpm"
-            )
+            cursor.execute("SELECT avg_wpm FROM bursts WHERE avg_wpm IS NOT NULL ORDER BY avg_wpm")
             wpm_values = [row[0] for row in cursor.fetchall()]
 
             if not wpm_values:
@@ -336,12 +328,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             # Filter empty bins
             return [
-                (center, count) for center, count in zip(bin_centers, bins) if count > 0
+                (center, count)
+                for center, count in zip(bin_centers, bins, strict=False)
+                if count > 0
             ]
 
-    def get_recent_bursts(
-        self, limit: int = 3
-    ) -> List[Tuple[int, float, int, int, int, int, str]]:
+    def get_recent_bursts(self, limit: int = 3) -> list[tuple[int, float, int, int, int, int, str]]:
         """Get the most recent bursts."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -394,7 +386,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             return bursts
 
-    def get_burst_duration_stats_ms(self) -> Tuple[int, int, int]:
+    def get_burst_duration_stats_ms(self) -> tuple[int, int, int]:
         """Get burst duration statistics across all bursts."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -411,9 +403,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 return (int(result[0]), int(result[1]), int(result[2]))
             return (0, 0, 0)
 
-    def get_burst_stats_for_date_range(
-        self, start_ms: int, end_ms: int
-    ) -> Tuple[int, int]:
+    def get_burst_stats_for_date_range(self, start_ms: int, end_ms: int) -> tuple[int, int]:
         """Get burst statistics for a date range."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -440,9 +430,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             return (total_keystrokes, total_bursts)
 
-    def get_burst_wpms_for_threshold(
-        self, start_ms: int, min_duration_ms: int
-    ) -> List[float]:
+    def get_burst_wpms_for_threshold(self, start_ms: int, min_duration_ms: int) -> list[float]:
         """Get burst WPMS for threshold calculation."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -472,18 +460,15 @@ class PostgreSQLAdapter(DatabaseAdapter):
     def get_typing_time_by_granularity(
         self,
         granularity: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         limit: int = 90,
-    ) -> List[TypingTimeDataPoint]:
+    ) -> list[TypingTimeDataPoint]:
         """Get typing time aggregated by time granularity."""
         # Calculate date range
         if end_date:
             end_ms = int(
-                (
-                    datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
-                ).timestamp()
-                * 1000
+                (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp() * 1000
             )
         else:
             end_ms = int(time.time() * 1000)
@@ -669,9 +654,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             conn.commit()
 
-    def get_slowest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get slowest keys (highest average press time)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -681,7 +664,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             if layout:
                 cursor.execute(
-                    f"""
+                    """
                     SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
                     FROM statistics s
                     INNER JOIN (
@@ -698,7 +681,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 )
             else:
                 cursor.execute(
-                    f"""
+                    """
                     SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
                     FROM statistics s
                     INNER JOIN (
@@ -715,15 +698,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 )
             rows = cursor.fetchall()
             return [
-                KeyPerformance(
-                    keycode=r[0], key_name=r[1], avg_press_time=r[2], rank=r[3]
-                )
+                KeyPerformance(keycode=r[0], key_name=r[1], avg_press_time=r[2], rank=r[3])
                 for r in rows
             ]
 
-    def get_fastest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_fastest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get fastest keys (lowest average press time)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -733,7 +712,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             if layout:
                 cursor.execute(
-                    f"""
+                    """
                     SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
                     FROM statistics s
                     INNER JOIN (
@@ -750,7 +729,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 )
             else:
                 cursor.execute(
-                    f"""
+                    """
                     SELECT s.keycode, s.key_name, s.avg_press_time, freq_rank.rank
                     FROM statistics s
                     INNER JOIN (
@@ -767,9 +746,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 )
             rows = cursor.fetchall()
             return [
-                KeyPerformance(
-                    keycode=r[0], key_name=r[1], avg_press_time=r[2], rank=r[3]
-                )
+                KeyPerformance(keycode=r[0], key_name=r[1], avg_press_time=r[2], rank=r[3])
                 for r in rows
             ]
 
@@ -868,8 +845,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
             conn.commit()
 
     def get_slowest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get slowest words (highest average time per letter)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -921,8 +898,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
             ]
 
     def get_fastest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get fastest words (lowest average time per letter)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -975,9 +952,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
     # ========== High Score Operations ==========
 
-    def store_high_score(
-        self, date: str, wpm: float, duration_ms: int, key_count: int
-    ) -> None:
+    def store_high_score(self, date: str, wpm: float, duration_ms: int, key_count: int) -> None:
         """Store a high score for a date."""
         timestamp_ms = int(time.time() * 1000)
         duration_sec = duration_ms / 1000.0
@@ -993,7 +968,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             conn.commit()
 
-    def get_today_high_score(self, date: str) -> Optional[float]:
+    def get_today_high_score(self, date: str) -> float | None:
         """Get today's highest WPM."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -1006,7 +981,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
 
-    def get_all_time_high_score(self) -> Optional[float]:
+    def get_all_time_high_score(self) -> float | None:
         """Get all-time highest WPM."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -1059,7 +1034,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             conn.commit()
 
-    def get_daily_summary(self, date: str) -> Optional[DailySummaryDB]:
+    def get_daily_summary(self, date: str) -> DailySummaryDB | None:
         """Get daily summary for a date."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -1098,13 +1073,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
     # ========== All-Time Statistics ==========
 
-    def get_all_time_typing_time(self, exclude_today: Optional[str] = None) -> int:
+    def get_all_time_typing_time(self, exclude_today: str | None = None) -> int:
         """Get all-time total typing time."""
         if exclude_today:
             # Calculate today's time and subtract from cache
-            start_of_day = int(
-                datetime.strptime(exclude_today, "%Y-%m-%d").timestamp() * 1000
-            )
+            start_of_day = int(datetime.strptime(exclude_today, "%Y-%m-%d").timestamp() * 1000)
             end_of_day = start_of_day + 86400000
 
             with self.get_connection() as conn:
@@ -1122,13 +1095,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
         return self._cache_all_time_typing_sec
 
     def get_all_time_keystrokes_and_bursts(
-        self, exclude_today: Optional[str] = None
-    ) -> Tuple[int, int]:
+        self, exclude_today: str | None = None
+    ) -> tuple[int, int]:
         """Get all-time total keystrokes and bursts."""
         if exclude_today:
-            start_of_day = int(
-                datetime.strptime(exclude_today, "%Y-%m-%d").timestamp() * 1000
-            )
+            start_of_day = int(datetime.strptime(exclude_today, "%Y-%m-%d").timestamp() * 1000)
             end_of_day = start_of_day + 86400000
 
             with self.get_connection() as conn:
@@ -1157,12 +1128,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if retention_days < 0:
             return
 
-        cutoff_ms = int(
-            (datetime.now() - timedelta(days=retention_days)).timestamp() * 1000
-        )
-        cutoff_date = (datetime.now() - timedelta(days=retention_days)).strftime(
-            "%Y-%m-%d"
-        )
+        cutoff_ms = int((datetime.now() - timedelta(days=retention_days)).timestamp() * 1000)
+        cutoff_date = (datetime.now() - timedelta(days=retention_days)).strftime("%Y-%m-%d")
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM bursts WHERE start_time < %s", (cutoff_ms,))

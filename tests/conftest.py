@@ -1,8 +1,9 @@
 """Shared test fixtures for RealTypeCoach tests."""
 
-import pytest
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from utils.crypto import CryptoManager
 

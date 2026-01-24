@@ -1,10 +1,10 @@
 """Keyboard layout detection for RealTypeCoach."""
 
+import logging
 import os
 import subprocess
 import threading
-import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 log = logging.getLogger("realtypecoach.layout_monitor")
 
@@ -49,14 +49,14 @@ def _query_layout_sources() -> list[str]:
 
     # Method 3: Read /etc/default/keyboard
     try:
-        with open(KEYBOARD_FILE_PATH, "r") as f:
+        with open(KEYBOARD_FILE_PATH) as f:
             for line in f:
                 if line.startswith("XKBLAYOUT="):
                     # Handle both XKBLAYOUT="de" and XKBLAYOUT=de
                     layout = line.split("=")[1].strip().strip("\"'")
                     if layout:
                         return [layout.strip().lower() for layout in layout.split(",")]
-    except (FileNotFoundError, IOError, IndexError):
+    except (OSError, FileNotFoundError, IndexError):
         pass
 
     # Method 4: Use setxkbmap (X11/Xwayland fallback)
@@ -124,7 +124,7 @@ class LayoutMonitor:
         self.current_layout = get_current_layout()
         self.running = False
         self._stop_event = threading.Event()
-        self.thread: Optional[threading.Thread] = None
+        self.thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
     def start(self) -> None:

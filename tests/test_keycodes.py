@@ -1,12 +1,12 @@
 """Tests for utils.keycodes module."""
 
 from utils.keycodes import (
-    get_key_name,
-    is_supported_layout,
-    is_letter_key,
-    US_KEYCODE_TO_NAME,
     DE_KEYCODE_TO_NAME,
     LAYOUT_KEYCODE_MAPPINGS,
+    US_KEYCODE_TO_NAME,
+    get_key_name,
+    is_letter_key,
+    is_supported_layout,
 )
 
 

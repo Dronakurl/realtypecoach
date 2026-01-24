@@ -1,10 +1,11 @@
 """Tests for core.evdev_handler module."""
 
-import pytest
-from unittest.mock import MagicMock, patch
 from queue import Queue
+from unittest.mock import MagicMock, patch
 
-from core.evdev_handler import EvdevHandler, KeyEvent, EVDEV_AVAILABLE
+import pytest
+
+from core.evdev_handler import EVDEV_AVAILABLE, EvdevHandler, KeyEvent
 
 
 @pytest.fixture
@@ -286,9 +287,7 @@ class TestProcessEvent:
 
     @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
     @patch("core.evdev_handler.get_key_name")
-    def test_process_key_event_press(
-        self, mock_get_key_name, event_queue, mock_layout_getter
-    ):
+    def test_process_key_event_press(self, mock_get_key_name, event_queue, mock_layout_getter):
         """Test processing key press event."""
         mock_get_key_name.return_value = "a"
 
@@ -372,9 +371,7 @@ class TestProcessEvent:
             handler._process_key_event(event)
 
             # Event should not be queued due to error
-            assert event_queue.empty(), (
-                f"Queue should be empty after {type(exc).__name__}"
-            )
+            assert event_queue.empty(), f"Queue should be empty after {type(exc).__name__}"
             # Clear queue for next iteration (should be empty already)
             while not event_queue.empty():
                 event_queue.get()
@@ -463,9 +460,7 @@ class TestEdgeCases:
 
     @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
     @patch("core.evdev_handler.get_key_name")
-    def test_high_volume_events(
-        self, mock_get_key_name, event_queue, mock_layout_getter
-    ):
+    def test_high_volume_events(self, mock_get_key_name, event_queue, mock_layout_getter):
         """Test processing many events in succession."""
         mock_get_key_name.return_value = "a"
 

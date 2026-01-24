@@ -18,6 +18,10 @@ dependencies = [
 postgres = [
     "psycopg2-binary>=2.9.0",
 ]
+dev = [
+    "pre-commit>=4.0.0",
+    "ruff>=0.9.0",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -30,3 +34,75 @@ include = ["core*", "ui*", "utils*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v"
+
+[tool.ruff]
+# Exclude common directories
+exclude = [
+    ".git",
+    ".venv",
+    "__pypackages__",
+    "build",
+    "dist",
+]
+
+# Same as Black
+line-length = 100
+indent-width = 4
+
+# Assume Python 3.12+
+target-version = "py312"
+
+[tool.ruff.lint]
+# Enable Pyflakes (F), pycodestyle warnings (W), isort (I), and more
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+    "N802",  # Qt method names (showEvent, hideEvent, mousePressEvent)
+    "N806",  # variable naming - allow startOfDay, endOfDay for readability
+    "SIM108",  # ternary operator suggestions - keep if-else for clarity
+    "B904",  # exception raising - keep simple raise statements
+    "UP038",  # isinstance union - keep (list, dict) syntax for clarity
+    "SIM113",  # enumerate - keep simple for loops
+    "C401",  # unnecessary generator - keep explicit generator expressions
+    "B007",  # loop control variable not used (in test code)
+    "SIM102",  # nested if statements - code style preference
+    "SIM110",  # any() vs for loop - code style preference
+    "F841",  # unused local variable - planned for future use
+    "SIM105",  # try/except/pass - code style preference
+]
+
+# Allow autofix for all enabled rules (when `--fix` is provided)
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs
+indent-style = "space"
+
+# Like Black, respect magic trailing commas
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending
+line-ending = "auto"
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "ui", "utils"]

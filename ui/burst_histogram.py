@@ -1,26 +1,26 @@
 """Burst speed histogram widget for RealTypeCoach."""
 
-from typing import List, Tuple, Callable, Optional
+from collections.abc import Callable
 
+from pyqtgraph import BarGraphItem, GraphicsLayoutWidget
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QGridLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QSlider,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView,
     QVBoxLayout,
     QWidget,
 )
-from pyqtgraph import BarGraphItem, GraphicsLayoutWidget
 
 
 class BurstSpeedHistogram(QWidget):
     """Histogram showing distribution of burst WPM values."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         """Initialize burst speed histogram widget.
 
         Args:
@@ -28,9 +28,9 @@ class BurstSpeedHistogram(QWidget):
         """
         super().__init__(parent)
         self.bin_count = 50  # Default bin count
-        self.data: List[Tuple[float, int]] = []
-        self._data_callback: Optional[Callable[[int], None]] = None
-        self._update_timer: Optional[QTimer] = None
+        self.data: list[tuple[float, int]] = []
+        self._data_callback: Callable[[int], None] | None = None
+        self._update_timer: QTimer | None = None
         self.bar_item = None
         self.init_ui()
 
@@ -92,9 +92,7 @@ class BurstSpeedHistogram(QWidget):
 
         # Recent Bursts section
         recent_title = QLabel("Last 3 Bursts")
-        recent_title.setStyleSheet(
-            "font-size: 14px; font-weight: bold; margin-top: 10px;"
-        )
+        recent_title.setStyleSheet("font-size: 14px; font-weight: bold; margin-top: 10px;")
         layout.addWidget(recent_title)
 
         # Recent bursts table
@@ -164,7 +162,7 @@ class BurstSpeedHistogram(QWidget):
         if self._data_callback:
             self._data_callback(self.bin_count)
 
-    def update_graph(self, histogram_data: List[Tuple[float, int]]) -> None:
+    def update_graph(self, histogram_data: list[tuple[float, int]]) -> None:
         """Update histogram with new data.
 
         Args:
@@ -193,8 +191,8 @@ class BurstSpeedHistogram(QWidget):
 
     def update_recent_bursts(
         self,
-        recent_bursts: List[
-            Tuple[int, float, int, int, int, int, str]
+        recent_bursts: list[
+            tuple[int, float, int, int, int, int, str]
         ],  # (id, wpm, net_chars, duration_ms, backspaces, start_time_ms, time_str)
     ) -> None:
         """Update the recent bursts table.

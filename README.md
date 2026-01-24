@@ -128,4 +128,3 @@ This error occurs when the keyring cannot access the encryption key. Possible so
 ./uninstall.sh
 ```
 This will ask you if you want to keep your data or not.
-

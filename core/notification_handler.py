@@ -1,15 +1,14 @@
 """Notification handler for daily summaries and exceptional bursts."""
 
-import time
-import threading
 import logging
-from typing import Callable, Optional
+import threading
+import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, Signal
 
 from core.models import DailySummary, WorstLetterChange
-
 
 log = logging.getLogger("realtypecoach.notification")
 
@@ -23,7 +22,7 @@ class NotificationHandler(QObject):
 
     def __init__(
         self,
-        summary_getter: Callable[[str], Optional[tuple]],
+        summary_getter: Callable[[str], tuple | None],
         storage=None,
         min_burst_ms: int = 10000,
         threshold_days: int = 30,
@@ -50,12 +49,12 @@ class NotificationHandler(QObject):
 
         self.running = False
         self._stop_event = threading.Event()
-        self.scheduler_thread: Optional[threading.Thread] = None
-        self.threshold_thread: Optional[threading.Thread] = None
+        self.scheduler_thread: threading.Thread | None = None
+        self.threshold_thread: threading.Thread | None = None
 
         self.notification_hour = 18
         self.notification_minute = 0
-        self.last_notification_date: Optional[str] = None
+        self.last_notification_date: str | None = None
 
         # Dynamic threshold based on 95th percentile
         self.percentile_95_threshold = 60.0  # Default starting threshold
@@ -77,15 +76,11 @@ class NotificationHandler(QObject):
         self._stop_event.clear()
 
         # Start daily summary scheduler
-        self.scheduler_thread = threading.Thread(
-            target=self._run_scheduler, daemon=True
-        )
+        self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
         self.scheduler_thread.start()
 
         # Start threshold update thread
-        self.threshold_thread = threading.Thread(
-            target=self._run_threshold_updater, daemon=True
-        )
+        self.threshold_thread = threading.Thread(target=self._run_threshold_updater, daemon=True)
         self.threshold_thread.start()
 
         # Initial threshold calculation
@@ -151,13 +146,10 @@ class NotificationHandler(QObject):
         try:
             # Get bursts from the configured lookback period
             cutoff_time = int(
-                (datetime.now() - timedelta(days=self.threshold_days)).timestamp()
-                * 1000
+                (datetime.now() - timedelta(days=self.threshold_days)).timestamp() * 1000
             )
 
-            wpms = self.storage.get_burst_wpms_for_threshold(
-                cutoff_time, self.min_burst_ms
-            )
+            wpms = self.storage.get_burst_wpms_for_threshold(cutoff_time, self.min_burst_ms)
 
             if len(wpms) >= 20:
                 # Calculate 95th percentile (SQL already sorted)
@@ -234,9 +226,7 @@ class NotificationHandler(QObject):
         typing_minutes = (total_typing_sec % 3600) // 60
 
         time_str = (
-            f"{typing_hours}h {typing_minutes}m"
-            if typing_hours > 0
-            else f"{typing_minutes}m"
+            f"{typing_hours}h {typing_minutes}m" if typing_hours > 0 else f"{typing_minutes}m"
         )
 
         title = f"📊 Daily Typing Summary ({date})"

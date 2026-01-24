@@ -1,11 +1,12 @@
 """Configuration management for RealTypeCoach."""
 
 import json
-import sqlcipher3 as sqlite3
 from pathlib import Path
-from typing import Any, Optional, List
+from typing import Any
 
+import sqlcipher3 as sqlite3
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from utils.crypto import CryptoManager
 
 
@@ -54,9 +55,7 @@ class AppSettings(BaseModel):
     )
 
     # Keyboard layout
-    keyboard_layout: str = Field(
-        default="auto", description="Keyboard layout identifier"
-    )
+    keyboard_layout: str = Field(default="auto", description="Keyboard layout identifier")
 
     # Notification settings
     notification_time_hour: int = Field(
@@ -86,9 +85,7 @@ class AppSettings(BaseModel):
         default="validate",
         description="Dictionary validation mode (validate or accept_all)",
     )
-    enabled_languages: str = Field(
-        default="en,de", description="Comma-separated language codes"
-    )
+    enabled_languages: str = Field(default="en,de", description="Comma-separated language codes")
 
     # UI settings
     stats_update_interval_sec: int = Field(
@@ -118,18 +115,10 @@ class AppSettings(BaseModel):
         default="sqlite",
         description="Database backend type (sqlite, postgres, hybrid)",
     )
-    postgres_host: str = Field(
-        default="", description="PostgreSQL database host"
-    )
-    postgres_port: int = Field(
-        default=5432, ge=1, le=65535, description="PostgreSQL database port"
-    )
-    postgres_database: str = Field(
-        default="realtypecoach", description="PostgreSQL database name"
-    )
-    postgres_user: str = Field(
-        default="", description="PostgreSQL database user"
-    )
+    postgres_host: str = Field(default="", description="PostgreSQL database host")
+    postgres_port: int = Field(default=5432, ge=1, le=65535, description="PostgreSQL database port")
+    postgres_database: str = Field(default="realtypecoach", description="PostgreSQL database name")
+    postgres_user: str = Field(default="", description="PostgreSQL database user")
     postgres_sslmode: str = Field(
         default="require",
         description="PostgreSQL SSL mode (disable, allow, prefer, require, verify-ca, verify-full)",
@@ -269,7 +258,7 @@ class Config:
         # Return as string
         return value
 
-    def get(self, key: str, default: Optional[Any] = None) -> Any:
+    def get(self, key: str, default: Any | None = None) -> Any:
         """Get configuration value.
 
         Args:
@@ -302,7 +291,7 @@ class Config:
                 return getattr(settings, key)
             return None
 
-    def get_int(self, key: str, default: Optional[int] = None) -> int:
+    def get_int(self, key: str, default: int | None = None) -> int:
         """Get integer configuration value."""
         value = self.get(key, default)
         if isinstance(value, int):
@@ -315,7 +304,7 @@ class Config:
                 return getattr(settings, key)
             return default if default is not None else 0
 
-    def get_float(self, key: str, default: Optional[float] = None) -> float:
+    def get_float(self, key: str, default: float | None = None) -> float:
         """Get float configuration value."""
         value = self.get(key, default)
         if isinstance(value, float):
@@ -328,7 +317,7 @@ class Config:
                 return float(getattr(settings, key))
             return default if default is not None else 0.0
 
-    def get_bool(self, key: str, default: Optional[bool] = None) -> bool:
+    def get_bool(self, key: str, default: bool | None = None) -> bool:
         """Get boolean configuration value."""
         value = self.get(key, default)
         if isinstance(value, bool):
@@ -379,7 +368,7 @@ class Config:
             settings = {row[0]: self._simple_parse(row[1]) for row in cursor.fetchall()}
         return settings
 
-    def get_list(self, key: str, default: Optional[List[str]] = None) -> List[str]:
+    def get_list(self, key: str, default: list[str] | None = None) -> list[str]:
         """Get list configuration value from comma-separated string.
 
         Args:
@@ -400,7 +389,7 @@ class Config:
             return default
         return []
 
-    def set_list(self, key: str, value: List[str]) -> None:
+    def set_list(self, key: str, value: list[str]) -> None:
         """Set configuration value as comma-separated string.
 
         Args:

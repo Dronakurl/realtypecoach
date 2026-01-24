@@ -7,17 +7,18 @@ Usage:
     python scripts/db_query.py --table bursts
 """
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.crypto import CryptoManager
-import sqlcipher3 as sqlite3
 from datetime import datetime
 
+import sqlcipher3 as sqlite3
+
+from utils.crypto import CryptoManager
 
 # Get database path
 db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
@@ -104,15 +105,11 @@ def print_table(conn, table_name, limit=10):
                     if isinstance(val, (int, float)) and val > 1000000000000:
                         # Millisecond timestamp
                         formatted.append(
-                            datetime.fromtimestamp(val / 1000).strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            )
+                            datetime.fromtimestamp(val / 1000).strftime("%Y-%m-%d %H:%M:%S")
                         )
                     elif isinstance(val, (int, float)) and val > 1000000000:
                         # Second timestamp
-                        formatted.append(
-                            datetime.fromtimestamp(val).strftime("%Y-%m-%d %H:%M:%S")
-                        )
+                        formatted.append(datetime.fromtimestamp(val).strftime("%Y-%m-%d %H:%M:%S"))
                     else:
                         formatted.append(str(val))
                 except (ValueError, OSError):
@@ -152,18 +149,14 @@ def execute_query(conn, query, limit=None):
                     if isinstance(val, (int, float)) and val > 1000000000000:
                         try:
                             formatted.append(
-                                datetime.fromtimestamp(val / 1000).strftime(
-                                    "%Y-%m-%d %H:%M:%S"
-                                )
+                                datetime.fromtimestamp(val / 1000).strftime("%Y-%m-%d %H:%M:%S")
                             )
                         except (ValueError, OSError):
                             formatted.append(str(val))
                     elif isinstance(val, (int, float)) and val > 1000000000:
                         try:
                             formatted.append(
-                                datetime.fromtimestamp(val).strftime(
-                                    "%Y-%m-%d %H:%M:%S"
-                                )
+                                datetime.fromtimestamp(val).strftime("%Y-%m-%d %H:%M:%S")
                             )
                         except (ValueError, OSError):
                             formatted.append(str(val))

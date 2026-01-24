@@ -13,9 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.storage import Storage
 from utils.config import Config
 from utils.crypto import CryptoManager
-from utils.keycodes import US_KEYCODE_TO_NAME
 from utils.keyboard_detector import get_current_layout
-
+from utils.keycodes import US_KEYCODE_TO_NAME
 
 # Common English words for word statistics generation
 COMMON_WORDS = [
@@ -630,9 +629,7 @@ def get_letter_keys():
     return letter_keys
 
 
-def generate_bursts_for_day(
-    day_start_ms: int, base_wpm: float, is_weekend: bool
-) -> list:
+def generate_bursts_for_day(day_start_ms: int, base_wpm: float, is_weekend: bool) -> list:
     """Generate burst data for a single day.
 
     Args:
@@ -741,9 +738,7 @@ def generate_key_statistics(storage: Storage, layout: str, base_wpm: float) -> N
             )
 
 
-def generate_word_statistics(
-    storage: Storage, layout: str, base_wpm: float, num_days: int
-) -> None:
+def generate_word_statistics(storage: Storage, layout: str, base_wpm: float, num_days: int) -> None:
     """Generate word-level typing statistics.
 
     Args:
@@ -941,9 +936,7 @@ def seed_database(days: int, layout: str, db_path: Path) -> None:
 
 def main():
     """Main entry point for database seeding."""
-    parser = argparse.ArgumentParser(
-        description="Seed database with realistic typing data"
-    )
+    parser = argparse.ArgumentParser(description="Seed database with realistic typing data")
     parser.add_argument(
         "--days",
         type=int,

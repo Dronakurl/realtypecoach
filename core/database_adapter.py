@@ -7,15 +7,12 @@ Provides a pluggable backend system for different database implementations
 import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import List, Optional, Tuple
-from datetime import datetime
 
 from core.models import (
+    BurstTimeSeries,
     DailySummaryDB,
     KeyPerformance,
     WordStatisticsLite,
-    BurstTimeSeries,
-    WordInfo,
 )
 
 log = logging.getLogger("realtypecoach.database_adapter")
@@ -81,9 +78,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_bursts_for_timeseries(
-        self, start_ms: int, end_ms: int
-    ) -> List[BurstTimeSeries]:
+    def get_bursts_for_timeseries(self, start_ms: int, end_ms: int) -> list[BurstTimeSeries]:
         """Get burst data for time-series graph.
 
         Args:
@@ -96,7 +91,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_burst_wpm_histogram(self, bin_count: int = 50) -> List[Tuple[float, int]]:
+    def get_burst_wpm_histogram(self, bin_count: int = 50) -> list[tuple[float, int]]:
         """Get burst WPM distribution as histogram data.
 
         Args:
@@ -108,9 +103,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_recent_bursts(
-        self, limit: int = 3
-    ) -> List[Tuple[int, float, int, int, int, int, str]]:
+    def get_recent_bursts(self, limit: int = 3) -> list[tuple[int, float, int, int, int, int, str]]:
         """Get the most recent bursts.
 
         Args:
@@ -122,7 +115,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_burst_duration_stats_ms(self) -> Tuple[int, int, int]:
+    def get_burst_duration_stats_ms(self) -> tuple[int, int, int]:
         """Get burst duration statistics across all bursts.
 
         Returns:
@@ -131,9 +124,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_burst_stats_for_date_range(
-        self, start_ms: int, end_ms: int
-    ) -> Tuple[int, int]:
+    def get_burst_stats_for_date_range(self, start_ms: int, end_ms: int) -> tuple[int, int]:
         """Get burst statistics for a date range.
 
         Args:
@@ -146,9 +137,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_burst_wpms_for_threshold(
-        self, start_ms: int, min_duration_ms: int
-    ) -> List[float]:
+    def get_burst_wpms_for_threshold(self, start_ms: int, min_duration_ms: int) -> list[float]:
         """Get burst WPMS for threshold calculation.
 
         Args:
@@ -177,10 +166,10 @@ class DatabaseAdapter(ABC):
     def get_typing_time_by_granularity(
         self,
         granularity: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         limit: int = 90,
-    ) -> List:
+    ) -> list:
         """Get typing time aggregated by time granularity.
 
         Args:
@@ -211,9 +200,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_slowest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get slowest keys (highest average press time).
 
         Args:
@@ -226,9 +213,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_fastest_keys(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[KeyPerformance]:
+    def get_fastest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get fastest keys (lowest average press time).
 
         Args:
@@ -266,8 +251,8 @@ class DatabaseAdapter(ABC):
 
     @abstractmethod
     def get_slowest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get slowest words (highest average time per letter).
 
         Args:
@@ -281,8 +266,8 @@ class DatabaseAdapter(ABC):
 
     @abstractmethod
     def get_fastest_words(
-        self, limit: int = 10, layout: Optional[str] = None
-    ) -> List[WordStatisticsLite]:
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
         """Get fastest words (lowest average time per letter).
 
         Args:
@@ -297,9 +282,7 @@ class DatabaseAdapter(ABC):
     # ========== High Score Operations ==========
 
     @abstractmethod
-    def store_high_score(
-        self, date: str, wpm: float, duration_ms: int, key_count: int
-    ) -> None:
+    def store_high_score(self, date: str, wpm: float, duration_ms: int, key_count: int) -> None:
         """Store a high score for a date.
 
         Args:
@@ -311,7 +294,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_today_high_score(self, date: str) -> Optional[float]:
+    def get_today_high_score(self, date: str) -> float | None:
         """Get today's highest WPM.
 
         Args:
@@ -323,7 +306,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_all_time_high_score(self) -> Optional[float]:
+    def get_all_time_high_score(self) -> float | None:
         """Get all-time highest WPM.
 
         Returns:
@@ -358,7 +341,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_daily_summary(self, date: str) -> Optional[DailySummaryDB]:
+    def get_daily_summary(self, date: str) -> DailySummaryDB | None:
         """Get daily summary for a date.
 
         Args:
@@ -381,7 +364,7 @@ class DatabaseAdapter(ABC):
     # ========== All-Time Statistics ==========
 
     @abstractmethod
-    def get_all_time_typing_time(self, exclude_today: Optional[str] = None) -> int:
+    def get_all_time_typing_time(self, exclude_today: str | None = None) -> int:
         """Get all-time total typing time.
 
         Args:
@@ -394,8 +377,8 @@ class DatabaseAdapter(ABC):
 
     @abstractmethod
     def get_all_time_keystrokes_and_bursts(
-        self, exclude_today: Optional[str] = None
-    ) -> Tuple[int, int]:
+        self, exclude_today: str | None = None
+    ) -> tuple[int, int]:
         """Get all-time total keystrokes and bursts.
 
         Args:

@@ -1,11 +1,12 @@
 """Tests for Storage class."""
 
-import pytest
 import tempfile
 from pathlib import Path
 
-from core.storage import Storage
+import pytest
+
 from core.burst_detector import Burst
+from core.storage import Storage
 from utils.config import Config
 from utils.crypto import CryptoManager
 
@@ -94,9 +95,7 @@ class TestStorage:
 
         with storage._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT key_count, backspace_count, net_key_count, avg_wpm FROM bursts"
-            )
+            cursor.execute("SELECT key_count, backspace_count, net_key_count, avg_wpm FROM bursts")
             result = cursor.fetchone()
 
             assert result[0] == 100  # key_count
@@ -126,9 +125,7 @@ class TestStorage:
 
         with storage._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT total_typing_sec FROM daily_summaries WHERE date = ?", (date,)
-            )
+            cursor.execute("SELECT total_typing_sec FROM daily_summaries WHERE date = ?", (date,))
             result = cursor.fetchone()
 
             assert result is not None

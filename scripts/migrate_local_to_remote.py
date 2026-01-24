@@ -14,11 +14,10 @@ Prerequisites:
 """
 
 import logging
-import os
-import sqlcipher3 as sqlite3
 import sys
-from datetime import datetime
 from pathlib import Path
+
+import sqlcipher3 as sqlite3
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -79,35 +78,35 @@ def get_sqlite_data(db_path: Path, crypto) -> dict:
     cursor.execute("SELECT * FROM bursts")
     columns = [desc[0] for desc in cursor.description]
     for row in cursor.fetchall():
-        data["bursts"].append(dict(zip(columns, row)))
+        data["bursts"].append(dict(zip(columns, row, strict=False)))
 
     # Read statistics
     log.info("Reading statistics...")
     cursor.execute("SELECT * FROM statistics")
     columns = [desc[0] for desc in cursor.description]
     for row in cursor.fetchall():
-        data["statistics"].append(dict(zip(columns, row)))
+        data["statistics"].append(dict(zip(columns, row, strict=False)))
 
     # Read high scores
     log.info("Reading high scores...")
     cursor.execute("SELECT * FROM high_scores")
     columns = [desc[0] for desc in cursor.description]
     for row in cursor.fetchall():
-        data["high_scores"].append(dict(zip(columns, row)))
+        data["high_scores"].append(dict(zip(columns, row, strict=False)))
 
     # Read daily summaries
     log.info("Reading daily summaries...")
     cursor.execute("SELECT * FROM daily_summaries")
     columns = [desc[0] for desc in cursor.description]
     for row in cursor.fetchall():
-        data["daily_summaries"].append(dict(zip(columns, row)))
+        data["daily_summaries"].append(dict(zip(columns, row, strict=False)))
 
     # Read word statistics
     log.info("Reading word statistics...")
     cursor.execute("SELECT * FROM word_statistics")
     columns = [desc[0] for desc in cursor.description]
     for row in cursor.fetchall():
-        data["word_statistics"].append(dict(zip(columns, row)))
+        data["word_statistics"].append(dict(zip(columns, row, strict=False)))
 
     conn.close()
 

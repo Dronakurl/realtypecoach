@@ -1,14 +1,14 @@
 """evdev keyboard event handler for RealTypeCoach (Wayland-compatible)."""
 
-import threading
 import logging
-from typing import Callable, Optional, List
-from queue import Queue, Full
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
+from queue import Full, Queue
 from select import select
 
 try:
-    from evdev import InputDevice, list_devices, ecodes
+    from evdev import InputDevice, ecodes, list_devices
 
     EVDEV_AVAILABLE = True
 except ImportError:
@@ -35,7 +35,7 @@ class EvdevHandler:
         self,
         event_queue: Queue[KeyEvent],
         layout_getter: Callable[[], str],
-        stats_panel_visible_getter: Optional[Callable[[], bool]] = None,
+        stats_panel_visible_getter: Callable[[], bool] | None = None,
     ):
         """Initialize evdev event handler.
 
@@ -54,14 +54,14 @@ class EvdevHandler:
         self.stats_panel_visible_getter = stats_panel_visible_getter
         self._stats_panel_visible = False
         self.running = False
-        self.thread: Optional[threading.Thread] = None
-        self.devices: List[InputDevice] = []
-        self.device_paths: List[str] = []
+        self.thread: threading.Thread | None = None
+        self.devices: list[InputDevice] = []
+        self.device_paths: list[str] = []
         self._event_count: int = 0
         self._drop_count: int = 0
         self._stop_event = threading.Event()
 
-    def _find_keyboard_devices(self) -> List[InputDevice]:
+    def _find_keyboard_devices(self) -> list[InputDevice]:
         """Find all keyboard input devices."""
         keyboards = []
         for path in list_devices():
@@ -199,9 +199,7 @@ class EvdevHandler:
                 if len(key_name) == 1:
                     key_type = "CHARACTER" if key_name.isalnum() else key_name
                 else:
-                    key_type = (
-                        key_name  # Special keys like SPACE, ENTER are safe to log
-                    )
+                    key_type = key_name  # Special keys like SPACE, ENTER are safe to log
                 log.info(f"Received key event: {key_type} ({keycode}) - {event_type}")
 
             # Only queue press events to reduce queue size
@@ -210,15 +208,11 @@ class EvdevHandler:
 
         except Exception as e:
             # Catch all exceptions to prevent event loop crashes
-            log.error(
-                f"Error processing keyboard event (code={getattr(event, 'code', '?')}): {e}"
-            )
+            log.error(f"Error processing keyboard event (code={getattr(event, 'code', '?')}): {e}")
 
     def _queue_key_event(self, keycode: int, key_name: str, timestamp_ms: int) -> None:
         """Queue a key event."""
-        key_event = KeyEvent(
-            keycode=keycode, key_name=key_name, timestamp_ms=timestamp_ms
-        )
+        key_event = KeyEvent(keycode=keycode, key_name=key_name, timestamp_ms=timestamp_ms)
 
         try:
             self.event_queue.put(key_event, block=False)

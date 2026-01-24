@@ -1,14 +1,15 @@
 """Tests for word detection with backspace editing and dictionary validation."""
 
-import pytest
 import tempfile
-from pathlib import Path
 import time
+from pathlib import Path
 
-from core.word_detector import WordDetector
+import pytest
+
 from core.dictionary import Dictionary
 from core.dictionary_config import DictionaryConfig
 from core.storage import Storage
+from core.word_detector import WordDetector
 from utils.config import Config
 from utils.crypto import CryptoManager
 
@@ -31,9 +32,7 @@ def storage_with_dict(temp_db):
         crypto.initialize_database_key()
 
     config = Config(temp_db)
-    dict_config = DictionaryConfig(
-        enabled_languages=["en", "de"], accept_all_mode=False
-    )
+    dict_config = DictionaryConfig(enabled_languages=["en", "de"], accept_all_mode=False)
     return Storage(
         temp_db,
         word_boundary_timeout_ms=1000,
@@ -92,12 +91,8 @@ class TestWordDetector:
         assert result.word == "shoes"
         assert result.num_letters == 5
         assert result.backspace_count == 1
-        assert (
-            result.editing_time_ms == 100
-        )  # Time between 's' (1400) and backspace (1500)
-        assert (
-            result.total_duration_ms == 600
-        )  # From first 's' (1000) to last 's' (1600)
+        assert result.editing_time_ms == 100  # Time between 's' (1400) and backspace (1500)
+        assert result.total_duration_ms == 600  # From first 's' (1000) to last 's' (1600)
 
     def test_short_words_ignored(self):
         """Test that words < 3 letters are ignored."""
@@ -154,9 +149,7 @@ class TestWordDetector:
         detector.process_keystroke("BACKSPACE", base_time + 400, "us", is_letter=False)
         detector.process_keystroke("e", base_time + 450, "us", is_letter=True)
         detector.process_keystroke("s", base_time + 500, "us", is_letter=True)
-        result = detector.process_keystroke(
-            "SPACE", base_time + 550, "us", is_letter=False
-        )
+        result = detector.process_keystroke("SPACE", base_time + 550, "us", is_letter=False)
 
         assert result is not None
         assert result.word == "shoes"
@@ -307,9 +300,7 @@ class TestWordStorageWithDictionary:
 
         with storage_with_dict._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT COUNT(*) FROM word_statistics WHERE word = ?", ("xyz",)
-            )
+            cursor.execute("SELECT COUNT(*) FROM word_statistics WHERE word = ?", ("xyz",))
             count = cursor.fetchone()[0]
 
         assert count == 0

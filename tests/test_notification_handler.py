@@ -1,15 +1,16 @@
 """Tests for core.notification_handler module."""
 
-import pytest
 import tempfile
 import time
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from core.notification_handler import NotificationHandler
-from core.models import DailySummary, DailySummaryDB
-from core.storage import Storage
+import pytest
+
 from core.burst_detector import Burst
+from core.models import DailySummary, DailySummaryDB
+from core.notification_handler import NotificationHandler
+from core.storage import Storage
 from utils.config import Config
 from utils.crypto import CryptoManager
 
@@ -129,14 +130,10 @@ class TestNotifyExceptionalBurst:
         """Test notification when WPM is above threshold."""
         # Track signal emissions
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # WPM above default threshold of 60.0
-        notification_handler.notify_exceptional_burst(
-            wpm=80.0, key_count=200, duration_ms=15000
-        )
+        notification_handler.notify_exceptional_burst(wpm=80.0, key_count=200, duration_ms=15000)
 
         assert len(emitted_wpm) == 1
         assert emitted_wpm[0] == 80.0
@@ -144,72 +141,52 @@ class TestNotifyExceptionalBurst:
     def test_notify_exceptional_burst_below_threshold(self, notification_handler):
         """Test no notification when WPM is below threshold."""
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # WPM below default threshold of 60.0
-        notification_handler.notify_exceptional_burst(
-            wpm=50.0, key_count=100, duration_ms=15000
-        )
+        notification_handler.notify_exceptional_burst(wpm=50.0, key_count=100, duration_ms=15000)
 
         assert len(emitted_wpm) == 0
 
     def test_notify_exceptional_burst_short_duration(self, notification_handler):
         """Test no notification for short bursts even with high WPM."""
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # High WPM but short duration (< 10 seconds)
-        notification_handler.notify_exceptional_burst(
-            wpm=100.0, key_count=50, duration_ms=5000
-        )
+        notification_handler.notify_exceptional_burst(wpm=100.0, key_count=50, duration_ms=5000)
 
         assert len(emitted_wpm) == 0
 
     def test_notify_exceptional_burst_exactly_10_seconds(self, notification_handler):
         """Test notification for burst exactly 10 seconds long."""
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # Exactly 10 seconds, should notify
-        notification_handler.notify_exceptional_burst(
-            wpm=70.0, key_count=150, duration_ms=10000
-        )
+        notification_handler.notify_exceptional_burst(wpm=70.0, key_count=150, duration_ms=10000)
 
         assert len(emitted_wpm) == 1
 
     def test_notify_exceptional_burst_custom_threshold(self, notification_handler):
         """Test notification with custom threshold."""
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         notification_handler.percentile_95_threshold = 100.0
 
         # Below custom threshold
-        notification_handler.notify_exceptional_burst(
-            wpm=80.0, key_count=200, duration_ms=15000
-        )
+        notification_handler.notify_exceptional_burst(wpm=80.0, key_count=200, duration_ms=15000)
         assert len(emitted_wpm) == 0
 
         # Above custom threshold
-        notification_handler.notify_exceptional_burst(
-            wpm=120.0, key_count=300, duration_ms=15000
-        )
+        notification_handler.notify_exceptional_burst(wpm=120.0, key_count=300, duration_ms=15000)
         assert len(emitted_wpm) == 1
 
     def test_notify_exceptional_burst_low_backspace_ratio(self, notification_handler):
         """Test notification with low backspace ratio (< 30%)."""
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # High WPM, sufficient duration, low backspace ratio (20%)
         notification_handler.notify_exceptional_burst(
@@ -222,9 +199,7 @@ class TestNotifyExceptionalBurst:
     def test_notify_exceptional_burst_high_backspace_ratio(self, notification_handler):
         """Test no notification with high backspace ratio (> 30%)."""
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # High WPM, sufficient duration, but high backspace ratio (40%)
         notification_handler.notify_exceptional_burst(
@@ -236,9 +211,7 @@ class TestNotifyExceptionalBurst:
     def test_notify_exceptional_burst_exact_threshold_ratio(self, notification_handler):
         """Test notification at exact backspace ratio threshold (30%)."""
         emitted_wpm = []
-        notification_handler.signal_exceptional_burst.connect(
-            lambda wpm: emitted_wpm.append(wpm)
-        )
+        notification_handler.signal_exceptional_burst.connect(lambda wpm: emitted_wpm.append(wpm))
 
         # Exactly at threshold - should notify
         notification_handler.notify_exceptional_burst(
@@ -247,9 +220,7 @@ class TestNotifyExceptionalBurst:
 
         assert len(emitted_wpm) == 1
 
-    def test_notify_exceptional_burst_custom_max_ratio(
-        self, mock_summary_getter, storage
-    ):
+    def test_notify_exceptional_burst_custom_max_ratio(self, mock_summary_getter, storage):
         """Test notification with custom max_backspace_ratio."""
         handler = NotificationHandler(
             summary_getter=mock_summary_getter,
@@ -312,9 +283,7 @@ class TestThresholdUpdate:
         notification_handler._update_threshold()
 
         # Should use max (59) * 1.1 = 64.9
-        assert notification_handler.percentile_95_threshold == pytest.approx(
-            64.9, rel=0.1
-        )
+        assert notification_handler.percentile_95_threshold == pytest.approx(64.9, rel=0.1)
 
     def test_update_threshold_no_bursts(self, notification_handler):
         """Test threshold with no bursts uses default."""
@@ -346,9 +315,7 @@ class TestThresholdUpdate:
 
         # Should only consider the 80.0 WPM burst
         # With only 1 burst, uses max * 1.1 = 88.0
-        assert notification_handler.percentile_95_threshold == pytest.approx(
-            88.0, rel=0.1
-        )
+        assert notification_handler.percentile_95_threshold == pytest.approx(88.0, rel=0.1)
 
     def test_update_threshold_old_bursts_ignored(self, notification_handler):
         """Test that bursts older than 30 days are ignored."""
@@ -367,9 +334,7 @@ class TestThresholdUpdate:
         notification_handler._update_threshold()
 
         # Should only consider 60.0 WPM (100.0 is too old)
-        assert notification_handler.percentile_95_threshold == pytest.approx(
-            66.0, rel=0.1
-        )
+        assert notification_handler.percentile_95_threshold == pytest.approx(66.0, rel=0.1)
 
 
 class TestDailySummary:
@@ -392,9 +357,7 @@ class TestDailySummary:
         assert summary.avg_wpm == "50"
         assert summary.keystrokes == "1,000 keystrokes"
 
-    def test_send_daily_summary_updates_last_notification_date(
-        self, notification_handler
-    ):
+    def test_send_daily_summary_updates_last_notification_date(self, notification_handler):
         """Test that last_notification_date is updated."""
         notification_handler._send_daily_summary("2025-01-15")
 
@@ -422,9 +385,7 @@ class TestDailySummary:
         notification_handler.summary_getter = lambda date: None
 
         emitted = []
-        notification_handler.signal_daily_summary.connect(
-            lambda *args: emitted.append(args)
-        )
+        notification_handler.signal_daily_summary.connect(lambda *args: emitted.append(args))
 
         notification_handler._send_daily_summary("2025-01-15")
 
@@ -445,9 +406,7 @@ class TestDailySummary:
         )
 
         emitted = []
-        notification_handler.signal_daily_summary.connect(
-            lambda *args: emitted.append(args)
-        )
+        notification_handler.signal_daily_summary.connect(lambda *args: emitted.append(args))
 
         notification_handler._send_daily_summary("2025-01-15")
 
@@ -469,9 +428,7 @@ class TestDailySummary:
         typing_hours = summary.total_typing_sec // 3600
         typing_minutes = (summary.total_typing_sec % 3600) // 60
         time_str = (
-            f"{typing_hours}h {typing_minutes}m"
-            if typing_hours > 0
-            else f"{typing_minutes}m"
+            f"{typing_hours}h {typing_minutes}m" if typing_hours > 0 else f"{typing_minutes}m"
         )
 
         # Verify the formatting logic

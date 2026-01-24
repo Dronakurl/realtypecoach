@@ -2,7 +2,6 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, List
 
 from core.models import KeystrokeInfo, WordInfo
 
@@ -19,15 +18,13 @@ class WordState:
     word: str = field(default="")
     start_time_ms: int = field(default=0)
     last_keystroke_time_ms: int = field(default=0)
-    keystrokes: List[KeystrokeInfo] = field(default_factory=list)
+    keystrokes: list[KeystrokeInfo] = field(default_factory=list)
     backspace_count: int = field(default=0)
     editing_time_ms: int = field(default=0)
     layout: str = field(default="us")
     max_correction_window_ms: int = field(default=3000)
 
-    def add_keystroke(
-        self, key_name: str, timestamp_ms: int, keycode: int | None = None
-    ) -> None:
+    def add_keystroke(self, key_name: str, timestamp_ms: int, keycode: int | None = None) -> None:
         """Add a letter keystroke to current word.
 
         Args:
@@ -37,9 +34,7 @@ class WordState:
         """
         self.word += key_name
         self.keystrokes.append(
-            KeystrokeInfo(
-                key=key_name, time=timestamp_ms, type="letter", keycode=keycode
-            )
+            KeystrokeInfo(key=key_name, time=timestamp_ms, type="letter", keycode=keycode)
         )
         self.last_keystroke_time_ms = timestamp_ms
 
@@ -117,7 +112,7 @@ class WordDetector:
         self.word_boundary_timeout_ms = word_boundary_timeout_ms
         self.min_word_length = min_word_length
         self.max_correction_window_ms = max_correction_window_ms
-        self.current_state: Optional[WordState] = None
+        self.current_state: WordState | None = None
 
     def process_keystroke(
         self,
@@ -126,7 +121,7 @@ class WordDetector:
         layout: str = "us",
         is_letter: bool = False,
         keycode: int | None = None,
-    ) -> Optional[WordInfo]:
+    ) -> WordInfo | None:
         """Process a keystroke and return word info if finalized.
 
         Args:
@@ -148,7 +143,7 @@ class WordDetector:
 
     def _process_letter(
         self, key_name: str, timestamp_ms: int, layout: str, keycode: int | None = None
-    ) -> Optional[WordInfo]:
+    ) -> WordInfo | None:
         """Process letter keystroke.
 
         Args:
@@ -187,7 +182,7 @@ class WordDetector:
         state.add_keystroke(key_name, timestamp_ms, keycode)
         return None
 
-    def _process_backspace(self, timestamp_ms: int) -> Optional[WordInfo]:
+    def _process_backspace(self, timestamp_ms: int) -> WordInfo | None:
         """Process backspace keystroke.
 
         Args:
@@ -206,7 +201,7 @@ class WordDetector:
 
         return None
 
-    def _process_boundary(self, key_name: str, timestamp_ms: int) -> Optional[WordInfo]:
+    def _process_boundary(self, key_name: str, timestamp_ms: int) -> WordInfo | None:
         """Process word boundary keystroke (space, punctuation, etc.).
 
         Args:
@@ -224,9 +219,7 @@ class WordDetector:
 
         return None
 
-    def _finalize_current_state(
-        self, end_time_ms: Optional[int] = None
-    ) -> Optional[WordInfo]:
+    def _finalize_current_state(self, end_time_ms: int | None = None) -> WordInfo | None:
         """Finalize current word state.
 
         Args:

@@ -1,11 +1,7 @@
 """Smoothing algorithms for time series data."""
 
-from typing import List, Tuple
 
-
-def apply_moving_average(
-    wpm_values: List[float], smoothness: int
-) -> Tuple[List[float], List[int]]:
+def apply_moving_average(wpm_values: list[float], smoothness: int) -> tuple[list[float], list[int]]:
     """Apply centered moving average smoothing to time series.
 
     Uses a centered moving average that keeps all data points while
