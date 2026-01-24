@@ -257,3 +257,62 @@ class CryptoManager:
             log.info("PostgreSQL password removed from keyring")
         except KeyringError as e:
             log.error(f"Error deleting PostgreSQL password: {e}")
+
+    # ========== User Encryption Key Storage ==========
+
+    USER_KEY_SERVICE_PREFIX = "realtypecoach_user"
+    USER_KEY_USERNAME = "encryption_key"
+
+    def store_user_encryption_key(self, user_id: str, key: bytes) -> None:
+        """Store user encryption key in keyring.
+
+        Args:
+            user_id: User UUID
+            key: 32-byte encryption key
+
+        Raises:
+            RuntimeError: If keyring storage fails
+        """
+        if len(key) != 32:
+            raise ValueError(f"Key must be 32 bytes, got {len(key)}")
+
+        # Encode key as hex for storage
+        key_hex = key.hex()
+        service = f"{self.USER_KEY_SERVICE_PREFIX}_{user_id}"
+
+        try:
+            keyring.set_password(service, self.USER_KEY_USERNAME, key_hex)
+            log.info(f"User encryption key stored for {user_id}")
+        except KeyringError as e:
+            raise RuntimeError(f"Failed to store user key in keyring: {e}")
+
+    def get_user_encryption_key(self, user_id: str) -> bytes | None:
+        """Retrieve user encryption key from keyring.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            32-byte encryption key or None if not found
+        """
+        service = f"{self.USER_KEY_SERVICE_PREFIX}_{user_id}"
+        try:
+            key_hex = keyring.get_password(service, self.USER_KEY_USERNAME)
+            if key_hex:
+                return bytes.fromhex(key_hex)
+        except KeyringError as e:
+            log.error(f"Error retrieving user key from keyring: {e}")
+        return None
+
+    def delete_user_encryption_key(self, user_id: str) -> None:
+        """Delete user encryption key from keyring.
+
+        Args:
+            user_id: User UUID
+        """
+        service = f"{self.USER_KEY_SERVICE_PREFIX}_{user_id}"
+        try:
+            keyring.delete_password(service, self.USER_KEY_USERNAME)
+            log.info(f"User encryption key removed for {user_id}")
+        except KeyringError as e:
+            log.error(f"Error deleting user key: {e}")

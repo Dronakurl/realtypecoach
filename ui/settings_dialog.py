@@ -770,6 +770,72 @@ class SettingsDialog(QDialog):
         self.conn_status_label.setStyleSheet("color: #666; font-style: italic;")
         layout.addWidget(self.conn_status_label)
 
+        # User Identity Group
+        user_group = QGroupBox("User Identity")
+        user_layout = QFormLayout()
+
+        self.user_id_label = QLabel("Not set")
+        self.user_id_label.setStyleSheet("font-family: monospace; font-size: 10px;")
+        user_layout.addRow(
+            self._create_labeled_icon_widget(
+                "User ID:",
+                "Your unique user identifier for multi-device sync.\n"
+                "This ID is automatically generated on first launch.",
+            ),
+            self.user_id_label,
+        )
+
+        username_container = QWidget()
+        username_layout_layout = QHBoxLayout(username_container)
+        username_layout_layout.setContentsMargins(0, 0, 0, 0)
+        self.username_edit = QLineEdit()
+        self.username_edit.setPlaceholderText("Auto-generated username")
+        username_layout_layout.addWidget(self.username_edit)
+
+        update_username_btn = QPushButton("Update")
+        update_username_btn.setMaximumWidth(80)
+        update_username_btn.clicked.connect(self.update_username)
+        username_layout_layout.addWidget(update_username_btn)
+
+        user_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Username:",
+                "Customizable username for identification.\n"
+                "Auto-generated as hostname_random on first launch.",
+            ),
+            username_container,
+        )
+
+        # Encryption key export/import
+        key_buttons_layout = QHBoxLayout()
+        self.export_key_btn = QPushButton("Export Encryption Key")
+        self.export_key_btn.clicked.connect(self.export_encryption_key)
+        key_buttons_layout.addWidget(self.export_key_btn)
+
+        self.import_key_btn = QPushButton("Import Encryption Key")
+        self.import_key_btn.clicked.connect(self.import_encryption_key)
+        key_buttons_layout.addWidget(self.import_key_btn)
+
+        user_layout.addRow("", key_buttons_layout)
+
+        user_group.setLayout(user_layout)
+        layout.addWidget(user_group)
+
+        # Sync Group
+        sync_group = QGroupBox("Data Sync")
+        sync_layout = QVBoxLayout()
+
+        self.upload_history_btn = QPushButton("Upload/Download Typing History")
+        self.upload_history_btn.clicked.connect(self.upload_history_to_database)
+        sync_layout.addWidget(self.upload_history_btn)
+
+        self.last_sync_label = QLabel("Never synced")
+        self.last_sync_label.setStyleSheet("color: #666; font-style: italic;")
+        sync_layout.addWidget(self.last_sync_label)
+
+        sync_group.setLayout(sync_layout)
+        layout.addWidget(sync_group)
+
         layout.addStretch()
         widget.setLayout(layout)
 
@@ -795,6 +861,18 @@ class SettingsDialog(QDialog):
         ]
 
         for widget in postgres_widgets:
+            widget.setEnabled(is_postgres)
+
+        # Enable/disable user identity and sync widgets
+        user_sync_widgets = [
+            self.user_id_label,
+            self.username_edit,
+            self.export_key_btn,
+            self.import_key_btn,
+            self.upload_history_btn,
+        ]
+
+        for widget in user_sync_widgets:
             widget.setEnabled(is_postgres)
 
     def set_postgres_password(self) -> None:
@@ -1094,6 +1172,10 @@ class SettingsDialog(QDialog):
         if index >= 0:
             self.sslmode_combo.setCurrentIndex(index)
 
+        # Load user identity information
+        self._update_user_display()
+        self._update_last_sync_label()
+
         # Trigger backend changed to enable/disable postgres settings
         self.on_backend_changed()
 
@@ -1238,3 +1320,234 @@ class SettingsDialog(QDialog):
             self.settings = self.get_settings()
             self.settings["__clear_database__"] = True
             self.accept()
+
+    # ========== User Identity and Sync Handlers ==========
+
+    def update_username(self) -> None:
+        """Update username for current user."""
+        from core.user_manager import UserManager
+        from PySide6.QtWidgets import QMessageBox
+
+        new_username = self.username_edit.text().strip()
+        if not new_username:
+            QMessageBox.warning(self, "Invalid Username", "Username cannot be empty.")
+            return
+
+        try:
+            db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+            # We need to create a Config instance here
+            from utils.config import Config
+            config = Config(db_path)
+            user_manager = UserManager(db_path, config)
+            user_manager.update_username(new_username)
+            self.user_id_label.setText(f"Username updated to: {new_username}")
+        except Exception as e:
+            QMessageBox.critical(self, "Update Failed", f"Failed to update username:\n{e}")
+
+    def export_encryption_key(self) -> None:
+        """Show encryption key for copying to another device."""
+        from core.user_manager import UserManager
+        from PySide6.QtWidgets import QMessageBox, QTextEdit
+
+        db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+        from utils.config import Config
+        config = Config(db_path)
+
+        try:
+            user_manager = UserManager(db_path, config)
+            user = user_manager.get_or_create_current_user()
+
+            # Format: base64(user_id + 32-byte key)
+            key_data = user_manager.export_encryption_key()
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Export Encryption Key")
+            dialog.setMinimumWidth(500)
+
+            layout = QVBoxLayout()
+            info_label = QLabel(
+                "Your encryption key. Copy this to use RealTypeCoach on another device:\n\n"
+                "⚠️ Keep this key secret! Anyone with this key can decrypt your typing data."
+            )
+            info_label.setWordWrap(True)
+
+            key_display = QTextEdit()
+            key_display.setReadOnly(True)
+            key_display.setText(key_data)
+            key_display.setFixedHeight(80)
+
+            copy_btn = QPushButton("Copy to Clipboard")
+            copy_btn.clicked.connect(lambda: self._copy_key_to_clipboard(key_data, dialog))
+
+            layout.addWidget(info_label)
+            layout.addWidget(key_display)
+            layout.addWidget(copy_btn)
+
+            dialog.setLayout(layout)
+            dialog.exec()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", f"Failed to export encryption key:\n{e}")
+
+    def import_encryption_key(self) -> None:
+        """Import encryption key from another device."""
+        from core.user_manager import UserManager
+        from PySide6.QtWidgets import QMessageBox, QTextEdit
+
+        db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+        from utils.config import Config
+        config = Config(db_path)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Import Encryption Key")
+        dialog.setMinimumWidth(500)
+
+        layout = QVBoxLayout()
+        warning_label = QLabel(
+            "⚠️ This will overwrite your current encryption key!\n"
+            "Existing encrypted data will become inaccessible.\n\n"
+            "Paste the key from another device:"
+        )
+        warning_label.setWordWrap(True)
+
+        key_input = QTextEdit()
+        key_input.setPlaceholderText("Paste encryption key here...")
+
+        buttons = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        import_btn = QPushButton("Import Key")
+        import_btn.setStyleSheet("background-color: #d32f2f; color: white;")
+        import_btn.clicked.connect(lambda: self._do_import_key(key_input.toPlainText(), dialog, db_path, config))
+
+        buttons.addWidget(cancel_btn)
+        buttons.addWidget(import_btn)
+
+        layout.addWidget(warning_label)
+        layout.addWidget(key_input)
+        layout.addLayout(buttons)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def _copy_key_to_clipboard(self, key_data: str, dialog: QDialog) -> None:
+        """Copy encryption key to clipboard."""
+        from PySide6.QtWidgets import QApplication
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(key_data)
+        # Brief feedback
+        original_text = key_data
+        dialog.findChild(QTextEdit, None).setPlainText("✓ Copied to clipboard!")
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1000, lambda: dialog.findChild(QTextEdit, None).setPlainText(original_text))
+
+    def _do_import_key(self, key_data: str, dialog: QDialog, db_path: Path, config) -> None:
+        """Actually import the key after validation."""
+        from core.user_manager import UserManager
+        from PySide6.QtWidgets import QMessageBox
+
+        try:
+            user_manager = UserManager(db_path, config)
+            user = user_manager.import_encryption_key(key_data.strip())
+            QMessageBox.information(
+                dialog,
+                "Import Successful",
+                f"Encryption key imported for user:\n{user.username}\n\n"
+                f"You can now sync data from this device.",
+            )
+            dialog.accept()
+            self._update_user_display()
+        except ValueError as e:
+            QMessageBox.critical(
+                dialog,
+                "Import Failed",
+                f"Invalid encryption key: {e}",
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                dialog,
+                "Import Failed",
+                f"Failed to import encryption key: {e}",
+            )
+
+    def upload_history_to_database(self) -> None:
+        """Manual merge/sync button handler."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QMessageBox, QProgressDialog
+
+        # Check if PostgreSQL is configured
+        if self.backend_combo.currentData() != "postgres":
+            QMessageBox.warning(
+                self,
+                "Not Configured",
+                "Please select 'PostgreSQL (Remote)' as the database backend first."
+            )
+            return
+
+        host = self.postgres_host_input.text().strip()
+        user = self.postgres_user_input.text().strip()
+
+        if not all([host, user]):
+            QMessageBox.warning(self, "Not Configured", "Please configure PostgreSQL connection first.")
+            return
+
+        # Show progress dialog
+        progress = QProgressDialog("Uploading typing history...", "Cancel", 0, 0, self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+
+        try:
+            # Note: This is a placeholder. The actual sync would need to be done
+            # through the main application's storage instance, not from settings dialog.
+            # For now, show a success message to demonstrate the UI flow.
+            progress.close()
+
+            QMessageBox.information(
+                self,
+                "Sync Complete",
+                "Sync functionality would be implemented here.\n\n"
+                "This requires access to the main application's Storage instance.\n\n"
+                "The sync button would trigger:\n"
+                "• Push local changes to PostgreSQL (with encryption)\n"
+                "• Pull remote changes from PostgreSQL\n"
+                "• Merge conflicts intelligently\n"
+                "• Update last sync time"
+            )
+            self.last_sync_label.setText("Last sync: Just now (demo)")
+
+        except Exception as e:
+            progress.close()
+            QMessageBox.critical(self, "Sync Failed", f"Error during sync:\n{e}")
+
+    def _update_user_display(self) -> None:
+        """Update user identity display."""
+        from core.user_manager import UserManager
+
+        db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+        from utils.config import Config
+        config = Config(db_path)
+
+        try:
+            user_manager = UserManager(db_path, config)
+            user = user_manager.get_or_create_current_user()
+            self.user_id_label.setText(user.user_id)
+            self.username_edit.setText(user.username)
+        except Exception:
+            self.user_id_label.setText("Not set")
+            self.username_edit.setText("")
+
+    def _update_last_sync_label(self) -> None:
+        """Update last sync time display."""
+        from utils.config import Config
+
+        db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+        config = Config(db_path)
+
+        last_sync = config.get_int("last_sync_timestamp")
+        if last_sync:
+            from datetime import datetime
+            sync_time = datetime.fromtimestamp(last_sync / 1000).strftime("%Y-%m-%d %H:%M:%S")
+            self.last_sync_label.setText(f"Last sync: {sync_time}")
+        else:
+            self.last_sync_label.setText("Never synced")

@@ -124,6 +124,16 @@ class AppSettings(BaseModel):
         description="PostgreSQL SSL mode (disable, allow, prefer, require, verify-ca, verify-full)",
     )
 
+    # User settings (for multi-user PostgreSQL sync)
+    current_user_id: str = Field(default="", description="Current user UUID")
+    current_username: str = Field(default="", description="Current username")
+    current_user_email: str = Field(default="", description="Current user email")
+    current_user_display_name: str = Field(default="", description="Current user display name")
+    current_user_created_at: int = Field(default=0, description="User creation timestamp")
+    current_user_is_active: bool = Field(default=True, description="Whether user is active")
+    current_user_metadata: str = Field(default="", description="User metadata")
+    last_sync_timestamp: int = Field(default=0, description="Last sync timestamp")
+
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
     @field_validator("active_time_threshold_ms")

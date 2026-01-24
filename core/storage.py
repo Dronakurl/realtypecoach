@@ -689,6 +689,117 @@ class Storage:
         """
         return self.adapter.export_to_csv(file_path, start_date)
 
+    def merge_with_remote(self) -> dict:
+        """Manually sync/merge local SQLite with remote PostgreSQL.
+
+        Performs bidirectional smart merge between local and remote databases:
+        - Pushes local changes to PostgreSQL (with encryption)
+        - Pulls remote changes from PostgreSQL (with decryption)
+        - Merges conflicts intelligently without data loss
+
+        Returns:
+            Sync result dict with:
+                - success: True if sync succeeded
+                - pushed: Number of records pushed to remote
+                - pulled: Number of records pulled from remote
+                - conflicts_resolved: Number of conflicts merged
+                - error: Error message if failed
+                - duration_ms: Sync duration in milliseconds
+
+        Example:
+            >>> result = storage.merge_with_remote()
+            >>> if result["success"]:
+            ...     print(f"Synced: {result['pushed']} pushed, {result['pulled']} pulled")
+        """
+        # Check if PostgreSQL is configured
+        db_backend = self.config.get("database_backend", "sqlite")
+        if db_backend not in ("postgres", "hybrid"):
+            return {
+                "success": False,
+                "error": "Remote database not configured. Please set database_backend to 'postgres' in settings.",
+            }
+
+        # Import SyncManager
+        from core.sync_manager import SyncManager
+        from core.user_manager import UserManager
+
+        try:
+            # Get current user and encryption key
+            user_manager = UserManager(self.db_path, self.config)
+            user = user_manager.get_or_create_current_user()
+            encryption_key = user_manager.get_encryption_key()
+
+            # Initialize PostgreSQL adapter for sync
+            from core.postgres_adapter import PostgreSQLAdapter
+
+            host = self.config.get("postgres_host", "")
+            port = self.config.get_int("postgres_port", 5432)
+            database = self.config.get("postgres_database", "realtypecoach")
+            postgres_user = self.config.get("postgres_user", "")
+            sslmode = self.config.get("postgres_sslmode", "require")
+
+            password = self._get_postgres_password()
+
+            if not all([host, database, postgres_user, password]):
+                return {
+                    "success": False,
+                    "error": "PostgreSQL configuration incomplete. Please set host, database, user, and password in settings.",
+                }
+
+            # Initialize encryption
+            from core.data_encryption import DataEncryption
+
+            encryption = DataEncryption(encryption_key)
+
+            # Create remote adapter
+            remote_adapter = PostgreSQLAdapter(
+                host=host,
+                port=port,
+                database=database,
+                user=postgres_user,
+                password=password,
+                sslmode=sslmode,
+                user_id=user.user_id,
+                encryption_key=encryption_key,
+            )
+
+            # Initialize sync manager
+            sync_mgr = SyncManager(
+                local_adapter=self.adapter,
+                remote_adapter=remote_adapter,
+                encryption=encryption,
+                user_id=user.user_id,
+            )
+
+            # Perform sync
+            result = sync_mgr.bidirectional_merge()
+
+            # Update last sync timestamp
+            user_manager.update_last_sync()
+
+            # Close remote adapter
+            remote_adapter.close()
+
+            return {
+                "success": result.success,
+                "pushed": result.pushed,
+                "pulled": result.pulled,
+                "conflicts_resolved": result.conflicts_resolved,
+                "error": result.error,
+                "duration_ms": result.duration_ms,
+            }
+
+        except Exception as e:
+            log.error(f"Sync failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "pushed": 0,
+                "pulled": 0,
+                "conflicts_resolved": 0,
+                "duration_ms": 0,
+            }
+
     def close(self) -> None:
         """Close the database adapter and cleanup resources."""
         log.info("Closing storage adapter...")

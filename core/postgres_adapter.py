@@ -5,6 +5,7 @@ import logging
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 try:
     import psycopg2
@@ -23,14 +24,21 @@ from core.models import (
     WordStatisticsLite,
 )
 
+if TYPE_CHECKING:
+    from core.data_encryption import DataEncryption
+
 log = logging.getLogger("realtypecoach.postgres_adapter")
+
+# Legacy user ID for existing data
+LEGACY_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 
 class PostgreSQLAdapter(DatabaseAdapter):
     """PostgreSQL database adapter implementation.
 
     Uses psycopg2 for database connectivity with connection pooling
-    and SSL/TLS support.
+    and SSL/TLS support. Supports multi-user data isolation and
+    client-side encryption.
     """
 
     def __init__(
@@ -43,6 +51,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         sslmode: str = "require",
         min_connections: int = 1,
         max_connections: int = 10,
+        user_id: str | None = None,
+        encryption_key: bytes | None = None,
     ):
         """Initialize PostgreSQL adapter.
 
@@ -55,6 +65,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
             sslmode: SSL mode (disable, allow, prefer, require, verify-ca, verify-full)
             min_connections: Minimum number of connections in pool
             max_connections: Maximum number of connections in pool
+            user_id: User UUID for multi-user data isolation
+            encryption_key: 32-byte encryption key for client-side encryption
         """
         if psycopg2 is None:
             raise ImportError(
@@ -71,6 +83,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self.max_connections = max_connections
 
         self._connection_pool: pool.SimpleConnectionPool | None = None
+
+        # User and encryption settings
+        self.user_id = user_id or LEGACY_USER_ID
+        self.encryption_key = encryption_key
+        self.encryption: DataEncryption | None = None
+
+        if encryption_key:
+            from core.data_encryption import DataEncryption
+
+            self.encryption = DataEncryption(encryption_key)
 
         # Initialize cache for all-time statistics
         self._cache_all_time_typing_sec = 0
@@ -143,7 +165,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS bursts (
-                id SERIAL PRIMARY KEY,
+                id SERIAL NOT NULL,
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
                 start_time BIGINT NOT NULL,
                 end_time BIGINT NOT NULL,
                 key_count INTEGER NOT NULL,
@@ -151,10 +174,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 avg_wpm DOUBLE PRECISION,
                 qualifies_for_high_score INTEGER DEFAULT 0,
                 backspace_count INTEGER DEFAULT 0,
-                net_key_count INTEGER DEFAULT 0
+                net_key_count INTEGER DEFAULT 0,
+                encrypted_data TEXT,
+                PRIMARY KEY (id, user_id)
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_bursts_start_time ON bursts(start_time)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_bursts_user_id ON bursts(user_id)")
+
+        # Migrate if columns don't exist
+        self._migrate_table_if_needed(cursor, "bursts")
 
     def _create_statistics_table(self, conn: connection) -> None:
         """Create statistics table."""
@@ -162,6 +191,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS statistics (
                 keycode INTEGER NOT NULL,
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
                 key_name TEXT NOT NULL,
                 layout TEXT NOT NULL,
                 avg_press_time DOUBLE PRECISION,
@@ -169,40 +199,59 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 slowest_ms DOUBLE PRECISION,
                 fastest_ms DOUBLE PRECISION,
                 last_updated BIGINT,
-                PRIMARY KEY (keycode, layout)
+                encrypted_data TEXT,
+                PRIMARY KEY (keycode, layout, user_id)
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_statistics_user_id ON statistics(user_id)")
+
+        # Migrate if columns don't exist
+        self._migrate_table_if_needed(cursor, "statistics")
 
     def _create_high_scores_table(self, conn: connection) -> None:
         """Create high_scores table."""
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS high_scores (
-                id SERIAL PRIMARY KEY,
+                id SERIAL NOT NULL,
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
                 date TEXT NOT NULL,
                 fastest_burst_wpm DOUBLE PRECISION,
                 burst_duration_sec DOUBLE PRECISION,
                 burst_key_count INTEGER,
                 timestamp BIGINT NOT NULL,
-                burst_duration_ms INTEGER
+                burst_duration_ms INTEGER,
+                encrypted_data TEXT,
+                PRIMARY KEY (id, user_id)
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_high_scores_user_id ON high_scores(user_id)")
+
+        # Migrate if columns don't exist
+        self._migrate_table_if_needed(cursor, "high_scores")
 
     def _create_daily_summaries_table(self, conn: connection) -> None:
         """Create daily_summaries table."""
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS daily_summaries (
-                date TEXT PRIMARY KEY,
+                date TEXT NOT NULL,
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
                 total_keystrokes INTEGER,
                 total_bursts INTEGER,
                 avg_wpm DOUBLE PRECISION,
                 slowest_keycode INTEGER,
                 slowest_key_name TEXT,
                 total_typing_sec INTEGER,
-                summary_sent INTEGER DEFAULT 0
+                summary_sent INTEGER DEFAULT 0,
+                encrypted_data TEXT,
+                PRIMARY KEY (date, user_id)
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_summaries_user_id ON daily_summaries(user_id)")
+
+        # Migrate if columns don't exist
+        self._migrate_table_if_needed(cursor, "daily_summaries")
 
     def _create_word_statistics_table(self, conn: connection) -> None:
         """Create word_statistics table."""
@@ -211,6 +260,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             CREATE TABLE IF NOT EXISTS word_statistics (
                 word TEXT NOT NULL,
                 layout TEXT NOT NULL,
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
                 avg_speed_ms_per_letter DOUBLE PRECISION NOT NULL,
                 total_letters INTEGER NOT NULL,
                 total_duration_ms INTEGER NOT NULL,
@@ -218,22 +268,131 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 last_seen BIGINT NOT NULL,
                 backspace_count INTEGER DEFAULT 0,
                 editing_time_ms INTEGER DEFAULT 0,
-                PRIMARY KEY (word, layout)
+                encrypted_data TEXT,
+                PRIMARY KEY (word, layout, user_id)
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_word_statistics_user_id ON word_statistics(user_id)")
+
+        # Migrate if columns don't exist
+        self._migrate_table_if_needed(cursor, "word_statistics")
+
+        # Create users and sync_log tables
+        self._create_users_table(conn)
+        self._create_sync_log_table(conn)
+
+    def _create_users_table(self, conn: connection) -> None:
+        """Create users table."""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                username TEXT NOT NULL UNIQUE,
+                email TEXT UNIQUE,
+                display_name TEXT,
+                created_at BIGINT NOT NULL,
+                last_sync BIGINT,
+                is_active INTEGER DEFAULT 1,
+                metadata TEXT
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+
+    def _create_sync_log_table(self, conn: connection) -> None:
+        """Create sync_log table."""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sync_log (
+                id SERIAL PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                sync_type TEXT NOT NULL,
+                started_at BIGINT NOT NULL,
+                completed_at BIGINT,
+                records_pushed INTEGER DEFAULT 0,
+                records_pulled INTEGER DEFAULT 0,
+                conflicts_resolved INTEGER DEFAULT 0,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                metadata TEXT
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sync_log_user_id ON sync_log(user_id)")
+
+    def _migrate_table_if_needed(self, cursor, table: str) -> None:
+        """Migrate table to add user_id and encrypted_data columns if not present.
+
+        Args:
+            cursor: Database cursor
+            table: Table name to check/migrate
+        """
+        # Check if user_id column exists
+        cursor.execute(f"""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='{table}' AND column_name='user_id'
+            )
+        """)
+        has_user_id = cursor.fetchone()[0]
+
+        if not has_user_id:
+            log.info(f"Migrating {table}: adding user_id and encrypted_data columns")
+            self._migrate_table_add_columns(cursor, table)
+
+    def _migrate_table_add_columns(self, cursor, table: str) -> None:
+        """Add user_id and encrypted_data columns to existing table.
+
+        Args:
+            cursor: Database cursor
+            table: Table name to migrate
+        """
+        # Add columns
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'")
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS encrypted_data TEXT")
+
+        # Create index on user_id
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)")
+
+        # Update primary key to include user_id
+        # Note: This varies by table due to different primary keys
+        if table == "bursts":
+            cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS bursts_pkey")
+            cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (id, user_id)")
+        elif table == "statistics":
+            cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS statistics_pkey")
+            cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (keycode, layout, user_id)")
+        elif table == "word_statistics":
+            cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS word_statistics_pkey")
+            cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (word, layout, user_id)")
+        elif table == "high_scores":
+            cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS high_scores_pkey")
+            cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (id, user_id)")
+        elif table == "daily_summaries":
+            cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS daily_summaries_pkey")
+            cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (date, user_id)")
+
+        log.info(f"Migration completed for table {table}")
 
     def _refresh_all_time_cache(self) -> None:
         """Refresh all-time statistics cache from database."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COALESCE(SUM(duration_ms), 0) FROM bursts")
+            cursor.execute(
+                "SELECT COALESCE(SUM(duration_ms), 0) FROM bursts WHERE user_id = %s",
+                (self.user_id,)
+            )
             total_ms = cursor.fetchone()[0]
             self._cache_all_time_typing_sec = int(total_ms / 1000)
 
-            cursor.execute("SELECT COALESCE(SUM(net_key_count), 0) FROM bursts")
+            cursor.execute(
+                "SELECT COALESCE(SUM(net_key_count), 0) FROM bursts WHERE user_id = %s",
+                (self.user_id,)
+            )
             self._cache_all_time_keystrokes = int(cursor.fetchone()[0])
 
-            cursor.execute("SELECT COUNT(*) FROM bursts")
+            cursor.execute(
+                "SELECT COUNT(*) FROM bursts WHERE user_id = %s",
+                (self.user_id,)
+            )
             self._cache_all_time_bursts = int(cursor.fetchone()[0])
 
     # ========== Burst Operations ==========
@@ -252,14 +411,30 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """Store a burst record."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # If encryption is enabled, encrypt the data
+            encrypted_data = None
+            if self.encryption:
+                encrypted_data = self.encryption.encrypt_burst(
+                    start_time=start_time,
+                    end_time=end_time,
+                    key_count=key_count,
+                    backspace_count=backspace_count,
+                    net_key_count=net_key_count,
+                    duration_ms=duration_ms,
+                    avg_wpm=avg_wpm,
+                    qualifies_for_high_score=qualifies_for_high_score,
+                )
+
             cursor.execute(
                 """
                 INSERT INTO bursts
-                (start_time, end_time, key_count, backspace_count, net_key_count,
-                 duration_ms, avg_wpm, qualifies_for_high_score)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (user_id, start_time, end_time, key_count, backspace_count, net_key_count,
+                 duration_ms, avg_wpm, qualifies_for_high_score, encrypted_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
+                    self.user_id,
                     start_time,
                     end_time,
                     key_count,
@@ -268,6 +443,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     duration_ms,
                     avg_wpm,
                     1 if qualifies_for_high_score else 0,
+                    encrypted_data,
                 ),
             )
             conn.commit()
@@ -285,10 +461,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 """
                 SELECT start_time, avg_wpm
                 FROM bursts
-                WHERE start_time >= %s AND start_time < %s
+                WHERE user_id = %s AND start_time >= %s AND start_time < %s
                 ORDER BY start_time
             """,
-                (start_ms, end_ms),
+                (self.user_id, start_ms, end_ms),
             )
             rows = cursor.fetchall()
             return [BurstTimeSeries(timestamp_ms=r[0], avg_wpm=r[1]) for r in rows]
@@ -298,8 +474,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Get all WPM values
-            cursor.execute("SELECT avg_wpm FROM bursts WHERE avg_wpm IS NOT NULL ORDER BY avg_wpm")
+            # Get all WPM values for current user
+            cursor.execute(
+                "SELECT avg_wpm FROM bursts WHERE user_id = %s AND avg_wpm IS NOT NULL ORDER BY avg_wpm",
+                (self.user_id,)
+            )
             wpm_values = [row[0] for row in cursor.fetchall()]
 
             if not wpm_values:
@@ -348,10 +527,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     COALESCE(backspace_count, 0) as backspace_count,
                     start_time
                 FROM bursts
+                WHERE user_id = %s
                 ORDER BY start_time DESC
                 LIMIT %s
             """,
-                (limit,),
+                (self.user_id, limit),
             )
 
             bursts = []
@@ -396,7 +576,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                        COALESCE(MIN(duration_ms), 0),
                        COALESCE(MAX(duration_ms), 0)
                 FROM bursts
-            """
+                WHERE user_id = %s
+            """,
+                (self.user_id,),
             )
             result = cursor.fetchone()
             if result and result[0]:
@@ -412,9 +594,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(
                 """
                 SELECT COALESCE(SUM(net_key_count), 0) FROM bursts
-                WHERE start_time >= %s AND start_time < %s
+                WHERE user_id = %s AND start_time >= %s AND start_time < %s
             """,
-                (start_ms, end_ms),
+                (self.user_id, start_ms, end_ms),
             )
             total_keystrokes = cursor.fetchone()[0]
 
@@ -422,9 +604,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(
                 """
                 SELECT COUNT(*) FROM bursts
-                WHERE start_time >= %s AND start_time < %s
+                WHERE user_id = %s AND start_time >= %s AND start_time < %s
             """,
-                (start_ms, end_ms),
+                (self.user_id, start_ms, end_ms),
             )
             total_bursts = cursor.fetchone()[0]
 
@@ -437,10 +619,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(
                 """
                 SELECT avg_wpm FROM bursts
-                WHERE start_time >= %s AND duration_ms >= %s
+                WHERE user_id = %s AND start_time >= %s AND duration_ms >= %s
                 ORDER BY avg_wpm ASC
             """,
-                (start_ms, min_duration_ms),
+                (self.user_id, start_ms, min_duration_ms),
             )
             return [row[0] for row in cursor.fetchall()]
 
@@ -451,9 +633,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(
                 """
                 SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
-                WHERE start_time >= %s AND start_time < %s
+                WHERE user_id = %s AND start_time >= %s AND start_time < %s
             """,
-                (start_ms, end_ms),
+                (self.user_id, start_ms, end_ms),
             )
             return cursor.fetchone()[0]
 
@@ -517,12 +699,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     COUNT(*) AS total_bursts,
                     AVG(avg_wpm) AS avg_wpm
                 FROM bursts
-                WHERE start_time >= %s AND start_time < %s
+                WHERE user_id = %s AND start_time >= %s AND start_time < %s
                 GROUP BY period_key
                 ORDER BY period_start_ms
                 LIMIT %s
             """,
-                (start_ms, end_ms, limit),
+                (self.user_id, start_ms, end_ms, limit),
             )
             rows = cursor.fetchall()
 
@@ -600,9 +782,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(
                 """
                 SELECT avg_press_time, total_presses, slowest_ms, fastest_ms
-                FROM statistics WHERE keycode = %s AND layout = %s
+                FROM statistics WHERE keycode = %s AND layout = %s AND user_id = %s
             """,
-                (keycode, layout),
+                (keycode, layout, self.user_id),
             )
 
             result = cursor.fetchone()
@@ -621,7 +803,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     UPDATE statistics SET
                         avg_press_time = %s, total_presses = %s, slowest_ms = %s,
                         fastest_ms = %s, last_updated = %s
-                    WHERE keycode = %s AND layout = %s
+                    WHERE keycode = %s AND layout = %s AND user_id = %s
                 """,
                     (
                         new_avg,
@@ -631,6 +813,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         now_ms,
                         keycode,
                         layout,
+                        self.user_id,
                     ),
                 )
             else:
@@ -638,8 +821,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     """
                     INSERT INTO statistics
                     (keycode, key_name, layout, avg_press_time, total_presses,
-                     slowest_ms, fastest_ms, last_updated)
-                    VALUES (%s, %s, %s, %s, 1, %s, %s, %s)
+                     slowest_ms, fastest_ms, last_updated, user_id)
+                    VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s)
                 """,
                     (
                         keycode,
@@ -649,6 +832,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         press_time_ms,
                         press_time_ms,
                         now_ms,
+                        self.user_id,
                     ),
                 )
 
@@ -670,14 +854,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
                         FROM statistics
-                        WHERE layout = %s AND (key_name ~ %s)
+                        WHERE layout = %s AND user_id = %s AND (key_name ~ %s)
                     ) freq_rank ON s.key_name = freq_rank.key_name
-                    WHERE s.layout = %s AND s.total_presses >= 2
+                    WHERE s.layout = %s AND s.user_id = %s AND s.total_presses >= 2
                         AND (s.key_name ~ %s)
                     ORDER BY s.avg_press_time DESC
                     LIMIT %s
                 """,
-                    (layout, letter_pattern, layout, letter_pattern, limit),
+                    (layout, self.user_id, letter_pattern, layout, self.user_id, letter_pattern, limit),
                 )
             else:
                 cursor.execute(
@@ -687,14 +871,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
                         FROM statistics
-                        WHERE (key_name ~ %s)
+                        WHERE user_id = %s AND (key_name ~ %s)
                     ) freq_rank ON s.key_name = freq_rank.key_name
-                    WHERE s.total_presses >= 2
+                    WHERE s.user_id = %s AND s.total_presses >= 2
                         AND (s.key_name ~ %s)
                     ORDER BY s.avg_press_time DESC
                     LIMIT %s
                 """,
-                    (letter_pattern, letter_pattern, limit),
+                    (self.user_id, letter_pattern, self.user_id, letter_pattern, limit),
                 )
             rows = cursor.fetchall()
             return [
@@ -718,14 +902,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
                         FROM statistics
-                        WHERE layout = %s AND (key_name ~ %s)
+                        WHERE layout = %s AND user_id = %s AND (key_name ~ %s)
                     ) freq_rank ON s.key_name = freq_rank.key_name
-                    WHERE s.layout = %s AND s.total_presses >= 2
+                    WHERE s.layout = %s AND s.user_id = %s AND s.total_presses >= 2
                         AND (s.key_name ~ %s)
                     ORDER BY s.avg_press_time ASC
                     LIMIT %s
                 """,
-                    (layout, letter_pattern, layout, letter_pattern, limit),
+                    (layout, self.user_id, letter_pattern, layout, self.user_id, letter_pattern, limit),
                 )
             else:
                 cursor.execute(
@@ -735,14 +919,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT key_name, ROW_NUMBER() OVER (ORDER BY total_presses DESC) as rank
                         FROM statistics
-                        WHERE (key_name ~ %s)
+                        WHERE user_id = %s AND (key_name ~ %s)
                     ) freq_rank ON s.key_name = freq_rank.key_name
-                    WHERE s.total_presses >= 2
+                    WHERE s.user_id = %s AND s.total_presses >= 2
                         AND (s.key_name ~ %s)
                     ORDER BY s.avg_press_time ASC
                     LIMIT %s
                 """,
-                    (letter_pattern, letter_pattern, limit),
+                    (self.user_id, letter_pattern, self.user_id, letter_pattern, limit),
                 )
             rows = cursor.fetchall()
             return [
@@ -773,9 +957,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                        total_duration_ms, observation_count,
                        backspace_count, editing_time_ms
                 FROM word_statistics
-                WHERE word = %s AND layout = %s
+                WHERE word = %s AND layout = %s AND user_id = %s
             """,
-                (word, layout),
+                (word, layout, self.user_id),
             )
 
             result = cursor.fetchone()
@@ -806,7 +990,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         last_seen = %s,
                         backspace_count = %s,
                         editing_time_ms = %s
-                    WHERE word = %s AND layout = %s
+                    WHERE word = %s AND layout = %s AND user_id = %s
                 """,
                     (
                         new_avg_speed,
@@ -818,6 +1002,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         new_editing_time,
                         word,
                         layout,
+                        self.user_id,
                     ),
                 )
             else:
@@ -826,8 +1011,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INSERT INTO word_statistics
                     (word, layout, avg_speed_ms_per_letter, total_letters,
                      total_duration_ms, observation_count, last_seen,
-                     backspace_count, editing_time_ms)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     backspace_count, editing_time_ms, user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
                         word,
@@ -839,6 +1024,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         now_ms,
                         backspace_count,
                         editing_time_ms,
+                        self.user_id,
                     ),
                 )
 
@@ -860,13 +1046,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
                         FROM word_statistics
-                        WHERE layout = %s
+                        WHERE layout = %s AND user_id = %s
                     ) freq_rank ON ws.word = freq_rank.word
-                    WHERE ws.layout = %s AND ws.observation_count >= 2
+                    WHERE ws.layout = %s AND ws.user_id = %s AND ws.observation_count >= 2
                     ORDER BY ws.avg_speed_ms_per_letter DESC
                     LIMIT %s
                 """,
-                    (layout, layout, limit),
+                    (layout, self.user_id, layout, self.user_id, limit),
                 )
             else:
                 cursor.execute(
@@ -878,12 +1064,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
                         FROM word_statistics
+                        WHERE user_id = %s
                     ) freq_rank ON ws.word = freq_rank.word
-                    WHERE ws.observation_count >= 2
+                    WHERE ws.user_id = %s AND ws.observation_count >= 2
                     ORDER BY ws.avg_speed_ms_per_letter DESC
                     LIMIT %s
                 """,
-                    (limit,),
+                    (self.user_id, self.user_id, limit),
                 )
             rows = cursor.fetchall()
             return [
@@ -913,13 +1100,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
                         FROM word_statistics
-                        WHERE layout = %s
+                        WHERE layout = %s AND user_id = %s
                     ) freq_rank ON ws.word = freq_rank.word
-                    WHERE ws.layout = %s AND ws.observation_count >= 2
+                    WHERE ws.layout = %s AND ws.user_id = %s AND ws.observation_count >= 2
                     ORDER BY ws.avg_speed_ms_per_letter ASC
                     LIMIT %s
                 """,
-                    (layout, layout, limit),
+                    (layout, self.user_id, layout, self.user_id, limit),
                 )
             else:
                 cursor.execute(
@@ -931,12 +1118,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     INNER JOIN (
                         SELECT word, ROW_NUMBER() OVER (ORDER BY observation_count DESC) as rank
                         FROM word_statistics
+                        WHERE user_id = %s
                     ) freq_rank ON ws.word = freq_rank.word
-                    WHERE ws.observation_count >= 2
+                    WHERE ws.user_id = %s AND ws.observation_count >= 2
                     ORDER BY ws.avg_speed_ms_per_letter ASC
                     LIMIT %s
                 """,
-                    (limit,),
+                    (self.user_id, self.user_id, limit),
                 )
             rows = cursor.fetchall()
             return [
@@ -958,13 +1146,26 @@ class PostgreSQLAdapter(DatabaseAdapter):
         duration_sec = duration_ms / 1000.0
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Encrypt data if encryption is enabled
+            encrypted_data = None
+            if self.encryption:
+                encrypted_data = self.encryption.encrypt_high_score(
+                    date=date,
+                    fastest_burst_wpm=wpm,
+                    burst_duration_sec=duration_sec,
+                    burst_key_count=key_count,
+                    timestamp=timestamp_ms,
+                    burst_duration_ms=duration_ms,
+                )
+
             cursor.execute(
                 """
                 INSERT INTO high_scores
-                (date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (user_id, date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms, encrypted_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-                (date, wpm, duration_sec, key_count, timestamp_ms, duration_ms),
+                (self.user_id, date, wpm, duration_sec, key_count, timestamp_ms, duration_ms, encrypted_data),
             )
             conn.commit()
 
@@ -974,9 +1175,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT MAX(fastest_burst_wpm) FROM high_scores WHERE date = %s
+                SELECT MAX(fastest_burst_wpm) FROM high_scores WHERE user_id = %s AND date = %s
             """,
-                (date,),
+                (self.user_id, date),
             )
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
@@ -987,8 +1188,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT MAX(fastest_burst_wpm) FROM high_scores
+                SELECT MAX(fastest_burst_wpm) FROM high_scores WHERE user_id = %s
             """,
+                (self.user_id,),
             )
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
@@ -1011,10 +1213,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(
                 """
                 INSERT INTO daily_summaries
-                (date, total_keystrokes, total_bursts, avg_wpm,
+                (user_id, date, total_keystrokes, total_bursts, avg_wpm,
                  slowest_keycode, slowest_key_name, total_typing_sec)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (date) DO UPDATE SET
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, date) DO UPDATE SET
                     total_keystrokes = EXCLUDED.total_keystrokes,
                     total_bursts = EXCLUDED.total_bursts,
                     avg_wpm = EXCLUDED.avg_wpm,
@@ -1023,6 +1225,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     total_typing_sec = EXCLUDED.total_typing_sec
             """,
                 (
+                    self.user_id,
                     date,
                     total_keystrokes,
                     total_bursts,
@@ -1042,9 +1245,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 """
                 SELECT total_keystrokes, total_bursts, avg_wpm,
                        slowest_keycode, slowest_key_name, total_typing_sec, summary_sent
-                FROM daily_summaries WHERE date = %s
+                FROM daily_summaries WHERE user_id = %s AND date = %s
             """,
-                (date,),
+                (self.user_id, date),
             )
             row = cursor.fetchone()
             if not row:
@@ -1065,9 +1268,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE daily_summaries SET summary_sent = 1 WHERE date = %s
+                UPDATE daily_summaries SET summary_sent = 1 WHERE user_id = %s AND date = %s
             """,
-                (date,),
+                (self.user_id, date),
             )
             conn.commit()
 
@@ -1085,9 +1288,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 cursor.execute(
                     """
                     SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
-                    WHERE start_time >= %s AND start_time < %s
+                    WHERE user_id = %s AND start_time >= %s AND start_time < %s
                 """,
-                    (start_of_day, end_of_day),
+                    (self.user_id, start_of_day, end_of_day),
                 )
                 today_ms = cursor.fetchone()[0]
                 return self._cache_all_time_typing_sec - int(today_ms / 1000)
@@ -1109,9 +1312,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     SELECT COALESCE(SUM(net_key_count), 0),
                            COUNT(*)
                     FROM bursts
-                    WHERE start_time >= %s AND start_time < %s
+                    WHERE user_id = %s AND start_time >= %s AND start_time < %s
                 """,
-                    (start_of_day, end_of_day),
+                    (self.user_id, start_of_day, end_of_day),
                 )
                 today_keystrokes, today_bursts = cursor.fetchone()
                 return (
@@ -1132,19 +1335,19 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cutoff_date = (datetime.now() - timedelta(days=retention_days)).strftime("%Y-%m-%d")
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM bursts WHERE start_time < %s", (cutoff_ms,))
-            cursor.execute("DELETE FROM daily_summaries WHERE date < %s", (cutoff_date,))
+            cursor.execute("DELETE FROM bursts WHERE user_id = %s AND start_time < %s", (self.user_id, cutoff_ms,))
+            cursor.execute("DELETE FROM daily_summaries WHERE user_id = %s AND date < %s", (self.user_id, cutoff_date,))
             conn.commit()
 
     def clear_database(self) -> None:
-        """Clear all data from database."""
+        """Clear all data from database for current user."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM bursts")
-            cursor.execute("DELETE FROM statistics")
-            cursor.execute("DELETE FROM high_scores")
-            cursor.execute("DELETE FROM daily_summaries")
-            cursor.execute("DELETE FROM word_statistics")
+            cursor.execute("DELETE FROM bursts WHERE user_id = %s", (self.user_id,))
+            cursor.execute("DELETE FROM statistics WHERE user_id = %s", (self.user_id,))
+            cursor.execute("DELETE FROM high_scores WHERE user_id = %s", (self.user_id,))
+            cursor.execute("DELETE FROM daily_summaries WHERE user_id = %s", (self.user_id,))
+            cursor.execute("DELETE FROM word_statistics WHERE user_id = %s", (self.user_id,))
             conn.commit()
 
     def export_to_csv(self, file_path, start_date: str) -> int:

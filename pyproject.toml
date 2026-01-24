@@ -12,6 +12,7 @@ dependencies = [
     "evdev",
     "sqlcipher3-binary",
     "keyring",
+    "cryptography>=41.0.0",
 ]
 
 [project.optional-dependencies]
