@@ -820,8 +820,15 @@ class Application(QObject):
             "dictionary_mode": self.config.get("dictionary_mode", "validate"),
             "enabled_languages": self.config.get("enabled_languages", "en,de"),
             "enabled_dictionaries": enabled_dicts_value,
+            # Database settings
+            "database_backend": self.config.get("database_backend", "sqlite"),
+            "postgres_host": self.config.get("postgres_host", ""),
+            "postgres_port": self.config.get_int("postgres_port", 5432),
+            "postgres_database": self.config.get("postgres_database", "realtypecoach"),
+            "postgres_user": self.config.get("postgres_user", ""),
+            "postgres_sslmode": self.config.get("postgres_sslmode", "require"),
         }
-        dialog = SettingsDialog(current_settings)
+        dialog = SettingsDialog(current_settings, storage=self.storage)
         if dialog.exec() == QDialog.Accepted:
             # Use dialog.settings if it was set by clear_data/export_csv, otherwise get fresh settings
             if dialog.settings:

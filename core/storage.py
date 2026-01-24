@@ -764,12 +764,27 @@ class Storage:
             )
 
             # Initialize sync manager
+            # Always use SQLite as local adapter for sync, regardless of main storage backend
+            from core.sqlite_adapter import SQLiteAdapter
+
+            # Ensure SQLite database exists for sync
+            if not self.db_path.exists():
+                return {
+                    "success": False,
+                    "error": "Local SQLite database not found. Please run with database_backend='sqlite' first to create it.",
+                }
+
+            local_adapter = SQLiteAdapter(db_path=self.db_path, crypto=self.crypto)
+            local_adapter.initialize()
+            log.info(f"Created SQLite local adapter for sync, type: {type(local_adapter).__name__}")
+
             sync_mgr = SyncManager(
-                local_adapter=self.adapter,
+                local_adapter=local_adapter,
                 remote_adapter=remote_adapter,
                 encryption=encryption,
                 user_id=user.user_id,
             )
+            log.info(f"SyncManager local adapter type: {type(sync_mgr.local).__name__}")
 
             # Perform sync
             result = sync_mgr.bidirectional_merge()
@@ -777,7 +792,8 @@ class Storage:
             # Update last sync timestamp
             user_manager.update_last_sync()
 
-            # Close remote adapter
+            # Close adapters
+            local_adapter.close()
             remote_adapter.close()
 
             return {

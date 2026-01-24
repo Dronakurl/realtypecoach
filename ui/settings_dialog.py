@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -64,15 +64,17 @@ class ClickableInfoLabel(QLabel):
 class SettingsDialog(QDialog):
     """Configuration dialog for RealTypeCoach."""
 
-    def __init__(self, current_settings: dict, parent=None):
+    def __init__(self, current_settings: dict, storage=None, parent=None):
         """Initialize settings dialog.
 
         Args:
             current_settings: Dictionary of current settings
+            storage: Optional Storage instance for sync operations
             parent: Parent widget
         """
         super().__init__(parent)
         self.current_settings = current_settings
+        self.storage = storage
         self.settings: dict = {}
         # Set window flags for Wayland compatibility
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
@@ -1473,8 +1475,16 @@ class SettingsDialog(QDialog):
 
     def upload_history_to_database(self) -> None:
         """Manual merge/sync button handler."""
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QMessageBox, QProgressDialog
+        from PySide6.QtWidgets import QMessageBox, QPushButton
+
+        # Check if we have access to storage
+        if self.storage is None:
+            QMessageBox.warning(
+                self,
+                "Storage Not Available",
+                "Storage instance not available. Please restart the application and try again."
+            )
+            return
 
         # Check if PostgreSQL is configured
         if self.backend_combo.currentData() != "postgres":
@@ -1486,39 +1496,58 @@ class SettingsDialog(QDialog):
             return
 
         host = self.postgres_host_input.text().strip()
-        user = self.postgres_user_input.text().strip()
+        postgres_user = self.postgres_user_input.text().strip()
 
-        if not all([host, user]):
+        if not all([host, postgres_user]):
             QMessageBox.warning(self, "Not Configured", "Please configure PostgreSQL connection first.")
             return
 
-        # Show progress dialog
-        progress = QProgressDialog("Uploading typing history...", "Cancel", 0, 0, self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.show()
+        # Store current button state
+        self.upload_history_btn.setEnabled(False)
+        self.upload_history_btn.setText("Syncing...")
+
+        # Update status label to show sync in progress
+        self.last_sync_label.setText("⏳ Syncing...")
+        self.last_sync_label.setStyleSheet("color: #007acc; font-style: italic;")
+
+        # Process events to update UI
+        QApplication.processEvents()
 
         try:
-            # Note: This is a placeholder. The actual sync would need to be done
-            # through the main application's storage instance, not from settings dialog.
-            # For now, show a success message to demonstrate the UI flow.
-            progress.close()
+            # Use storage's merge_with_remote method which has the proper fix
+            result = self.storage.merge_with_remote()
 
-            QMessageBox.information(
-                self,
-                "Sync Complete",
-                "Sync functionality would be implemented here.\n\n"
-                "This requires access to the main application's Storage instance.\n\n"
-                "The sync button would trigger:\n"
-                "• Push local changes to PostgreSQL (with encryption)\n"
-                "• Pull remote changes from PostgreSQL\n"
-                "• Merge conflicts intelligently\n"
-                "• Update last sync time"
-            )
-            self.last_sync_label.setText("Last sync: Just now (demo)")
+            if result["success"]:
+                total_records = result["pushed"] + result["pulled"]
+                self.last_sync_label.setText(f"✓ Last sync: Just now ({total_records} records)")
+                self.last_sync_label.setStyleSheet("color: green; font-style: italic;")
+
+                QMessageBox.information(
+                    self,
+                    "Sync Complete",
+                    f"Sync completed successfully!\n\n"
+                    f"Pushed: {result['pushed']} records\n"
+                    f"Pulled: {result['pulled']} records\n"
+                    f"Conflicts resolved: {result['conflicts_resolved']}\n"
+                    f"Duration: {result['duration_ms']} ms"
+                )
+            else:
+                self.last_sync_label.setText("✗ Sync failed - check logs")
+                self.last_sync_label.setStyleSheet("color: red; font-style: italic;")
+                QMessageBox.critical(
+                    self,
+                    "Sync Failed",
+                    f"Sync failed:\n{result.get('error', 'Unknown error')}"
+                )
 
         except Exception as e:
-            progress.close()
+            self.last_sync_label.setText("✗ Sync failed - check logs")
+            self.last_sync_label.setStyleSheet("color: red; font-style: italic;")
             QMessageBox.critical(self, "Sync Failed", f"Error during sync:\n{e}")
+        finally:
+            # Always restore button state
+            self.upload_history_btn.setEnabled(True)
+            self.upload_history_btn.setText("Upload/Download Typing History")
 
     def _update_user_display(self) -> None:
         """Update user identity display."""

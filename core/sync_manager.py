@@ -474,13 +474,112 @@ class SyncManager:
             True if successful
         """
         try:
+            if table == "bursts":
+                # Use adapter's store_burst method
+                self.remote.store_burst(
+                    start_time=record.get("start_time", 0),
+                    end_time=record.get("end_time", 0),
+                    key_count=record.get("key_count", 0),
+                    backspace_count=record.get("backspace_count", 0),
+                    net_key_count=record.get("net_key_count", 0),
+                    duration_ms=record.get("duration_ms", 0),
+                    avg_wpm=record.get("avg_wpm", 0.0),
+                    qualifies_for_high_score=record.get("qualifies_for_high_score", False),
+                )
+                return True
+
             # Encrypt data if encryption is enabled
+            encrypted_data = None
             if self.encryption:
                 encrypted_data = self._encrypt_record(table, record)
-                record = {**record, "encrypted_data": encrypted_data}
 
-            # Insert into remote database
-            # This is a placeholder - actual implementation would use adapter methods
+            # Insert other tables using raw SQL
+            with self.remote.get_connection() as conn:
+                cursor = conn.cursor()
+
+                if table == "statistics":
+                    cursor.execute("""
+                        INSERT INTO statistics
+                        (keycode, key_name, layout, avg_press_time, total_presses,
+                         slowest_ms, fastest_ms, last_updated, user_id, encrypted_data)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, keycode, layout) DO NOTHING
+                    """, (
+                        record.get("keycode"),
+                        record.get("key_name"),
+                        record.get("layout"),
+                        record.get("avg_press_time"),
+                        record.get("total_presses"),
+                        record.get("slowest_ms"),
+                        record.get("fastest_ms"),
+                        record.get("last_updated"),
+                        self.user_id,
+                        encrypted_data,
+                    ))
+
+                elif table == "word_statistics":
+                    cursor.execute("""
+                        INSERT INTO word_statistics
+                        (word, layout, avg_speed_ms_per_letter, total_letters,
+                         total_duration_ms, observation_count, last_seen,
+                         backspace_count, editing_time_ms, user_id, encrypted_data)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, word, layout) DO NOTHING
+                    """, (
+                        record.get("word"),
+                        record.get("layout"),
+                        record.get("avg_speed_ms_per_letter"),
+                        record.get("total_letters"),
+                        record.get("total_duration_ms"),
+                        record.get("observation_count"),
+                        record.get("last_seen"),
+                        record.get("backspace_count"),
+                        record.get("editing_time_ms"),
+                        self.user_id,
+                        encrypted_data,
+                    ))
+
+                elif table == "high_scores":
+                    cursor.execute("""
+                        INSERT INTO high_scores
+                        (id, date, fastest_burst_wpm, burst_duration_sec,
+                         burst_key_count, timestamp, burst_duration_ms, user_id, encrypted_data)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, id) DO NOTHING
+                    """, (
+                        record.get("id"),
+                        record.get("date"),
+                        record.get("fastest_burst_wpm"),
+                        record.get("burst_duration_sec"),
+                        record.get("burst_key_count"),
+                        record.get("timestamp"),
+                        record.get("burst_duration_ms"),
+                        self.user_id,
+                        encrypted_data,
+                    ))
+
+                elif table == "daily_summaries":
+                    cursor.execute("""
+                        INSERT INTO daily_summaries
+                        (date, total_keystrokes, total_bursts, avg_wpm,
+                         slowest_keycode, slowest_key_name, total_typing_sec,
+                         summary_sent, user_id, encrypted_data)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, date) DO NOTHING
+                    """, (
+                        record.get("date"),
+                        record.get("total_keystrokes"),
+                        record.get("total_bursts"),
+                        record.get("avg_wpm"),
+                        record.get("slowest_keycode"),
+                        record.get("slowest_key_name"),
+                        record.get("total_typing_sec"),
+                        record.get("summary_sent"),
+                        self.user_id,
+                        encrypted_data,
+                    ))
+
+                conn.commit()
             return True
         except Exception as e:
             log.error(f"Failed to push record to {table}: {e}")
@@ -497,12 +596,94 @@ class SyncManager:
             True if successful
         """
         try:
-            # Decrypt data if encryption is enabled
-            if record.get("encrypted_data") and self.encryption:
-                record = self._decrypt_record(table, record)
+            if table == "bursts":
+                # Use adapter's store_burst method
+                self.local.store_burst(
+                    start_time=record.get("start_time", 0),
+                    end_time=record.get("end_time", 0),
+                    key_count=record.get("key_count", 0),
+                    backspace_count=record.get("backspace_count", 0),
+                    net_key_count=record.get("net_key_count", 0),
+                    duration_ms=record.get("duration_ms", 0),
+                    avg_wpm=record.get("avg_wpm", 0.0),
+                    qualifies_for_high_score=record.get("qualifies_for_high_score", False),
+                )
+                return True
 
-            # Insert into local database
-            # This is a placeholder - actual implementation would use adapter methods
+            # Insert other tables using raw SQL
+            with self.local.get_connection() as conn:
+                cursor = conn.cursor()
+
+                if table == "statistics":
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO statistics
+                        (keycode, key_name, layout, avg_press_time, total_presses,
+                         slowest_ms, fastest_ms, last_updated)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get("keycode"),
+                        record.get("key_name"),
+                        record.get("layout"),
+                        record.get("avg_press_time"),
+                        record.get("total_presses"),
+                        record.get("slowest_ms"),
+                        record.get("fastest_ms"),
+                        record.get("last_updated"),
+                    ))
+
+                elif table == "word_statistics":
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO word_statistics
+                        (word, layout, avg_speed_ms_per_letter, total_letters,
+                         total_duration_ms, observation_count, last_seen,
+                         backspace_count, editing_time_ms)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get("word"),
+                        record.get("layout"),
+                        record.get("avg_speed_ms_per_letter"),
+                        record.get("total_letters"),
+                        record.get("total_duration_ms"),
+                        record.get("observation_count"),
+                        record.get("last_seen"),
+                        record.get("backspace_count"),
+                        record.get("editing_time_ms"),
+                    ))
+
+                elif table == "high_scores":
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO high_scores
+                        (id, date, fastest_burst_wpm, burst_duration_sec,
+                         burst_key_count, timestamp, burst_duration_ms)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get("id"),
+                        record.get("date"),
+                        record.get("fastest_burst_wpm"),
+                        record.get("burst_duration_sec"),
+                        record.get("burst_key_count"),
+                        record.get("timestamp"),
+                        record.get("burst_duration_ms"),
+                    ))
+
+                elif table == "daily_summaries":
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO daily_summaries
+                        (date, total_keystrokes, total_bursts, avg_wpm,
+                         slowest_keycode, slowest_key_name, total_typing_sec, summary_sent)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        record.get("date"),
+                        record.get("total_keystrokes"),
+                        record.get("total_bursts"),
+                        record.get("avg_wpm"),
+                        record.get("slowest_keycode"),
+                        record.get("slowest_key_name"),
+                        record.get("total_typing_sec"),
+                        1 if record.get("summary_sent") else 0,
+                    ))
+
+                conn.commit()
             return True
         except Exception as e:
             log.error(f"Failed to pull record from {table}: {e}")
@@ -728,5 +909,84 @@ class SyncManager:
         Returns:
             True if successful
         """
-        # Placeholder - would use adapter methods
-        return True
+        try:
+            log.info(f"Updating local record in {table}, local adapter type: {type(self.local).__name__}")
+            with self.local.get_connection() as conn:
+                cursor = conn.cursor()
+                log.info(f"Connection type: {type(conn).__name__}, cursor type: {type(cursor).__name__}")
+
+                if table == "statistics":
+                    cursor.execute("""
+                        UPDATE statistics
+                        SET avg_press_time = ?,
+                            total_presses = ?,
+                            slowest_ms = ?,
+                            fastest_ms = ?,
+                            last_updated = ?
+                        WHERE keycode = ? AND layout = ?
+                    """, (
+                        record.get("avg_press_time"),
+                        record.get("total_presses"),
+                        record.get("slowest_ms"),
+                        record.get("fastest_ms"),
+                        record.get("last_updated"),
+                        record.get("keycode"),
+                        record.get("layout"),
+                    ))
+
+                elif table == "word_statistics":
+                    cursor.execute("""
+                        UPDATE word_statistics
+                        SET avg_speed_ms_per_letter = ?,
+                            total_letters = ?,
+                            total_duration_ms = ?,
+                            observation_count = ?,
+                            last_seen = ?
+                        WHERE word = ? AND layout = ?
+                    """, (
+                        record.get("avg_speed_ms_per_letter"),
+                        record.get("total_letters"),
+                        record.get("total_duration_ms"),
+                        record.get("observation_count"),
+                        record.get("last_seen"),
+                        record.get("word"),
+                        record.get("layout"),
+                    ))
+
+                elif table == "high_scores":
+                    cursor.execute("""
+                        UPDATE high_scores
+                        SET fastest_burst_wpm = ?,
+                            burst_duration_sec = ?,
+                            burst_key_count = ?,
+                            timestamp = ?,
+                            burst_duration_ms = ?
+                        WHERE id = ?
+                    """, (
+                        record.get("fastest_burst_wpm"),
+                        record.get("burst_duration_sec"),
+                        record.get("burst_key_count"),
+                        record.get("timestamp"),
+                        record.get("burst_duration_ms"),
+                        record.get("id"),
+                    ))
+
+                elif table == "daily_summaries":
+                    cursor.execute("""
+                        UPDATE daily_summaries
+                        SET total_keystrokes = ?,
+                            total_bursts = ?,
+                            avg_wpm = ?
+                        WHERE date = ?
+                    """, (
+                        record.get("total_keystrokes"),
+                        record.get("total_bursts"),
+                        record.get("avg_wpm"),
+                        record.get("date"),
+                    ))
+
+                conn.commit()
+            return True
+        except Exception as e:
+            log.error(f"Failed to update local record in {table}: {e}")
+            return False
