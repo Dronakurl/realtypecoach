@@ -368,10 +368,12 @@ class UserManager:
             # Store key
             self._store_user_encryption_key(user_id, key)
 
-            # Extract username from user_id or generate new one
-            hostname = self._get_hostname()
-            random_suffix = secrets.token_hex(3)
-            username = f"{hostname}_{random_suffix}"
+            # Preserve existing username if set, otherwise generate new one
+            username = self.config.get("current_username", "")
+            if not username:
+                hostname = self._get_hostname()
+                random_suffix = secrets.token_hex(3)
+                username = f"{hostname}_{random_suffix}"
 
             # Update config with imported user
             now_ms = int(time.time() * 1000)

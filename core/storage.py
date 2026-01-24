@@ -82,69 +82,23 @@ class Storage:
         self._analyzer: Analyzer | None = None
 
     def _create_adapter(self) -> DatabaseAdapter:
-        """Create and initialize database adapter based on configuration.
+        """Create and initialize SQLite database adapter.
+
+        Local SQLite is always used as the primary storage.
+        PostgreSQL is only used for optional remote sync.
 
         Returns:
-            Initialized database adapter
+            Initialized SQLite adapter
 
         Raises:
             AdapterError: If adapter creation or initialization fails
         """
-        # Get database backend type from config (default: sqlite)
-        db_backend = self.config.get("database_backend", "sqlite")
+        from core.sqlite_adapter import SQLiteAdapter
 
-        if db_backend == "sqlite":
-            from core.sqlite_adapter import SQLiteAdapter
-
-            log.info("Using SQLite database adapter")
-            adapter = SQLiteAdapter(db_path=self.db_path, crypto=self.crypto)
-            adapter.initialize()
-            return adapter
-
-        elif db_backend == "postgres":
-            from core.postgres_adapter import PostgreSQLAdapter
-            from core.user_manager import UserManager
-
-            log.info("Using PostgreSQL database adapter")
-
-            # Get PostgreSQL configuration
-            host = self.config.get("postgres_host", "")
-            port = self.config.get_int("postgres_port", 5432)
-            database = self.config.get("postgres_database", "realtypecoach")
-            user = self.config.get("postgres_user", "")
-            sslmode = self.config.get("postgres_sslmode", "require")
-
-            # Get password from keyring
-            password = self._get_postgres_password()
-
-            if not all([host, database, user, password]):
-                raise AdapterError(
-                    "PostgreSQL configuration incomplete. "
-                    "Please set host, database, user, and password in settings."
-                )
-
-            # Get user identity and encryption key for multi-user support
-            user_manager = UserManager(self.db_path, self.config)
-            current_user = user_manager.get_or_create_current_user()
-            encryption_key = user_manager.get_encryption_key()
-
-            log.info(f"Using PostgreSQL with user_id: {current_user.user_id}")
-
-            adapter = PostgreSQLAdapter(
-                host=host,
-                port=port,
-                database=database,
-                user=user,
-                password=password,
-                sslmode=sslmode,
-                user_id=current_user.user_id,
-                encryption_key=encryption_key,
-            )
-            adapter.initialize()
-            return adapter
-
-        else:
-            raise AdapterError(f"Unknown database backend: {db_backend}")
+        log.info("Using SQLite database adapter as primary storage")
+        adapter = SQLiteAdapter(db_path=self.db_path, crypto=self.crypto)
+        adapter.initialize()
+        return adapter
 
     def _get_postgres_password(self) -> str:
         """Get PostgreSQL password from keyring or secret file.
@@ -743,12 +697,12 @@ class Storage:
             >>> if result["success"]:
             ...     print(f"Synced: {result['pushed']} pushed, {result['pulled']} pulled")
         """
-        # Check if PostgreSQL is configured
-        db_backend = self.config.get("database_backend", "sqlite")
-        if db_backend not in ("postgres", "hybrid"):
+        # Check if PostgreSQL sync is enabled
+        postgres_sync_enabled = self.config.get_bool("postgres_sync_enabled", False)
+        if not postgres_sync_enabled:
             return {
                 "success": False,
-                "error": "Remote database not configured. Please set database_backend to 'postgres' in settings.",
+                "error": "Remote sync not enabled. Please enable PostgreSQL sync in settings.",
             }
 
         # Import SyncManager
@@ -794,6 +748,8 @@ class Storage:
                 user_id=user.user_id,
                 encryption_key=encryption_key,
             )
+            remote_adapter.initialize()
+            log.info(f"Created PostgreSQL remote adapter for sync, type: {type(remote_adapter).__name__}")
 
             # Initialize sync manager
             # Always use SQLite as local adapter for sync, regardless of main storage backend
@@ -803,7 +759,7 @@ class Storage:
             if not self.db_path.exists():
                 return {
                     "success": False,
-                    "error": "Local SQLite database not found. Please run with database_backend='sqlite' first to create it.",
+                    "error": "Local SQLite database not found.",
                 }
 
             local_adapter = SQLiteAdapter(db_path=self.db_path, crypto=self.crypto)

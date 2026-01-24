@@ -294,10 +294,6 @@ class SettingsDialog(QDialog):
                 Qt.ConnectionType.QueuedConnection,
             )
 
-        # Connect checkbox to update next sync label
-        self.auto_sync_enabled_check.stateChanged.connect(self._update_next_sync_label)
-        self.sync_interval_spin.valueChanged.connect(self._update_next_sync_label)
-
     def create_general_tab(self) -> QWidget:
         """Create general settings tab."""
         widget = QWidget()
@@ -682,24 +678,19 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout()
 
-        # Backend selection
-        backend_group = QGroupBox("Database Backend")
-        backend_layout = QFormLayout()
+        # Remote sync checkbox
+        sync_group = QGroupBox("Remote Sync")
+        sync_layout = QVBoxLayout()
 
-        self.backend_combo = QComboBox()
-        self.backend_combo.addItem("SQLite (Local Only)", "sqlite")
-        self.backend_combo.addItem("PostgreSQL (Remote)", "postgres")
-        backend_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Database backend:",
-                "Select the database backend:\n"
-                "• SQLite (Local Only): Default, encrypted local database\n"
-                "• PostgreSQL (Remote): Remote database on VPS for multi-device sync",
-            ),
-            self.backend_combo,
+        self.postgres_sync_enabled_check = QCheckBox("Enable PostgreSQL sync")
+        self.postgres_sync_enabled_check.setToolTip(
+            "Sync typing data with a remote PostgreSQL database for multi-device support.\n\n"
+            "Your data is always stored locally in SQLite. PostgreSQL is only used for syncing."
         )
-        backend_group.setLayout(backend_layout)
-        layout.addWidget(backend_group)
+        sync_layout.addWidget(self.postgres_sync_enabled_check)
+
+        sync_group.setLayout(sync_layout)
+        layout.addWidget(sync_group)
 
         # PostgreSQL connection settings
         postgres_group = QGroupBox("PostgreSQL Connection")
@@ -708,44 +699,20 @@ class SettingsDialog(QDialog):
         self.postgres_host_edit = ""
         self.postgres_host_input = QLineEdit()
         self.postgres_host_input.setPlaceholderText("localhost")
-        postgres_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Host:",
-                "PostgreSQL server hostname or IP address",
-            ),
-            self.postgres_host_input,
-        )
+        postgres_layout.addRow("Host:", self.postgres_host_input)
 
         self.postgres_port_spin = QSpinBox()
         self.postgres_port_spin.setRange(1, 65535)
         self.postgres_port_spin.setValue(5432)
-        postgres_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Port:",
-                "PostgreSQL server port (default: 5432)",
-            ),
-            self.postgres_port_spin,
-        )
+        postgres_layout.addRow("Port:", self.postgres_port_spin)
 
         self.postgres_database_input = QLineEdit()
         self.postgres_database_input.setPlaceholderText("realtypecoach")
-        postgres_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Database:",
-                "PostgreSQL database name",
-            ),
-            self.postgres_database_input,
-        )
+        postgres_layout.addRow("Database:", self.postgres_database_input)
 
         self.postgres_user_input = QLineEdit()
         self.postgres_user_input.setPlaceholderText("realtypecoach")
-        postgres_layout.addRow(
-            self._create_labeled_icon_widget(
-                "User:",
-                "PostgreSQL username",
-            ),
-            self.postgres_user_input,
-        )
+        postgres_layout.addRow("User:", self.postgres_user_input)
 
         password_container = QWidget()
         password_layout = QHBoxLayout(password_container)
@@ -761,13 +728,7 @@ class SettingsDialog(QDialog):
         set_password_btn.clicked.connect(self.set_postgres_password)
         password_layout.addWidget(set_password_btn)
 
-        postgres_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Password:",
-                "PostgreSQL password (stored securely in system keyring)",
-            ),
-            password_container,
-        )
+        postgres_layout.addRow("Password:", password_container)
 
         self.sslmode_combo = QComboBox()
         self.sslmode_combo.addItem("Require", "require")
@@ -775,28 +736,20 @@ class SettingsDialog(QDialog):
         self.sslmode_combo.addItem("Prefer", "prefer")
         self.sslmode_combo.addItem("Allow", "allow")
         self.sslmode_combo.addItem("Disable", "disable")
-        postgres_layout.addRow(
-            self._create_labeled_icon_widget(
-                "SSL mode:",
-                "SSL/TLS encryption mode:\n"
-                "• Require: Always encrypted (recommended)\n"
-                "• Verify Full: Encrypted + certificate verification\n"
-                "• Prefer: Use SSL if available\n"
-                "• Allow: Use SSL if server requests it\n"
-                "• Disable: No encryption (not recommended)",
-            ),
-            self.sslmode_combo,
-        )
+        postgres_layout.addRow("SSL mode:", self.sslmode_combo)
 
         postgres_group.setLayout(postgres_layout)
         layout.addWidget(postgres_group)
 
-        # Test connection button
+        # Test connection and verify setup buttons
         test_conn_layout = QHBoxLayout()
         test_conn_layout.addStretch()
         self.test_conn_btn = QPushButton("Test Connection")
         self.test_conn_btn.clicked.connect(self.test_postgres_connection)
         test_conn_layout.addWidget(self.test_conn_btn)
+        self.verify_setup_btn = QPushButton("Verify Sync Setup")
+        self.verify_setup_btn.clicked.connect(self.test_user_and_encryption)
+        test_conn_layout.addWidget(self.verify_setup_btn)
         layout.addLayout(test_conn_layout)
 
         # Connection status label
@@ -811,14 +764,7 @@ class SettingsDialog(QDialog):
 
         self.user_id_label = QLabel("Not set")
         self.user_id_label.setStyleSheet("font-family: monospace; font-size: 10px;")
-        user_layout.addRow(
-            self._create_labeled_icon_widget(
-                "User ID:",
-                "Your unique user identifier for multi-device sync.\n"
-                "This ID is automatically generated on first launch.",
-            ),
-            self.user_id_label,
-        )
+        user_layout.addRow("User ID:", self.user_id_label)
 
         username_container = QWidget()
         username_layout_layout = QHBoxLayout(username_container)
@@ -832,14 +778,7 @@ class SettingsDialog(QDialog):
         update_username_btn.clicked.connect(self.update_username)
         username_layout_layout.addWidget(update_username_btn)
 
-        user_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Username:",
-                "Customizable username for identification.\n"
-                "Auto-generated as hostname_random on first launch.",
-            ),
-            username_container,
-        )
+        user_layout.addRow("Username:", username_container)
 
         # Encryption key export/import
         key_buttons_layout = QHBoxLayout()
@@ -856,42 +795,33 @@ class SettingsDialog(QDialog):
         user_group.setLayout(user_layout)
         layout.addWidget(user_group)
 
-        # Sync Group
-        sync_group = QGroupBox("Data Sync")
-        sync_layout = QVBoxLayout()
+        # Manual Sync Group
+        manual_sync_group = QGroupBox("Sync")
+        manual_sync_layout = QVBoxLayout()
 
-        self.upload_history_btn = QPushButton("Upload/Download Typing History")
+        self.upload_history_btn = QPushButton("Sync Now")
         self.upload_history_btn.clicked.connect(self.upload_history_to_database)
-        sync_layout.addWidget(self.upload_history_btn)
+        manual_sync_layout.addWidget(self.upload_history_btn)
 
         self.last_sync_label = QLabel("Never synced")
         self.last_sync_label.setStyleSheet("color: #666; font-style: italic;")
-        sync_layout.addWidget(self.last_sync_label)
+        manual_sync_layout.addWidget(self.last_sync_label)
 
-        sync_group.setLayout(sync_layout)
-        layout.addWidget(sync_group)
+        manual_sync_group.setLayout(manual_sync_layout)
+        layout.addWidget(manual_sync_group)
 
-        # Auto-sync settings group
-        auto_sync_group = QGroupBox("Automatic Background Sync")
+        # Auto-sync settings
+        auto_sync_group = QGroupBox("Auto-sync")
         auto_sync_layout = QFormLayout()
 
         self.auto_sync_enabled_check = QCheckBox("Enable automatic sync")
-        self.auto_sync_enabled_check.setToolTip(
-            "Automatically sync with remote database in the background"
-        )
         auto_sync_layout.addRow("", self.auto_sync_enabled_check)
 
         self.sync_interval_spin = QSpinBox()
-        self.sync_interval_spin.setRange(60, 86400)  # 1 minute to 24 hours
+        self.sync_interval_spin.setRange(60, 86400)
         self.sync_interval_spin.setValue(300)
-        self.sync_interval_spin.setSuffix(" seconds")
-        self.sync_interval_spin.setToolTip("How often to sync with remote database")
-        auto_sync_layout.addRow("Sync interval:", self.sync_interval_spin)
-
-        # Status label showing next sync time
-        self.next_sync_label = QLabel("Auto-sync disabled")
-        self.next_sync_label.setStyleSheet("color: #666; font-style: italic;")
-        auto_sync_layout.addRow("", self.next_sync_label)
+        self.sync_interval_spin.setSuffix(" s")
+        auto_sync_layout.addRow("Interval:", self.sync_interval_spin)
 
         auto_sync_group.setLayout(auto_sync_layout)
         layout.addWidget(auto_sync_group)
@@ -899,17 +829,16 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         widget.setLayout(layout)
 
-        # Connect backend combo to enable/disable postgres settings
-        self.backend_combo.currentIndexChanged.connect(self.on_backend_changed)
+        # Connect checkbox to enable/disable postgres settings
+        self.postgres_sync_enabled_check.stateChanged.connect(self.on_postgres_sync_changed)
 
         return widget
 
-    def on_backend_changed(self) -> None:
-        """Handle backend selection change."""
-        backend = self.backend_combo.currentData()
-        is_postgres = backend == "postgres"
+    def on_postgres_sync_changed(self) -> None:
+        """Handle PostgreSQL sync checkbox change."""
+        is_enabled = self.postgres_sync_enabled_check.isChecked()
 
-        # Enable/disable postgres settings based on backend selection
+        # Enable/disable postgres settings based on checkbox state
         postgres_widgets = [
             self.postgres_host_input,
             self.postgres_port_spin,
@@ -918,10 +847,11 @@ class SettingsDialog(QDialog):
             self.postgres_password_input,
             self.sslmode_combo,
             self.test_conn_btn,
+            self.verify_setup_btn,
         ]
 
         for widget in postgres_widgets:
-            widget.setEnabled(is_postgres)
+            widget.setEnabled(is_enabled)
 
         # Enable/disable user identity and sync widgets
         user_sync_widgets = [
@@ -933,16 +863,16 @@ class SettingsDialog(QDialog):
         ]
 
         for widget in user_sync_widgets:
-            widget.setEnabled(is_postgres)
+            widget.setEnabled(is_enabled)
 
-        # Enable/disable auto-sync widgets (only when postgres is selected)
+        # Enable/disable auto-sync widgets (only when sync is enabled)
         auto_sync_widgets = [
             self.auto_sync_enabled_check,
             self.sync_interval_spin,
         ]
 
         for widget in auto_sync_widgets:
-            widget.setEnabled(is_postgres)
+            widget.setEnabled(is_enabled)
 
     def set_postgres_password(self) -> None:
         """Set PostgreSQL password in keyring."""
@@ -1033,6 +963,127 @@ class SettingsDialog(QDialog):
         except Exception as e:
             self.conn_status_label.setText(f"Connection failed: {str(e)}")
             self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+
+    def test_user_and_encryption(self) -> None:
+        """Verify user presence and encryption key functionality."""
+        try:
+            import psycopg2
+        except ImportError:
+            self.conn_status_label.setText(
+                "psycopg2 not installed. Install with: pip install psycopg2-binary"
+            )
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        # Get password from keyring
+        db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+        from utils.crypto import CryptoManager
+        from core.user_manager import UserManager
+        from utils.config import Config
+
+        crypto = CryptoManager(db_path)
+        password = crypto.get_postgres_password()
+
+        if not password:
+            self.conn_status_label.setText("No password set. Please set password first.")
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        # Get connection parameters
+        host = self.postgres_host_input.text().strip()
+        port = self.postgres_port_spin.value()
+        database = self.postgres_database_input.text().strip() or "realtypecoach"
+        user = self.postgres_user_input.text().strip()
+        sslmode = self.sslmode_combo.currentData()
+
+        if not all([host, user]):
+            self.conn_status_label.setText("Please fill in host and user fields.")
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        # Get user_id
+        config = Config(db_path)
+        user_manager = UserManager(db_path, config)
+        try:
+            user = user_manager.get_or_create_current_user()
+            user_id = user.user_id
+        except Exception as e:
+            self.conn_status_label.setText(f"Failed to get user: {str(e)}")
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        # Get encryption key
+        try:
+            encryption_key = user_manager.get_encryption_key()
+        except Exception as e:
+            self.conn_status_label.setText(f"Failed to get encryption key: {str(e)}")
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        self.conn_status_label.setText("Verifying sync setup...")
+        self.conn_status_label.setStyleSheet("color: #666; font-style: italic;")
+        QApplication.processEvents()
+
+        status_lines = []
+        all_passed = True
+
+        try:
+            # Test PostgreSQL connection
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                database=database,
+                user=user,
+                password=password,
+                sslmode=sslmode,
+                connect_timeout=10,
+            )
+            from core.postgres_adapter import PostgreSQLAdapter
+            from core.data_encryption import DataEncryption
+
+            # Create a temporary adapter to run the checks
+            adapter = PostgreSQLAdapter(
+                host=host,
+                port=port,
+                database=database,
+                user=user,
+                password=password,
+                sslmode=sslmode,
+                user_id=user_id,
+            )
+            adapter.initialize()
+
+            # Check if user exists
+            user_exists = adapter.check_user_exists(user_id)
+            if user_exists:
+                status_lines.append("✓ User found in remote database")
+            else:
+                status_lines.append("✗ User not found in remote database")
+                all_passed = False
+
+            # Test encryption/decryption
+            test_record = adapter.get_test_record_for_decryption(user_id)
+            if test_record is None:
+                status_lines.append("⚠ No encrypted data found to test encryption key")
+            else:
+                try:
+                    encryption = DataEncryption(encryption_key)
+                    decrypted = encryption.decrypt_burst(test_record["encrypted_data"])
+                    status_lines.append("✓ Encryption key verified (decrypted test record)")
+                except Exception as e:
+                    status_lines.append(f"✗ Encryption key test failed: {str(e)}")
+                    all_passed = False
+
+            conn.close()
+
+        except Exception as e:
+            status_lines.append(f"✗ Verification failed: {str(e)}")
+            all_passed = False
+
+        self.conn_status_label.setText("\n".join(status_lines))
+        self.conn_status_label.setStyleSheet(
+            "color: green; font-style: italic;" if all_passed else "color: orange; font-style: italic;"
+        )
 
     def _update_detected_layout(self) -> None:
         """Update the detected keyboard layout hint."""
@@ -1225,10 +1276,9 @@ class SettingsDialog(QDialog):
         self.validate_mode_radio.setChecked(dict_mode == "validate")
 
         # Load database settings
-        database_backend = self.current_settings.get("database_backend", "sqlite")
-        index = self.backend_combo.findData(database_backend)
-        if index >= 0:
-            self.backend_combo.setCurrentIndex(index)
+        self.postgres_sync_enabled_check.setChecked(
+            self.current_settings.get("postgres_sync_enabled", False)
+        )
 
         self.postgres_host_input.setText(self.current_settings.get("postgres_host", ""))
         self.postgres_port_spin.setValue(self.current_settings.get("postgres_port", 5432))
@@ -1253,11 +1303,8 @@ class SettingsDialog(QDialog):
             self.current_settings.get("auto_sync_interval_sec", 300)
         )
 
-        # Update next sync status
-        self._update_next_sync_label()
-
-        # Trigger backend changed to enable/disable postgres settings
-        self.on_backend_changed()
+        # Trigger postgres sync changed to enable/disable postgres settings
+        self.on_postgres_sync_changed()
 
     def get_settings(self) -> dict[str, Any]:
         """Get settings from UI.
@@ -1308,7 +1355,7 @@ class SettingsDialog(QDialog):
             "enabled_languages": enabled_langs_str,
             "enabled_dictionaries": enabled_dicts_str,
             # Database settings
-            "database_backend": self.backend_combo.currentData(),
+            "postgres_sync_enabled": str(self.postgres_sync_enabled_check.isChecked()),
             "postgres_host": self.postgres_host_input.text(),
             "postgres_port": str(self.postgres_port_spin.value()),
             "postgres_database": self.postgres_database_input.text() or "realtypecoach",
@@ -1321,8 +1368,8 @@ class SettingsDialog(QDialog):
 
     def accept(self) -> None:
         """Validate and accept the dialog."""
-        # Check if postgres backend is selected
-        if self.backend_combo.currentData() in ("postgres", "hybrid"):
+        # Check if postgres sync is enabled
+        if self.postgres_sync_enabled_check.isChecked():
             host = self.postgres_host_input.text().strip()
             user = self.postgres_user_input.text().strip()
 
@@ -1331,8 +1378,8 @@ class SettingsDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     "Incomplete PostgreSQL Settings",
-                    "PostgreSQL host is required when using PostgreSQL backend.\n\n"
-                    "Please fill in the host field or switch back to SQLite."
+                    "PostgreSQL host is required when sync is enabled.\n\n"
+                    "Please fill in the host field or disable PostgreSQL sync.",
                 )
                 self.postgres_host_input.setFocus()
                 return
@@ -1342,8 +1389,8 @@ class SettingsDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     "Incomplete PostgreSQL Settings",
-                    "PostgreSQL user is required when using PostgreSQL backend.\n\n"
-                    "Please fill in the user field or switch back to SQLite."
+                    "PostgreSQL user is required when sync is enabled.\n\n"
+                    "Please fill in the user field or disable PostgreSQL sync.",
                 )
                 self.postgres_user_input.setFocus()
                 return
@@ -1568,11 +1615,11 @@ class SettingsDialog(QDialog):
             return
 
         # Check if PostgreSQL is configured
-        if self.backend_combo.currentData() != "postgres":
+        if not self.postgres_sync_enabled_check.isChecked():
             QMessageBox.warning(
                 self,
                 "Not Configured",
-                "Please select 'PostgreSQL (Remote)' as the database backend first."
+                "Please enable PostgreSQL sync first."
             )
             return
 
@@ -1595,8 +1642,8 @@ class SettingsDialog(QDialog):
         QApplication.processEvents()
 
         try:
-            # Use storage's merge_with_remote method which has the proper fix
-            result = self.storage.merge_with_remote()
+            # Use sync_handler which runs sync in background thread
+            result = self.sync_handler.sync_now()
 
             if result["success"]:
                 total_records = result["pushed"] + result["pulled"]
@@ -1610,7 +1657,7 @@ class SettingsDialog(QDialog):
                     f"Pushed: {result['pushed']} records\n"
                     f"Pulled: {result['pulled']} records\n"
                     f"Conflicts resolved: {result['conflicts_resolved']}\n"
-                    f"Duration: {result['duration_ms']} ms"
+                    f"Duration: {result['duration_ms'] / 1000:.2f} s"
                 )
             else:
                 self.last_sync_label.setText("✗ Sync failed - check logs")
@@ -1662,34 +1709,6 @@ class SettingsDialog(QDialog):
         else:
             self.last_sync_label.setText("Never synced")
 
-    def _update_next_sync_label(self) -> None:
-        """Update next sync status label."""
-        if not self.sync_handler:
-            return
-
-        if not self.auto_sync_enabled_check.isChecked():
-            self.next_sync_label.setText("Auto-sync disabled")
-            self.next_sync_label.setStyleSheet("color: #666; font-style: italic;")
-            return
-
-        # Check if backend is postgres
-        if self.backend_combo.currentData() != "postgres":
-            self.next_sync_label.setText("Auto-sync requires PostgreSQL backend")
-            self.next_sync_label.setStyleSheet("color: #f57900; font-style: italic;")
-            return
-
-        interval = self.sync_interval_spin.value()
-        if self.sync_handler.running:
-            self.next_sync_label.setText(
-                f"Auto-sync active (every {interval} seconds)"
-            )
-            self.next_sync_label.setStyleSheet("color: green; font-style: italic;")
-        else:
-            self.next_sync_label.setText(
-                f"Auto-sync configured (every {interval} seconds)"
-            )
-            self.next_sync_label.setStyleSheet("color: #666; font-style: italic;")
-
     def _on_sync_completed(self, result: dict) -> None:
         """Handle sync completion from sync handler.
 
@@ -1697,5 +1716,3 @@ class SettingsDialog(QDialog):
             result: Sync result dictionary
         """
         self._update_last_sync_label()
-        if self.auto_sync_enabled_check.isChecked():
-            self._update_next_sync_label()

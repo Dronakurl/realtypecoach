@@ -114,37 +114,401 @@ class SyncManager:
         Returns:
             Tuple of (pushed, pulled, conflicts_resolved)
         """
-        pushed = 0
-        pulled = 0
-        conflicts = 0
-
         # Get local and remote data
         local_data = self._get_local_data(table)
         remote_data = self._get_remote_data(table)
 
         log.debug(f"Table {table}: local={len(local_data)}, remote={len(remote_data)} records")
 
-        # Push local data to remote
+        # Build hash-based lookups for O(1) matching
+        local_lookup = self._build_lookup_dict(table, local_data)
+        remote_lookup = self._build_lookup_dict(table, remote_data)
+
+        # Collect records to process
+        to_push = []
+        to_pull = []
+        conflicts = []
+
+        # Find records to push (local not in remote)
         for record in local_data:
-            if self._should_push_record(table, record, remote_data):
-                if self._push_record(table, record):
-                    pushed += 1
+            key = self._get_record_key(table, record)
+            if key not in remote_lookup:
+                to_push.append(record)
 
-        # Pull remote data to local
+        # Find records to pull and conflicts
         for record in remote_data:
-            local_match = self._find_local_match(table, record, local_data)
-            if local_match is None:
-                # New record from remote
-                if self._pull_record(table, record):
-                    pulled += 1
+            key = self._get_record_key(table, record)
+            if key in local_lookup:
+                local_record = local_lookup[key]
+                # Only resolve conflict if records actually differ
+                if not self._records_equal(table, local_record, record):
+                    resolved = self._resolve_conflict(table, local_record, record)
+                    if resolved is not None:
+                        conflicts.append(resolved)
             else:
-                # Conflict resolution
-                resolved = self._resolve_conflict(table, local_match, record)
-                if resolved is not None and resolved != local_match:
-                    if self._update_local_record(table, resolved):
-                        conflicts += 1
+                to_pull.append(record)
 
-        return pushed, pulled, conflicts
+        # Batch operations
+        pushed = self._batch_push(table, to_push)
+        pulled = self._batch_pull(table, to_pull)
+        resolved = self._batch_update_local(table, conflicts)
+        # Also update remote with merged values to prevent conflicts on next sync
+        self._batch_update_remote(table, conflicts)
+
+        return pushed, pulled, resolved
+
+    def _build_lookup_dict(self, table: str, records: list[dict]) -> dict:
+        """Build hash-based lookup dictionary for O(1) record matching.
+
+        Args:
+            table: Table name
+            records: List of record dictionaries
+
+        Returns:
+            Dictionary mapping record keys to records
+        """
+        lookup = {}
+        for record in records:
+            key = self._get_record_key(table, record)
+            lookup[key] = record
+        return lookup
+
+    def _get_record_key(self, table: str, record: dict) -> tuple | str | int:
+        """Get unique key for record based on table type.
+
+        Args:
+            table: Table name
+            record: Record dictionary
+
+        Returns:
+            Unique key for the record (can be tuple, string, or int)
+        """
+        if table == "bursts":
+            return record.get("start_time")
+        elif table == "statistics":
+            return (record.get("keycode"), record.get("layout"))
+        elif table == "word_statistics":
+            return (record.get("word"), record.get("layout"))
+        elif table == "high_scores":
+            # Use timestamp as key (unique per burst)
+            # ID differs between local and remote due to auto-increment
+            return record.get("timestamp")
+        elif table == "daily_summaries":
+            return record.get("date")
+        return None
+
+    def _records_equal(self, table: str, local: dict, remote: dict) -> bool:
+        """Check if local and remote records are effectively equal.
+
+        Handles floating point precision and compares all relevant fields.
+
+        Args:
+            table: Table name
+            local: Local record
+            remote: Remote record
+
+        Returns:
+            True if records are effectively equal, False otherwise
+        """
+        if table == "bursts":
+            # For bursts, we don't merge - compare key fields
+            return (
+                local.get("start_time") == remote.get("start_time") and
+                local.get("key_count") == remote.get("key_count") and
+                local.get("duration_ms") == remote.get("duration_ms")
+            )
+
+        elif table == "statistics":
+            # Compare all numeric fields with tolerance for floats
+            return (
+                self._float_equal(local.get("avg_press_time"), remote.get("avg_press_time")) and
+                local.get("total_presses") == remote.get("total_presses") and
+                local.get("slowest_ms") == remote.get("slowest_ms") and
+                local.get("fastest_ms") == remote.get("fastest_ms")
+            )
+
+        elif table == "word_statistics":
+            # Compare all numeric fields
+            return (
+                self._float_equal(local.get("avg_speed_ms_per_letter"), remote.get("avg_speed_ms_per_letter")) and
+                local.get("total_letters") == remote.get("total_letters") and
+                local.get("total_duration_ms") == remote.get("total_duration_ms") and
+                local.get("observation_count") == remote.get("observation_count")
+            )
+
+        elif table == "high_scores":
+            # Compare all numeric fields
+            return (
+                self._float_equal(local.get("fastest_burst_wpm"), remote.get("fastest_burst_wpm")) and
+                local.get("burst_duration_sec") == remote.get("burst_duration_sec") and
+                local.get("burst_key_count") == remote.get("burst_key_count") and
+                local.get("timestamp") == remote.get("timestamp") and
+                local.get("burst_duration_ms") == remote.get("burst_duration_ms")
+            )
+
+        elif table == "daily_summaries":
+            # Compare all numeric fields
+            return (
+                local.get("total_keystrokes") == remote.get("total_keystrokes") and
+                local.get("total_bursts") == remote.get("total_bursts") and
+                self._float_equal(local.get("avg_wpm"), remote.get("avg_wpm"))
+            )
+
+        return False
+
+    def _float_equal(self, a: float | None, b: float | None, tolerance: float = 0.001) -> bool:
+        """Compare two floats with tolerance for precision issues.
+
+        Args:
+            a: First value
+            b: Second value
+            tolerance: Maximum allowed difference
+
+        Returns:
+            True if values are equal within tolerance
+        """
+        if a is None and b is None:
+            return True
+        if a is None or b is None:
+            return False
+        return abs(a - b) <= tolerance
+
+    def _batch_push(self, table: str, records: list[dict]) -> int:
+        """Push multiple records to remote database in a batch.
+
+        Args:
+            table: Table name
+            records: List of records to push
+
+        Returns:
+            Number of records pushed
+        """
+        if not records:
+            return 0
+
+        try:
+            if table == "bursts":
+                # Use adapter's batch_insert_bursts method if available
+                if hasattr(self.remote, "batch_insert_bursts"):
+                    return self.remote.batch_insert_bursts(records)
+                # Fall back to individual inserts
+                for record in records:
+                    self.remote.store_burst(
+                        start_time=record.get("start_time", 0),
+                        end_time=record.get("end_time", 0),
+                        key_count=record.get("key_count", 0),
+                        backspace_count=record.get("backspace_count", 0),
+                        net_key_count=record.get("net_key_count", 0),
+                        duration_ms=record.get("duration_ms", 0),
+                        avg_wpm=record.get("avg_wpm", 0.0),
+                        qualifies_for_high_score=record.get("qualifies_for_high_score", False),
+                    )
+                return len(records)
+
+            # For other tables, use batch insert if available
+            batch_method = f"batch_insert_{table}"
+            if hasattr(self.remote, batch_method):
+                return getattr(self.remote, batch_method)(records)
+
+            # Fall back to individual inserts
+            count = 0
+            for record in records:
+                if self._push_record(table, record):
+                    count += 1
+            return count
+
+        except Exception as e:
+            error_msg = f"Failed to batch push to {table}: {e}"
+            log.error(error_msg)
+            raise RuntimeError(error_msg) from e
+
+    def _batch_pull(self, table: str, records: list[dict]) -> int:
+        """Pull multiple records to local database in a batch.
+
+        Args:
+            table: Table name
+            records: List of records to pull
+
+        Returns:
+            Number of records pulled
+        """
+        if not records:
+            return 0
+
+        try:
+            if table == "bursts":
+                # Use adapter's batch_insert_bursts method if available
+                if hasattr(self.local, "batch_insert_bursts"):
+                    return self.local.batch_insert_bursts(records)
+                # Fall back to individual inserts
+                for record in records:
+                    self.local.store_burst(
+                        start_time=record.get("start_time", 0),
+                        end_time=record.get("end_time", 0),
+                        key_count=record.get("key_count", 0),
+                        backspace_count=record.get("backspace_count", 0),
+                        net_key_count=record.get("net_key_count", 0),
+                        duration_ms=record.get("duration_ms", 0),
+                        avg_wpm=record.get("avg_wpm", 0.0),
+                        qualifies_for_high_score=record.get("qualifies_for_high_score", False),
+                    )
+                return len(records)
+
+            # For other tables, use batch insert if available
+            batch_method = f"batch_insert_{table}"
+            if hasattr(self.local, batch_method):
+                return getattr(self.local, batch_method)(records)
+
+            # Fall back to individual inserts
+            count = 0
+            for record in records:
+                if self._pull_record(table, record):
+                    count += 1
+            return count
+
+        except Exception as e:
+            error_msg = f"Failed to batch pull from {table}: {e}"
+            log.error(error_msg)
+            raise RuntimeError(error_msg) from e
+
+    def _batch_update_local(self, table: str, records: list[dict]) -> int:
+        """Update multiple local records in a batch.
+
+        Args:
+            table: Table name
+            records: List of records to update
+
+        Returns:
+            Number of records updated
+        """
+        if not records:
+            return 0
+
+        try:
+            with self.local.get_connection() as conn:
+                cursor = conn.cursor()
+
+                if table == "statistics":
+                    for record in records:
+                        cursor.execute("""
+                            UPDATE statistics
+                            SET avg_press_time = ?,
+                                total_presses = ?,
+                                slowest_ms = ?,
+                                fastest_ms = ?,
+                                last_updated = ?
+                            WHERE keycode = ? AND layout = ?
+                        """, (
+                            record.get("avg_press_time"),
+                            record.get("total_presses"),
+                            record.get("slowest_ms"),
+                            record.get("fastest_ms"),
+                            record.get("last_updated"),
+                            record.get("keycode"),
+                            record.get("layout"),
+                        ))
+
+                elif table == "word_statistics":
+                    for record in records:
+                        cursor.execute("""
+                            UPDATE word_statistics
+                            SET avg_speed_ms_per_letter = ?,
+                                total_letters = ?,
+                                total_duration_ms = ?,
+                                observation_count = ?,
+                                last_seen = ?
+                            WHERE word = ? AND layout = ?
+                        """, (
+                            record.get("avg_speed_ms_per_letter"),
+                            record.get("total_letters"),
+                            record.get("total_duration_ms"),
+                            record.get("observation_count"),
+                            record.get("last_seen"),
+                            record.get("word"),
+                            record.get("layout"),
+                        ))
+
+                elif table == "high_scores":
+                    for record in records:
+                        cursor.execute("""
+                            UPDATE high_scores
+                            SET fastest_burst_wpm = ?,
+                                burst_duration_sec = ?,
+                                burst_key_count = ?,
+                                timestamp = ?,
+                                burst_duration_ms = ?
+                            WHERE id = ?
+                        """, (
+                            record.get("fastest_burst_wpm"),
+                            record.get("burst_duration_sec"),
+                            record.get("burst_key_count"),
+                            record.get("timestamp"),
+                            record.get("burst_duration_ms"),
+                            record.get("id"),
+                        ))
+
+                elif table == "daily_summaries":
+                    for record in records:
+                        cursor.execute("""
+                            UPDATE daily_summaries
+                            SET total_keystrokes = ?,
+                                total_bursts = ?,
+                                avg_wpm = ?
+                            WHERE date = ?
+                        """, (
+                            record.get("total_keystrokes"),
+                            record.get("total_bursts"),
+                            record.get("avg_wpm"),
+                            record.get("date"),
+                        ))
+
+                conn.commit()
+                return len(records)
+
+        except Exception as e:
+            error_msg = f"Failed to batch update local {table}: {e}"
+            log.error(error_msg)
+            raise RuntimeError(error_msg) from e
+
+    def _batch_update_remote(self, table: str, records: list[dict]) -> int:
+        """Update multiple remote records in a batch using adapter batch_update methods.
+
+        Args:
+            table: Table name
+            records: List of records to update
+
+        Returns:
+            Number of records updated
+        """
+        if not records:
+            return 0
+
+        # Only update if remote is PostgreSQL (has user_id)
+        if not hasattr(self.remote, "user_id"):
+            return 0
+
+        log.debug(f"Batch updating {len(records)} remote records in {table}")
+
+        # Pre-encrypt all records for efficiency
+        encrypted_data_list = []
+        for record in records:
+            encrypted_data = None
+            if self.encryption:
+                encrypted_data = self._encrypt_record(table, record)
+            encrypted_data_list.append(encrypted_data)
+
+        # Delegate to adapter's batch_update method
+        if table == "statistics":
+            return self.remote.batch_update_statistics(records, encrypted_data_list)
+        elif table == "word_statistics":
+            return self.remote.batch_update_word_statistics(records, encrypted_data_list)
+        elif table == "high_scores":
+            return self.remote.batch_update_high_scores(records, encrypted_data_list)
+        elif table == "daily_summaries":
+            return self.remote.batch_update_daily_summaries(records, encrypted_data_list)
+        else:
+            log.warning(f"No batch_update method for table: {table}")
+            return 0
 
     def _get_local_data(self, table: str) -> list[dict]:
         """Get all data from local table.
@@ -181,7 +545,9 @@ class SyncManager:
                             "qualifies_for_high_score": bool(row[8]),
                         })
             except Exception as e:
-                log.warning(f"Failed to get local bursts: {e}")
+                error_msg = f"Failed to get local bursts: {e}"
+                log.error(error_msg)
+                raise RuntimeError(error_msg) from e
 
         elif table == "statistics":
             try:
@@ -204,7 +570,9 @@ class SyncManager:
                             "last_updated": row[7],
                         })
             except Exception as e:
-                log.warning(f"Failed to get local statistics: {e}")
+                error_msg = f"Failed to get local statistics: {e}"
+                log.error(error_msg)
+                raise RuntimeError(error_msg) from e
 
         elif table == "word_statistics":
             try:
@@ -229,7 +597,9 @@ class SyncManager:
                             "editing_time_ms": row[8] or 0,
                         })
             except Exception as e:
-                log.warning(f"Failed to get local word statistics: {e}")
+                error_msg = f"Failed to get local word statistics: {e}"
+                log.error(error_msg)
+                raise RuntimeError(error_msg) from e
 
         elif table == "high_scores":
             try:
@@ -251,7 +621,9 @@ class SyncManager:
                             "burst_duration_ms": row[6],
                         })
             except Exception as e:
-                log.warning(f"Failed to get local high scores: {e}")
+                error_msg = f"Failed to get local high scores: {e}"
+                log.error(error_msg)
+                raise RuntimeError(error_msg) from e
 
         elif table == "daily_summaries":
             try:
@@ -274,7 +646,9 @@ class SyncManager:
                             "summary_sent": bool(row[7] or 0),
                         })
             except Exception as e:
-                log.warning(f"Failed to get local daily summaries: {e}")
+                error_msg = f"Failed to get local daily summaries: {e}"
+                log.error(error_msg)
+                raise RuntimeError(error_msg) from e
 
         return data
 
@@ -444,24 +818,12 @@ class SyncManager:
                         data.append(record)
 
         except Exception as e:
-            log.error(f"Failed to get remote data for {table}: {e}")
+            error_msg = f"Failed to get remote data for {table}: {e}"
+            log.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
         return data
 
-    def _should_push_record(self, table: str, record: dict, remote_data: list[dict]) -> bool:
-        """Check if record should be pushed to remote.
-
-        Args:
-            table: Table name
-            record: Local record
-            remote_data: All remote records
-
-        Returns:
-            True if record should be pushed
-        """
-        # Check for duplicates
-        remote_match = self._find_remote_match(table, record, remote_data)
-        return remote_match is None
 
     def _push_record(self, table: str, record: dict) -> bool:
         """Push a local record to remote database.
@@ -574,7 +936,7 @@ class SyncManager:
                         record.get("slowest_keycode"),
                         record.get("slowest_key_name"),
                         record.get("total_typing_sec"),
-                        record.get("summary_sent"),
+                        1 if record.get("summary_sent") else 0,
                         self.user_id,
                         encrypted_data,
                     ))
@@ -582,8 +944,9 @@ class SyncManager:
                 conn.commit()
             return True
         except Exception as e:
-            log.error(f"Failed to push record to {table}: {e}")
-            return False
+            error_msg = f"Failed to push record to {table}: {e}"
+            log.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def _pull_record(self, table: str, record: dict) -> bool:
         """Pull a remote record to local database.
@@ -686,8 +1049,9 @@ class SyncManager:
                 conn.commit()
             return True
         except Exception as e:
-            log.error(f"Failed to pull record from {table}: {e}")
-            return False
+            error_msg = f"Failed to pull record from {table}: {e}"
+            log.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def _resolve_conflict(self, table: str, local: dict, remote: dict) -> dict | None:
         """Resolve conflict between local and remote records.
@@ -777,77 +1141,6 @@ class SyncManager:
 
         return None
 
-    def _find_local_match(self, table: str, record: dict, local_data: list[dict]) -> dict | None:
-        """Find matching local record for remote record.
-
-        Args:
-            table: Table name
-            record: Remote record
-            local_data: All local records
-
-        Returns:
-            Matching local record or None
-        """
-        for local_record in local_data:
-            if self._records_match(table, record, local_record):
-                return local_record
-        return None
-
-    def _find_remote_match(self, table: str, record: dict, remote_data: list[dict]) -> dict | None:
-        """Find matching remote record for local record.
-
-        Args:
-            table: Table name
-            record: Local record
-            remote_data: All remote records
-
-        Returns:
-            Matching remote record or None
-        """
-        for remote_record in remote_data:
-            if self._records_match(table, record, remote_record):
-                return remote_record
-        return None
-
-    def _records_match(self, table: str, record1: dict, record2: dict) -> bool:
-        """Check if two records match (are duplicates).
-
-        Args:
-            table: Table name
-            record1: First record
-            record2: Second record
-
-        Returns:
-            True if records match
-        """
-        if table == "bursts":
-            # Compare by start_time + user_id
-            return record1.get("start_time") == record2.get("start_time")
-
-        elif table == "statistics":
-            # Compare by keycode + layout
-            return (
-                record1.get("keycode") == record2.get("keycode")
-                and record1.get("layout") == record2.get("layout")
-            )
-
-        elif table == "word_statistics":
-            # Compare by word + layout
-            return (
-                record1.get("word") == record2.get("word")
-                and record1.get("layout") == record2.get("layout")
-            )
-
-        elif table == "high_scores":
-            # Compare by date
-            return record1.get("date") == record2.get("date")
-
-        elif table == "daily_summaries":
-            # Compare by date
-            return record1.get("date") == record2.get("date")
-
-        return False
-
     def _encrypt_record(self, table: str, record: dict) -> str:
         """Encrypt a record for storage.
 
@@ -859,7 +1152,7 @@ class SyncManager:
             Base64 encoded encrypted data
         """
         if not self.encryption:
-            raise ValueError("Encryption not enabled")
+            return ""
 
         if table == "bursts":
             return self.encryption.encrypt_burst(
@@ -873,7 +1166,53 @@ class SyncManager:
                 qualifies_for_high_score=record.get("qualifies_for_high_score", False),
             )
 
-        # Add other table types as needed
+        elif table == "statistics":
+            return self.encryption.encrypt_statistics(
+                keycode=record.get("keycode", 0),
+                key_name=record.get("key_name", ""),
+                layout=record.get("layout", ""),
+                avg_press_time=record.get("avg_press_time", 0),
+                total_presses=record.get("total_presses", 0),
+                slowest_ms=record.get("slowest_ms", 0),
+                fastest_ms=record.get("fastest_ms", 0),
+                last_updated=record.get("last_updated", 0),
+            )
+
+        elif table == "word_statistics":
+            return self.encryption.encrypt_word_statistics(
+                word=record.get("word", ""),
+                layout=record.get("layout", ""),
+                avg_speed_ms_per_letter=record.get("avg_speed_ms_per_letter", 0),
+                total_letters=record.get("total_letters", 0),
+                total_duration_ms=record.get("total_duration_ms", 0),
+                observation_count=record.get("observation_count", 0),
+                last_seen=record.get("last_seen", 0),
+                backspace_count=record.get("backspace_count", 0),
+                editing_time_ms=record.get("editing_time_ms", 0),
+            )
+
+        elif table == "high_scores":
+            return self.encryption.encrypt_high_score(
+                date=record.get("date", ""),
+                fastest_burst_wpm=record.get("fastest_burst_wpm", 0),
+                burst_duration_sec=record.get("burst_duration_sec", 0),
+                burst_key_count=record.get("burst_key_count", 0),
+                timestamp=record.get("timestamp", 0),
+                burst_duration_ms=record.get("burst_duration_ms", 0),
+            )
+
+        elif table == "daily_summaries":
+            return self.encryption.encrypt_daily_summary(
+                date=record.get("date", ""),
+                total_keystrokes=record.get("total_keystrokes", 0),
+                total_bursts=record.get("total_bursts", 0),
+                avg_wpm=record.get("avg_wpm", 0),
+                slowest_keycode=record.get("slowest_keycode", 0),
+                slowest_key_name=record.get("slowest_key_name", ""),
+                total_typing_sec=record.get("total_typing_sec", 0),
+                summary_sent=record.get("summary_sent", False),
+            )
+
         return ""
 
     def _decrypt_record(self, table: str, record: dict) -> dict:
@@ -910,10 +1249,10 @@ class SyncManager:
             True if successful
         """
         try:
-            log.info(f"Updating local record in {table}, local adapter type: {type(self.local).__name__}")
+            log.debug(f"Updating local record in {table}, local adapter type: {type(self.local).__name__}")
             with self.local.get_connection() as conn:
                 cursor = conn.cursor()
-                log.info(f"Connection type: {type(conn).__name__}, cursor type: {type(cursor).__name__}")
+                log.debug(f"Connection type: {type(conn).__name__}, cursor type: {type(cursor).__name__}")
 
                 if table == "statistics":
                     cursor.execute("""
@@ -988,5 +1327,6 @@ class SyncManager:
                 conn.commit()
             return True
         except Exception as e:
-            log.error(f"Failed to update local record in {table}: {e}")
-            return False
+            error_msg = f"Failed to update local record in {table}: {e}"
+            log.error(error_msg)
+            raise RuntimeError(error_msg) from e

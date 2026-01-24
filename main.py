@@ -861,7 +861,7 @@ class Application(QObject):
             "enabled_languages": self.config.get("enabled_languages", "en,de"),
             "enabled_dictionaries": enabled_dicts_value,
             # Database settings
-            "database_backend": self.config.get("database_backend", "sqlite"),
+            "postgres_sync_enabled": self.config.get_bool("postgres_sync_enabled", False),
             "postgres_host": self.config.get("postgres_host", ""),
             "postgres_port": self.config.get_int("postgres_port", 5432),
             "postgres_database": self.config.get("postgres_database", "realtypecoach"),

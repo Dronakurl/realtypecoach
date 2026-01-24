@@ -110,15 +110,15 @@ class AppSettings(BaseModel):
         description="Seconds of inactivity before entering idle mode",
     )
 
-    # Database settings (opt-in remote database)
-    database_backend: str = Field(
-        default="sqlite",
-        description="Database backend type (sqlite, postgres, hybrid)",
+    # Database settings (opt-in remote sync)
+    postgres_sync_enabled: bool = Field(
+        default=False,
+        description="Enable PostgreSQL remote sync for multi-device support",
     )
     postgres_host: str = Field(default="", description="PostgreSQL database host")
     postgres_port: int = Field(default=5432, ge=1, le=65535, description="PostgreSQL database port")
     postgres_database: str = Field(default="realtypecoach", description="PostgreSQL database name")
-    postgres_user: str = Field(default="", description="PostgreSQL database user")
+    postgres_user: str = Field(default="realtypecoach", description="PostgreSQL database user")
     postgres_sslmode: str = Field(
         default="require",
         description="PostgreSQL SSL mode (disable, allow, prefer, require, verify-ca, verify-full)",

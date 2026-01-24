@@ -13,12 +13,10 @@ dependencies = [
     "sqlcipher3-binary",
     "keyring",
     "cryptography>=41.0.0",
+    "psycopg2-binary>=2.9.0",
 ]
 
 [project.optional-dependencies]
-postgres = [
-    "psycopg2-binary>=2.9.0",
-]
 dev = [
     "pre-commit>=4.0.0",
     "ruff>=0.9.0",

@@ -104,6 +104,19 @@ db-table table limit="10":
 seed-database days:
     @.venv/bin/python3 scripts/seed_database.py --days {{days}}
 
+# PostgreSQL Sync
+# Sync local SQLite with remote PostgreSQL
+sync:
+    @.venv/bin/python3 scripts/sync.py
+
+# Show remote database statistics
+remote-stats user_id="":
+    @if [ -n "{{user_id}}" ]; then \
+        .venv/bin/python3 scripts/remote_stats.py --user-id {{user_id}}; \
+    else \
+        .venv/bin/python3 scripts/remote_stats.py; \
+    fi
+
 # Testing
 # Format code with ruff and remove unused imports
 ruff-format:

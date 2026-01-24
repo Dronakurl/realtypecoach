@@ -465,6 +465,58 @@ class SQLiteAdapter(DatabaseAdapter):
         self._cache_all_time_keystrokes += net_key_count
         self._cache_all_time_bursts += 1
 
+    def batch_insert_bursts(self, bursts: list[dict]) -> int:
+        """Batch insert burst records.
+
+        Args:
+            bursts: List of burst dictionaries
+
+        Returns:
+            Number of records inserted
+        """
+        if not bursts:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Prepare data tuples
+            data_tuples = []
+            total_duration_ms = 0
+            total_net_key_count = 0
+
+            for b in bursts:
+                data_tuples.append((
+                    b.get("start_time", 0),
+                    b.get("end_time", 0),
+                    b.get("key_count", 0),
+                    b.get("backspace_count", 0),
+                    b.get("net_key_count", 0),
+                    b.get("duration_ms", 0),
+                    b.get("avg_wpm", 0.0),
+                    1 if b.get("qualifies_for_high_score") else 0,
+                ))
+
+                total_duration_ms += b.get("duration_ms", 0)
+                total_net_key_count += b.get("net_key_count", 0)
+
+            # Use executemany for efficient bulk insert
+            cursor.executemany("""
+                INSERT INTO bursts
+                (start_time, end_time, key_count, backspace_count, net_key_count,
+                 duration_ms, avg_wpm, qualifies_for_high_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, data_tuples)
+
+            conn.commit()
+
+            # Update cache
+            self._cache_all_time_typing_sec += total_duration_ms // 1000
+            self._cache_all_time_keystrokes += total_net_key_count
+            self._cache_all_time_bursts += len(bursts)
+
+            return len(bursts)
+
     def get_bursts_for_timeseries(self, start_ms: int, end_ms: int) -> list[BurstTimeSeries]:
         """Get burst data for time-series graph."""
         with self.get_connection() as conn:
@@ -840,6 +892,46 @@ class SQLiteAdapter(DatabaseAdapter):
 
             conn.commit()
 
+    def batch_insert_statistics(self, records: list[dict]) -> int:
+        """Batch insert statistics records.
+
+        Args:
+            records: List of statistics dictionaries
+
+        Returns:
+            Number of records inserted
+        """
+        if not records:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Prepare data tuples
+            data_tuples = []
+            for r in records:
+                data_tuples.append((
+                    r.get("keycode"),
+                    r.get("key_name"),
+                    r.get("layout"),
+                    r.get("avg_press_time"),
+                    r.get("total_presses"),
+                    r.get("slowest_ms"),
+                    r.get("fastest_ms"),
+                    r.get("last_updated"),
+                ))
+
+            # Use executemany for efficient bulk insert
+            cursor.executemany("""
+                INSERT OR IGNORE INTO statistics
+                (keycode, key_name, layout, avg_press_time, total_presses,
+                 slowest_ms, fastest_ms, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, data_tuples)
+
+            conn.commit()
+            return len(records)
+
     def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get slowest keys (highest average press time)."""
         with self.get_connection() as conn:
@@ -1022,6 +1114,48 @@ class SQLiteAdapter(DatabaseAdapter):
 
             conn.commit()
 
+    def batch_insert_word_statistics(self, records: list[dict]) -> int:
+        """Batch insert word statistics records.
+
+        Args:
+            records: List of word statistics dictionaries
+
+        Returns:
+            Number of records inserted
+        """
+        if not records:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Prepare data tuples
+            data_tuples = []
+            for r in records:
+                data_tuples.append((
+                    r.get("word"),
+                    r.get("layout"),
+                    r.get("avg_speed_ms_per_letter"),
+                    r.get("total_letters"),
+                    r.get("total_duration_ms"),
+                    r.get("observation_count"),
+                    r.get("last_seen"),
+                    r.get("backspace_count", 0),
+                    r.get("editing_time_ms", 0),
+                ))
+
+            # Use executemany for efficient bulk insert
+            cursor.executemany("""
+                INSERT OR IGNORE INTO word_statistics
+                (word, layout, avg_speed_ms_per_letter, total_letters,
+                 total_duration_ms, observation_count, last_seen,
+                 backspace_count, editing_time_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, data_tuples)
+
+            conn.commit()
+            return len(records)
+
     def get_slowest_words(
         self, limit: int = 10, layout: str | None = None
     ) -> list[WordStatisticsLite]:
@@ -1159,6 +1293,45 @@ class SQLiteAdapter(DatabaseAdapter):
             )
             conn.commit()
 
+    def batch_insert_high_scores(self, records: list[dict]) -> int:
+        """Batch insert high score records.
+
+        Args:
+            records: List of high score dictionaries
+
+        Returns:
+            Number of records inserted
+        """
+        if not records:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Prepare data tuples
+            data_tuples = []
+            for r in records:
+                data_tuples.append((
+                    r.get("id"),
+                    r.get("date"),
+                    r.get("fastest_burst_wpm"),
+                    r.get("burst_duration_sec"),
+                    r.get("burst_key_count"),
+                    r.get("timestamp"),
+                    r.get("burst_duration_ms"),
+                ))
+
+            # Use executemany for efficient bulk insert
+            cursor.executemany("""
+                INSERT OR IGNORE INTO high_scores
+                (id, date, fastest_burst_wpm, burst_duration_sec,
+                 burst_key_count, timestamp, burst_duration_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, data_tuples)
+
+            conn.commit()
+            return len(records)
+
     def get_today_high_score(self, date: str) -> float | None:
         """Get today's highest WPM."""
         with self.get_connection() as conn:
@@ -1216,6 +1389,45 @@ class SQLiteAdapter(DatabaseAdapter):
                 ),
             )
             conn.commit()
+
+    def batch_insert_daily_summaries(self, records: list[dict]) -> int:
+        """Batch insert daily summary records.
+
+        Args:
+            records: List of daily summary dictionaries
+
+        Returns:
+            Number of records inserted
+        """
+        if not records:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Prepare data tuples
+            data_tuples = []
+            for r in records:
+                data_tuples.append((
+                    r.get("date"),
+                    r.get("total_keystrokes"),
+                    r.get("total_bursts"),
+                    r.get("avg_wpm"),
+                    r.get("slowest_keycode"),
+                    r.get("slowest_key_name"),
+                    r.get("total_typing_sec"),
+                ))
+
+            # Use executemany for efficient bulk insert
+            cursor.executemany("""
+                INSERT OR IGNORE INTO daily_summaries
+                (date, total_keystrokes, total_bursts, avg_wpm,
+                 slowest_keycode, slowest_key_name, total_typing_sec)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, data_tuples)
+
+            conn.commit()
+            return len(records)
 
     def get_daily_summary(self, date: str) -> DailySummaryDB | None:
         """Get daily summary for a date."""

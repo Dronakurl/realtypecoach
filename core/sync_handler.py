@@ -96,11 +96,11 @@ class SyncHandler(QObject):
             return {"success": False, "error": "Sync already in progress"}
 
         try:
-            # Check if backend is postgres
-            backend = self.config.get("database_backend", "sqlite")
-            if backend != "postgres":
-                log.debug(f"Skipping sync: backend is '{backend}', not 'postgres'")
-                return {"success": False, "error": f"Backend is {backend}, not postgres"}
+            # Check if postgres sync is enabled
+            postgres_sync_enabled = self.config.get_bool("postgres_sync_enabled", False)
+            if not postgres_sync_enabled:
+                log.debug("Skipping sync: postgres_sync_enabled is False")
+                return {"success": False, "error": "PostgreSQL sync not enabled"}
 
             # Check if postgres is configured
             host = self.config.get("postgres_host", "")
