@@ -1005,8 +1005,8 @@ class SettingsDialog(QDialog):
         config = Config(db_path)
         user_manager = UserManager(db_path, config)
         try:
-            user = user_manager.get_or_create_current_user()
-            user_id = user.user_id
+            current_user = user_manager.get_or_create_current_user()
+            user_id = current_user.user_id
         except Exception as e:
             self.conn_status_label.setText(f"Failed to get user: {str(e)}")
             self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
