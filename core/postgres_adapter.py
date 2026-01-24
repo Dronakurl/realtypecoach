@@ -1872,6 +1872,27 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute("SELECT 1 FROM users WHERE user_id = %s", (user_id,))
             return cursor.fetchone() is not None
 
+    def register_user(self, user_id: str, username: str) -> None:
+        """Register a user in the remote database.
+
+        Args:
+            user_id: User UUID
+            username: Username for the user
+        """
+        import time
+
+        created_at = int(time.time() * 1000)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO users (user_id, username, created_at, is_active)
+                VALUES (%s, %s, %s, 1)
+                ON CONFLICT (user_id) DO UPDATE
+                    SET username = EXCLUDED.username,
+                        last_sync = EXCLUDED.created_at
+            """, (user_id, username, created_at))
+            conn.commit()
+
     def get_test_record_for_decryption(self, user_id: str) -> dict | None:
         """Get one encrypted record for testing decryption.
 

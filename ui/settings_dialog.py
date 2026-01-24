@@ -1058,8 +1058,13 @@ class SettingsDialog(QDialog):
             if user_exists:
                 status_lines.append("✓ User found in remote database")
             else:
-                status_lines.append("✗ User not found in remote database")
-                all_passed = False
+                # Create user in remote database
+                try:
+                    adapter.register_user(user_id, current_user.username)
+                    status_lines.append("✓ User created in remote database")
+                except Exception as e:
+                    status_lines.append(f"✗ Failed to create user in remote database: {str(e)}")
+                    all_passed = False
 
             # Test encryption/decryption
             test_record = adapter.get_test_record_for_decryption(user_id)
@@ -1675,7 +1680,7 @@ class SettingsDialog(QDialog):
         finally:
             # Always restore button state
             self.upload_history_btn.setEnabled(True)
-            self.upload_history_btn.setText("Upload/Download Typing History")
+            self.upload_history_btn.setText("Sync Now")
 
     def _update_user_display(self) -> None:
         """Update user identity display."""
