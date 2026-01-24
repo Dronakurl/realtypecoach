@@ -149,41 +149,31 @@ class NotificationHandler(QObject):
             return
 
         try:
-            with self.storage._get_connection() as conn:
-                cursor = conn.cursor()
+            # Get bursts from the configured lookback period
+            cutoff_time = int(
+                (datetime.now() - timedelta(days=self.threshold_days)).timestamp()
+                * 1000
+            )
 
-                # Get bursts from the configured lookback period
-                cutoff_time = int(
-                    (datetime.now() - timedelta(days=self.threshold_days)).timestamp()
-                    * 1000
-                )
+            wpms = self.storage.get_burst_wpms_for_threshold(
+                cutoff_time, self.min_burst_ms
+            )
 
-                cursor.execute(
-                    """
-                    SELECT avg_wpm FROM bursts
-                    WHERE start_time >= ? AND duration_ms >= ?
-                    ORDER BY avg_wpm ASC
-                """,
-                    (cutoff_time, self.min_burst_ms),
-                )
+            if len(wpms) >= 20:
+                # Calculate 95th percentile (SQL already sorted)
+                percentile_index = int(len(wpms) * 0.95)
+                with self._lock:
+                    self.percentile_95_threshold = wpms[percentile_index]
+            elif len(wpms) > 0:
+                # Not enough data, use max + 10%
+                with self._lock:
+                    self.percentile_95_threshold = max(wpms) * 1.1
+            else:
+                # No data yet, use default
+                with self._lock:
+                    self.percentile_95_threshold = 60.0
 
-                wpms = [row[0] for row in cursor.fetchall()]
-
-                if len(wpms) >= 20:
-                    # Calculate 95th percentile (SQL already sorted)
-                    percentile_index = int(len(wpms) * 0.95)
-                    with self._lock:
-                        self.percentile_95_threshold = wpms[percentile_index]
-                elif len(wpms) > 0:
-                    # Not enough data, use max + 10%
-                    with self._lock:
-                        self.percentile_95_threshold = max(wpms) * 1.1
-                else:
-                    # No data yet, use default
-                    with self._lock:
-                        self.percentile_95_threshold = 60.0
-
-                self.last_threshold_update = time.time()
+            self.last_threshold_update = time.time()
 
         except Exception as e:
             log.error(f"Error updating threshold: {e}")

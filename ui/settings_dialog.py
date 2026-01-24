@@ -1,6 +1,7 @@
 """Settings dialog for RealTypeCoach."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QPushButton,
     QSpinBox,
@@ -23,6 +25,7 @@ from PySide6.QtWidgets import (
     QToolTip,
     QVBoxLayout,
     QWidget,
+    QInputDialog,
 )
 
 log = logging.getLogger("realtypecoach.settings_dialog")
@@ -262,6 +265,10 @@ class SettingsDialog(QDialog):
         language_tab = self.create_language_tab()
         tabs.addTab(language_tab, "Language")
         tabs.setTabIcon(3, self._create_palette_aware_icon("accessories-dictionary"))
+
+        database_tab = self.create_database_tab()
+        tabs.addTab(database_tab, "Database")
+        tabs.setTabIcon(4, self._create_palette_aware_icon("network-server"))
 
         dialog_buttons = QHBoxLayout()
         ok_btn = QPushButton("OK")
@@ -642,6 +649,249 @@ class SettingsDialog(QDialog):
 
         return widget
 
+    def create_database_tab(self) -> QWidget:
+        """Create database settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        # Backend selection
+        backend_group = QGroupBox("Database Backend")
+        backend_layout = QFormLayout()
+
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItem("SQLite (Local Only)", "sqlite")
+        self.backend_combo.addItem("PostgreSQL (Remote)", "postgres")
+        backend_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Database backend:",
+                "Select the database backend:\n"
+                "• SQLite (Local Only): Default, encrypted local database\n"
+                "• PostgreSQL (Remote): Remote database on VPS for multi-device sync",
+            ),
+            self.backend_combo,
+        )
+        backend_group.setLayout(backend_layout)
+        layout.addWidget(backend_group)
+
+        # PostgreSQL connection settings
+        postgres_group = QGroupBox("PostgreSQL Connection")
+        postgres_layout = QFormLayout()
+
+        self.postgres_host_edit = ""
+        self.postgres_host_input = QLineEdit()
+        self.postgres_host_input.setPlaceholderText("dronakurl.duckdns.org")
+        postgres_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Host:",
+                "PostgreSQL server hostname or IP address",
+            ),
+            self.postgres_host_input,
+        )
+
+        self.postgres_port_spin = QSpinBox()
+        self.postgres_port_spin.setRange(1, 65535)
+        self.postgres_port_spin.setValue(5432)
+        postgres_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Port:",
+                "PostgreSQL server port (default: 5432)",
+            ),
+            self.postgres_port_spin,
+        )
+
+        self.postgres_database_input = QLineEdit()
+        self.postgres_database_input.setPlaceholderText("realtypecoach")
+        postgres_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Database:",
+                "PostgreSQL database name",
+            ),
+            self.postgres_database_input,
+        )
+
+        self.postgres_user_input = QLineEdit()
+        self.postgres_user_input.setPlaceholderText("realtypecoach")
+        postgres_layout.addRow(
+            self._create_labeled_icon_widget(
+                "User:",
+                "PostgreSQL username",
+            ),
+            self.postgres_user_input,
+        )
+
+        password_container = QWidget()
+        password_layout = QHBoxLayout(password_container)
+        password_layout.setContentsMargins(0, 0, 0, 0)
+        self.postgres_password_input = QLineEdit()
+        self.postgres_password_input.setEchoMode(QLineEdit.Password)
+        self.postgres_password_input.setPlaceholderText("Stored in keyring")
+        self.postgres_password_input.setText("••••••••")
+        self.postgres_password_input.setReadOnly(True)
+        password_layout.addWidget(self.postgres_password_input)
+
+        set_password_btn = QPushButton("Set Password")
+        set_password_btn.clicked.connect(self.set_postgres_password)
+        password_layout.addWidget(set_password_btn)
+
+        postgres_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Password:",
+                "PostgreSQL password (stored securely in system keyring)",
+            ),
+            password_container,
+        )
+
+        self.sslmode_combo = QComboBox()
+        self.sslmode_combo.addItem("Require", "require")
+        self.sslmode_combo.addItem("Verify Full", "verify-full")
+        self.sslmode_combo.addItem("Prefer", "prefer")
+        self.sslmode_combo.addItem("Allow", "allow")
+        self.sslmode_combo.addItem("Disable", "disable")
+        postgres_layout.addRow(
+            self._create_labeled_icon_widget(
+                "SSL mode:",
+                "SSL/TLS encryption mode:\n"
+                "• Require: Always encrypted (recommended)\n"
+                "• Verify Full: Encrypted + certificate verification\n"
+                "• Prefer: Use SSL if available\n"
+                "• Allow: Use SSL if server requests it\n"
+                "• Disable: No encryption (not recommended)",
+            ),
+            self.sslmode_combo,
+        )
+
+        postgres_group.setLayout(postgres_layout)
+        layout.addWidget(postgres_group)
+
+        # Test connection button
+        test_conn_layout = QHBoxLayout()
+        test_conn_layout.addStretch()
+        self.test_conn_btn = QPushButton("Test Connection")
+        self.test_conn_btn.clicked.connect(self.test_postgres_connection)
+        test_conn_layout.addWidget(self.test_conn_btn)
+        layout.addLayout(test_conn_layout)
+
+        # Connection status label
+        self.conn_status_label = QLabel()
+        self.conn_status_label.setWordWrap(True)
+        self.conn_status_label.setStyleSheet("color: #666; font-style: italic;")
+        layout.addWidget(self.conn_status_label)
+
+        layout.addStretch()
+        widget.setLayout(layout)
+
+        # Connect backend combo to enable/disable postgres settings
+        self.backend_combo.currentIndexChanged.connect(self.on_backend_changed)
+
+        return widget
+
+    def on_backend_changed(self) -> None:
+        """Handle backend selection change."""
+        backend = self.backend_combo.currentData()
+        is_postgres = backend == "postgres"
+
+        # Enable/disable postgres settings based on backend selection
+        postgres_widgets = [
+            self.postgres_host_input,
+            self.postgres_port_spin,
+            self.postgres_database_input,
+            self.postgres_user_input,
+            self.postgres_password_input,
+            self.sslmode_combo,
+            self.test_conn_btn,
+        ]
+
+        for widget in postgres_widgets:
+            widget.setEnabled(is_postgres)
+
+    def set_postgres_password(self) -> None:
+        """Set PostgreSQL password in keyring."""
+        from utils.crypto import CryptoManager
+        from PySide6.QtWidgets import QInputDialog
+
+        # Get current database path
+        db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+        crypto = CryptoManager(db_path)
+
+        # Get password from user
+        password, ok = QInputDialog.getText(
+            self,
+            "Set PostgreSQL Password",
+            "Enter PostgreSQL password:",
+            QLineEdit.Password,
+        )
+
+        if ok and password:
+            try:
+                crypto.store_postgres_password(password)
+                self.postgres_password_input.setText("••••••••")
+                self.conn_status_label.setText("Password saved to keyring.")
+                self.conn_status_label.setStyleSheet("color: green; font-style: italic;")
+            except Exception as e:
+                self.conn_status_label.setText(f"Error saving password: {e}")
+                self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+
+    def test_postgres_connection(self) -> None:
+        """Test PostgreSQL connection."""
+        try:
+            import psycopg2
+        except ImportError:
+            self.conn_status_label.setText(
+                "psycopg2 not installed. Install with: pip install psycopg2-binary"
+            )
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        # Get password from keyring
+        db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
+        from utils.crypto import CryptoManager
+        crypto = CryptoManager(db_path)
+        password = crypto.get_postgres_password()
+
+        if not password:
+            self.conn_status_label.setText("No password set. Please set password first.")
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        # Get connection parameters
+        host = self.postgres_host_input.text().strip()
+        port = self.postgres_port_spin.value()
+        database = self.postgres_database_input.text().strip() or "realtypecoach"
+        user = self.postgres_user_input.text().strip()
+        sslmode = self.sslmode_combo.currentData()
+
+        if not all([host, user]):
+            self.conn_status_label.setText("Please fill in host and user fields.")
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+            return
+
+        # Test connection
+        self.conn_status_label.setText("Testing connection...")
+        self.conn_status_label.setStyleSheet("color: #666; font-style: italic;")
+        QApplication.processEvents()
+
+        try:
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                database=database,
+                user=user,
+                password=password,
+                sslmode=sslmode,
+                connect_timeout=10,
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT version()")
+            version = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
+
+            self.conn_status_label.setText(f"Connection successful!\nPostgreSQL version: {version[:50]}...")
+            self.conn_status_label.setStyleSheet("color: green; font-style: italic;")
+        except Exception as e:
+            self.conn_status_label.setText(f"Connection failed: {str(e)}")
+            self.conn_status_label.setStyleSheet("color: red; font-style: italic;")
+
     def _update_detected_layout(self) -> None:
         """Update the detected keyboard layout hint."""
         try:
@@ -846,6 +1096,32 @@ class SettingsDialog(QDialog):
         dict_mode = self.current_settings.get("dictionary_mode", "validate")
         self.validate_mode_radio.setChecked(dict_mode == "validate")
 
+        # Load database settings
+        database_backend = self.current_settings.get("database_backend", "sqlite")
+        index = self.backend_combo.findData(database_backend)
+        if index >= 0:
+            self.backend_combo.setCurrentIndex(index)
+
+        self.postgres_host_input.setText(
+            self.current_settings.get("postgres_host", "")
+        )
+        self.postgres_port_spin.setValue(
+            self.current_settings.get("postgres_port", 5432)
+        )
+        self.postgres_database_input.setText(
+            self.current_settings.get("postgres_database", "realtypecoach")
+        )
+        self.postgres_user_input.setText(
+            self.current_settings.get("postgres_user", "")
+        )
+        sslmode = self.current_settings.get("postgres_sslmode", "require")
+        index = self.sslmode_combo.findData(sslmode)
+        if index >= 0:
+            self.sslmode_combo.setCurrentIndex(index)
+
+        # Trigger backend changed to enable/disable postgres settings
+        self.on_backend_changed()
+
     def get_settings(self) -> dict[str, Any]:
         """Get settings from UI.
 
@@ -904,6 +1180,13 @@ class SettingsDialog(QDialog):
             else "accept_all",
             "enabled_languages": enabled_langs_str,
             "enabled_dictionaries": enabled_dicts_str,
+            # Database settings
+            "database_backend": self.backend_combo.currentData(),
+            "postgres_host": self.postgres_host_input.text(),
+            "postgres_port": str(self.postgres_port_spin.value()),
+            "postgres_database": self.postgres_database_input.text() or "realtypecoach",
+            "postgres_user": self.postgres_user_input.text(),
+            "postgres_sslmode": self.sslmode_combo.currentData(),
         }
 
     def export_csv(self) -> None:

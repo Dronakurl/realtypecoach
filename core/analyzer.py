@@ -98,37 +98,21 @@ class Analyzer:
                 self.today_stats["slowest_key_name"] = summary.slowest_key_name
         else:
             # No daily summary yet, calculate from bursts
-            with self.storage._get_connection() as conn:
-                cursor = conn.cursor()
+            startOfDay = int(
+                datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000
+            )
+            endOfDay = startOfDay + 86400000
 
-                startOfDay = int(
-                    datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000
-                )
-                endOfDay = startOfDay + 86400000
+            # Get burst statistics using adapter
+            total_keystrokes, total_bursts = self.storage.get_burst_stats_for_date_range(
+                startOfDay, endOfDay
+            )
+            self.today_stats["total_keystrokes"] = total_keystrokes
+            self.today_stats["total_bursts"] = total_bursts
 
-                # Calculate keystrokes from bursts (sum of net_key_count)
-                cursor.execute(
-                    """
-                    SELECT COALESCE(SUM(net_key_count), 0) FROM bursts
-                    WHERE start_time >= ? AND start_time < ?
-                """,
-                    (startOfDay, endOfDay),
-                )
-                self.today_stats["total_keystrokes"] = cursor.fetchone()[0]
-
-                # Count today's bursts
-                cursor.execute(
-                    """
-                    SELECT COUNT(*) FROM bursts
-                    WHERE start_time >= ? AND start_time < ?
-                """,
-                    (startOfDay, endOfDay),
-                )
-                self.today_stats["total_bursts"] = cursor.fetchone()[0]
-
-                # Don't load total_typing_ms from database to avoid double-counting
-                # It will be accumulated as bursts are processed, and calculated fresh from DB in get_statistics
-                self.today_stats["total_typing_ms"] = 0
+            # Don't load total_typing_ms from database to avoid double-counting
+            # It will be accumulated as bursts are processed, and calculated fresh from DB in get_statistics
+            self.today_stats["total_typing_ms"] = 0
 
         # Load personal best for today
         self.personal_best_today = self.storage.get_today_high_score(self.today_date)
@@ -329,16 +313,7 @@ class Analyzer:
         )
         endOfDay = startOfDay + 86400000
 
-        with self.storage._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
-                WHERE start_time >= ? AND start_time < ?
-            """,
-                (startOfDay, endOfDay),
-            )
-            total_typing_ms = cursor.fetchone()[0]
+        total_typing_ms = self.storage.get_total_burst_duration(startOfDay, endOfDay)
 
         total_time_sec = total_typing_ms / 1000.0
         if total_time_sec == 0:

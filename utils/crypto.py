@@ -216,3 +216,47 @@ class CryptoManager:
             log.info("Legacy encryption key removed from keyring")
         except KeyringError as e:
             log.error(f"Error deleting legacy key: {e}")
+
+    # ========== PostgreSQL Password Storage ==========
+
+    POSTGRES_SERVICE = "realtypecoach_postgres"
+    POSTGRES_USERNAME = "database_user"
+
+    def store_postgres_password(self, password: str) -> None:
+        """Store PostgreSQL password in keyring.
+
+        Args:
+            password: PostgreSQL password
+
+        Raises:
+            RuntimeError: If keyring storage fails
+        """
+        if not password:
+            raise ValueError("Password cannot be empty")
+
+        try:
+            keyring.set_password(self.POSTGRES_SERVICE, self.POSTGRES_USERNAME, password)
+            log.info("PostgreSQL password stored in system keyring")
+        except KeyringError as e:
+            raise RuntimeError(f"Failed to store PostgreSQL password in keyring: {e}")
+
+    def get_postgres_password(self) -> Optional[str]:
+        """Retrieve PostgreSQL password from keyring.
+
+        Returns:
+            PostgreSQL password or None if not found
+        """
+        try:
+            password = keyring.get_password(self.POSTGRES_SERVICE, self.POSTGRES_USERNAME)
+            return password
+        except KeyringError as e:
+            log.error(f"Error retrieving PostgreSQL password from keyring: {e}")
+            return None
+
+    def delete_postgres_password(self) -> None:
+        """Delete PostgreSQL password from keyring."""
+        try:
+            keyring.delete_password(self.POSTGRES_SERVICE, self.POSTGRES_USERNAME)
+            log.info("PostgreSQL password removed from keyring")
+        except KeyringError as e:
+            log.error(f"Error deleting PostgreSQL password: {e}")

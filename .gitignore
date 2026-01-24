@@ -168,3 +168,11 @@ data/
 *.db-wal
 *.log
 prompt.txt
+
+# Secrets (passwords, API keys)
+*.secret
+*_secret
+postgres.secret
+dronakurl.postgres.secret
+pwd.secret
+pwd.dronakurl.secret
