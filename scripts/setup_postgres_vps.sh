@@ -58,17 +58,10 @@ if [ ! -f "$CERTS_DIR/server.crt" ]; then
         -out "$CERTS_DIR/server.crt" \
         -keyout "$CERTS_DIR/server.key" \
         -subj "/C=US/ST=State/L=City/O=Organization/CN=$(hostname -f | head -n1 || echo 'localhost')"
-    # PostgreSQL requires specific ownership and permissions for SSL certificates
-    # The postgres user in the container has UID 70, so we need to set ownership accordingly
     chmod 0600 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt"
-    sudo chown 70:70 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt" 2>/dev/null || \
-        echo "Warning: Could not change ownership to UID 70. You may need to run: sudo chown 70:70 $CERTS_DIR/*"
     echo "SSL certificates generated in $CERTS_DIR"
 else
     echo "Using existing SSL certificates"
-    # Ensure existing certificates have correct permissions
-    chmod 0600 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt"
-    sudo chown 70:70 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt" 2>/dev/null || true
 fi
 
 # Create docker-compose.yml
@@ -79,14 +72,24 @@ services:
     image: postgres:16-alpine
     container_name: realtypecoach_db
     restart: unless-stopped
-    command:
-      - "postgres"
-      - "-c"
-      - "ssl=on"
-      - "-c"
-      - "ssl_cert_file=/var/lib/postgresql/certs/server.crt"
-      - "-c"
-      - "ssl_key_file=/var/lib/postgresql/certs/server.key"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        # Copy SSL certificates from mounted location to data directory with correct ownership
+        if [ -f /ssl-mount/server.crt ]; then
+            mkdir -p /var/lib/postgresql/certs
+            cp /ssl-mount/server.crt /var/lib/postgresql/certs/
+            cp /ssl-mount/server.key /var/lib/postgresql/certs/
+            chmod 0600 /var/lib/postgresql/certs/server.*
+            chown postgres:postgres /var/lib/postgresql/certs/server.*
+            echo "SSL certificates copied and configured"
+        fi
+        # Start PostgreSQL with SSL enabled
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/var/lib/postgresql/certs/server.crt \
+          -c ssl_key_file=/var/lib/postgresql/certs/server.key
     environment:
       POSTGRES_DB: realtypecoach
       POSTGRES_USER: realtypecoach
@@ -94,7 +97,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./certs:/var/lib/postgresql/certs:ro
+      - ./certs:/ssl-mount:ro
     ports:
       - "5432:5432"
     healthcheck:
