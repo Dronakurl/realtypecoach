@@ -672,7 +672,7 @@ class SettingsDialog(QDialog):
 
         self.postgres_host_edit = ""
         self.postgres_host_input = QLineEdit()
-        self.postgres_host_input.setPlaceholderText("dronakurl.duckdns.org")
+        self.postgres_host_input.setPlaceholderText("localhost")
         postgres_layout.addRow(
             self._create_labeled_icon_widget(
                 "Host:",
@@ -1153,6 +1153,37 @@ class SettingsDialog(QDialog):
             "postgres_user": self.postgres_user_input.text(),
             "postgres_sslmode": self.sslmode_combo.currentData(),
         }
+
+    def accept(self) -> None:
+        """Validate and accept the dialog."""
+        # Check if postgres backend is selected
+        if self.backend_combo.currentData() in ("postgres", "hybrid"):
+            host = self.postgres_host_input.text().strip()
+            user = self.postgres_user_input.text().strip()
+
+            if not host:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Incomplete PostgreSQL Settings",
+                    "PostgreSQL host is required when using PostgreSQL backend.\n\n"
+                    "Please fill in the host field or switch back to SQLite."
+                )
+                self.postgres_host_input.setFocus()
+                return
+
+            if not user:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Incomplete PostgreSQL Settings",
+                    "PostgreSQL user is required when using PostgreSQL backend.\n\n"
+                    "Please fill in the user field or switch back to SQLite."
+                )
+                self.postgres_user_input.setFocus()
+                return
+
+        super().accept()
 
     def export_csv(self) -> None:
         """Export data to CSV file."""

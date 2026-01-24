@@ -16,6 +16,7 @@ PROJECT_DIR="$HOME/realtypecoach-db"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 ENV_FILE="$PROJECT_DIR/.env"
 POSTGRES_PORT=5432
+CERTS_DIR="$PROJECT_DIR/certs"
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
@@ -48,6 +49,22 @@ else
     source "$ENV_FILE"
 fi
 
+# Generate SSL certificates
+echo "Generating SSL certificates..."
+mkdir -p "$CERTS_DIR"
+
+if [ ! -f "$CERTS_DIR/server.crt" ]; then
+    openssl req -new -x509 -days 3650 -nodes \
+        -out "$CERTS_DIR/server.crt" \
+        -keyout "$CERTS_DIR/server.key" \
+        -subj "/C=US/ST=State/L=City/O=Organization/CN=$(hostname -f | head -n1 || echo 'localhost')"
+    chmod 600 "$CERTS_DIR/server.key"
+    chmod 644 "$CERTS_DIR/server.crt"
+    echo "SSL certificates generated in $CERTS_DIR"
+else
+    echo "Using existing SSL certificates"
+fi
+
 # Create docker-compose.yml
 echo "Creating docker-compose.yml..."
 cat > "$COMPOSE_FILE" << 'EOF'
@@ -56,6 +73,14 @@ services:
     image: postgres:16-alpine
     container_name: realtypecoach_db
     restart: unless-stopped
+    command:
+      - "postgres"
+      - "-c"
+      - "ssl=on"
+      - "-c"
+      - "ssl_cert_file=/var/lib/postgresql/certs/server.crt"
+      - "-c"
+      - "ssl_key_file=/var/lib/postgresql/certs/server.key"
     environment:
       POSTGRES_DB: realtypecoach
       POSTGRES_USER: realtypecoach
@@ -63,6 +88,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./certs:/var/lib/postgresql/certs:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -127,9 +153,15 @@ echo "  Port: $POSTGRES_PORT"
 echo "  Database: realtypecoach"
 echo "  User: realtypecoach"
 echo "  Password: $POSTGRES_PASSWORD"
+echo "  SSL: Enabled (verify-full)"
 echo ""
 echo "To connect from your local machine:"
-echo "  psql -h $(hostname -f | head -n1 || echo 'your-vps-hostname') -p $POSTGRES_PORT -U realtypecoach -d realtypecoach"
+echo "  psql \"host=$(hostname -f | head -n1 || echo 'your-vps-hostname') port=$POSTGRES_PORT dbname=realtypecoach user=realtypecoach sslmode=require\""
+echo ""
+echo "IMPORTANT: For the RealTypeCoach app to connect securely:"
+echo "  1. Copy the server certificate: scp $(whoami)@$(hostname -f | head -n1 || echo 'your-vps'):$CERTS_DIR/server.crt ~/realtypecoach-cert.crt"
+echo "  2. In the app settings, set SSL mode to 'verify-ca' or 'verify-full'"
+echo "  3. Or simply use 'require' mode to enable encryption without certificate verification"
 echo ""
 echo "To view logs:"
 echo "  cd $PROJECT_DIR && docker compose logs -f postgres"
