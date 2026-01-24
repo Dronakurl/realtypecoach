@@ -64,22 +64,26 @@ class ClickableInfoLabel(QLabel):
 class SettingsDialog(QDialog):
     """Configuration dialog for RealTypeCoach."""
 
-    def __init__(self, current_settings: dict, storage=None, parent=None):
+    def __init__(self, current_settings: dict, storage=None, sync_handler=None, parent=None):
         """Initialize settings dialog.
 
         Args:
             current_settings: Dictionary of current settings
             storage: Optional Storage instance for sync operations
+            sync_handler: Optional SyncHandler for auto-sync status
             parent: Parent widget
         """
         super().__init__(parent)
         self.current_settings = current_settings
         self.storage = storage
+        self.sync_handler = sync_handler
         self.settings: dict = {}
         # Set window flags for Wayland compatibility
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.init_ui()
         self.load_current_settings()
+        # Connect sync signals after UI is initialized
+        self._connect_sync_signals()
 
     @staticmethod
     def _create_palette_aware_icon(theme_name: str) -> QIcon:
@@ -279,6 +283,20 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(dialog_buttons)
         self.setLayout(layout)
+
+    def _connect_sync_signals(self) -> None:
+        """Connect sync handler signals."""
+        if self.sync_handler:
+            from PySide6.QtCore import Qt
+
+            self.sync_handler.signal_sync_completed.connect(
+                self._on_sync_completed,
+                Qt.ConnectionType.QueuedConnection,
+            )
+
+        # Connect checkbox to update next sync label
+        self.auto_sync_enabled_check.stateChanged.connect(self._update_next_sync_label)
+        self.sync_interval_spin.valueChanged.connect(self._update_next_sync_label)
 
     def create_general_tab(self) -> QWidget:
         """Create general settings tab."""
@@ -600,6 +618,21 @@ class SettingsDialog(QDialog):
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
 
+        # Add info label about ignore words file
+        ignore_info_label = QLabel()
+        ignore_info_label.setWordWrap(True)
+        ignore_info_label.setStyleSheet("color: #666; font-style: italic; font-size: 11px;")
+        ignore_info_label.setText(
+            "To ignore specific words, add them (one per line) to:\n"
+            f"{Path.home() / '.config' / 'realtypecoach' / 'ignorewords.txt'}"
+        )
+        ignore_info_label.setToolTip(
+            "Words listed in ignorewords.txt will be excluded from statistics.\n"
+            "Add one word per line. Lines starting with # are treated as comments.\n\n"
+            "Changes take effect on next application start."
+        )
+        layout.addWidget(ignore_info_label)
+
         # Language Selection Group
         lang_group = QGroupBox("Active Languages")
         lang_layout = QVBoxLayout()
@@ -838,6 +871,31 @@ class SettingsDialog(QDialog):
         sync_group.setLayout(sync_layout)
         layout.addWidget(sync_group)
 
+        # Auto-sync settings group
+        auto_sync_group = QGroupBox("Automatic Background Sync")
+        auto_sync_layout = QFormLayout()
+
+        self.auto_sync_enabled_check = QCheckBox("Enable automatic sync")
+        self.auto_sync_enabled_check.setToolTip(
+            "Automatically sync with remote database in the background"
+        )
+        auto_sync_layout.addRow("", self.auto_sync_enabled_check)
+
+        self.sync_interval_spin = QSpinBox()
+        self.sync_interval_spin.setRange(60, 86400)  # 1 minute to 24 hours
+        self.sync_interval_spin.setValue(300)
+        self.sync_interval_spin.setSuffix(" seconds")
+        self.sync_interval_spin.setToolTip("How often to sync with remote database")
+        auto_sync_layout.addRow("Sync interval:", self.sync_interval_spin)
+
+        # Status label showing next sync time
+        self.next_sync_label = QLabel("Auto-sync disabled")
+        self.next_sync_label.setStyleSheet("color: #666; font-style: italic;")
+        auto_sync_layout.addRow("", self.next_sync_label)
+
+        auto_sync_group.setLayout(auto_sync_layout)
+        layout.addWidget(auto_sync_group)
+
         layout.addStretch()
         widget.setLayout(layout)
 
@@ -875,6 +933,15 @@ class SettingsDialog(QDialog):
         ]
 
         for widget in user_sync_widgets:
+            widget.setEnabled(is_postgres)
+
+        # Enable/disable auto-sync widgets (only when postgres is selected)
+        auto_sync_widgets = [
+            self.auto_sync_enabled_check,
+            self.sync_interval_spin,
+        ]
+
+        for widget in auto_sync_widgets:
             widget.setEnabled(is_postgres)
 
     def set_postgres_password(self) -> None:
@@ -1178,6 +1245,17 @@ class SettingsDialog(QDialog):
         self._update_user_display()
         self._update_last_sync_label()
 
+        # Load auto-sync settings
+        self.auto_sync_enabled_check.setChecked(
+            self.current_settings.get("auto_sync_enabled", False)
+        )
+        self.sync_interval_spin.setValue(
+            self.current_settings.get("auto_sync_interval_sec", 300)
+        )
+
+        # Update next sync status
+        self._update_next_sync_label()
+
         # Trigger backend changed to enable/disable postgres settings
         self.on_backend_changed()
 
@@ -1236,6 +1314,9 @@ class SettingsDialog(QDialog):
             "postgres_database": self.postgres_database_input.text() or "realtypecoach",
             "postgres_user": self.postgres_user_input.text(),
             "postgres_sslmode": self.sslmode_combo.currentData(),
+            # Auto-sync settings
+            "auto_sync_enabled": str(self.auto_sync_enabled_check.isChecked()),
+            "auto_sync_interval_sec": str(self.sync_interval_spin.value()),
         }
 
     def accept(self) -> None:
@@ -1580,3 +1661,41 @@ class SettingsDialog(QDialog):
             self.last_sync_label.setText(f"Last sync: {sync_time}")
         else:
             self.last_sync_label.setText("Never synced")
+
+    def _update_next_sync_label(self) -> None:
+        """Update next sync status label."""
+        if not self.sync_handler:
+            return
+
+        if not self.auto_sync_enabled_check.isChecked():
+            self.next_sync_label.setText("Auto-sync disabled")
+            self.next_sync_label.setStyleSheet("color: #666; font-style: italic;")
+            return
+
+        # Check if backend is postgres
+        if self.backend_combo.currentData() != "postgres":
+            self.next_sync_label.setText("Auto-sync requires PostgreSQL backend")
+            self.next_sync_label.setStyleSheet("color: #f57900; font-style: italic;")
+            return
+
+        interval = self.sync_interval_spin.value()
+        if self.sync_handler.running:
+            self.next_sync_label.setText(
+                f"Auto-sync active (every {interval} seconds)"
+            )
+            self.next_sync_label.setStyleSheet("color: green; font-style: italic;")
+        else:
+            self.next_sync_label.setText(
+                f"Auto-sync configured (every {interval} seconds)"
+            )
+            self.next_sync_label.setStyleSheet("color: #666; font-style: italic;")
+
+    def _on_sync_completed(self, result: dict) -> None:
+        """Handle sync completion from sync handler.
+
+        Args:
+            result: Sync result dictionary
+        """
+        self._update_last_sync_label()
+        if self.auto_sync_enabled_check.isChecked():
+            self._update_next_sync_label()

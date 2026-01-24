@@ -15,6 +15,7 @@ from queue import Empty, Queue
 DATA_DIR = Path.home() / ".local" / "share" / "realtypecoach"
 XDG_STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
 LOG_DIR = XDG_STATE_HOME / "realtypecoach"
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "realtypecoach"
 
 # Setup logging with XDG state directory
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -51,6 +52,7 @@ from core.dictionary_config import DictionaryConfig  # noqa: E402
 from core.evdev_handler import EvdevHandler  # noqa: E402
 from core.notification_handler import NotificationHandler  # noqa: E402
 from core.storage import Storage  # noqa: E402
+from core.sync_handler import SyncHandler  # noqa: E402
 from ui.about_dialog import AboutDialog  # noqa: E402
 from ui.settings_dialog import SettingsDialog  # noqa: E402
 from ui.stats_panel import StatsPanel  # noqa: E402
@@ -103,6 +105,7 @@ class Application(QObject):
         """Initialize data directory."""
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         except OSError as e:
             log.error(f"Failed to create data directory: {e}")
             QMessageBox.critical(
@@ -203,7 +206,13 @@ class Application(QObject):
             word_boundary_timeout_ms=self.config.get_int("word_boundary_timeout_ms", 1000),
             dictionary_config=dictionary_config,
             config=self.config,
+            ignore_file_path=CONFIG_DIR / "ignorewords.txt",
         )
+
+        # Clean ignored words from database
+        deleted_count = self.storage.clean_ignored_words()
+        if deleted_count > 0:
+            log.info(f"Cleaned {deleted_count} ignored word entries from database")
 
         current_layout = get_current_layout()
         print(f"Detected keyboard layout: {current_layout}")
@@ -239,6 +248,16 @@ class Application(QObject):
         )
 
         self.layout_monitor = LayoutMonitor(callback=self.on_layout_changed, poll_interval=60)
+
+        # Initialize sync handler
+        auto_sync_enabled = self.config.get_bool("auto_sync_enabled", False)
+        auto_sync_interval = self.config.get_int("auto_sync_interval_sec", 300)
+        self.sync_handler = SyncHandler(
+            storage=self.storage,
+            config=self.config,
+            enabled=auto_sync_enabled,
+            interval_sec=auto_sync_interval,
+        )
 
         self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
         self.tray_icon = TrayIcon(
@@ -340,6 +359,9 @@ class Application(QObject):
 
         # Connect stats panel visibility signal to update thread-safe flag
         self.stats_panel.visibility_changed.connect(self._on_stats_panel_visibility_changed)
+
+        # Connect sync handler signals
+        self.sync_handler.signal_sync_failed.connect(self._on_sync_failed)
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout."""
@@ -468,6 +490,18 @@ class Application(QObject):
 
         self.tray_icon.show_notification("🔤 Hardest Letter Changed", message, icon_type)
 
+    def _on_sync_failed(self, error: str) -> None:
+        """Handle sync failure.
+
+        Args:
+            error: Error message
+        """
+        log.warning(f"Background sync failed: {error}")
+        # Optionally show tray notification for persistent failures
+        # self.tray_icon.show_notification(
+        #     "Sync Failed", f"Background sync failed: {error}", "warning"
+        # )
+
     def apply_settings(self, new_settings: dict) -> None:
         """Apply new settings."""
         # Special keys that should not be saved to config
@@ -502,6 +536,12 @@ class Application(QObject):
             self.notification_handler.daily_summary_enabled = self.config.get_bool(
                 "daily_summary_enabled", True
             )
+
+        # Update auto-sync settings
+        if "auto_sync_enabled" in new_settings or "auto_sync_interval_sec" in new_settings:
+            auto_sync_enabled = self.config.get_bool("auto_sync_enabled", False)
+            auto_sync_interval = self.config.get_int("auto_sync_interval_sec", 300)
+            self.sync_handler.update_settings(auto_sync_enabled, auto_sync_interval)
 
         if "__clear_database__" in new_settings:
             self.storage.clear_database()
@@ -827,8 +867,13 @@ class Application(QObject):
             "postgres_database": self.config.get("postgres_database", "realtypecoach"),
             "postgres_user": self.config.get("postgres_user", ""),
             "postgres_sslmode": self.config.get("postgres_sslmode", "require"),
+            # Auto-sync settings
+            "auto_sync_enabled": self.config.get_bool("auto_sync_enabled", False),
+            "auto_sync_interval_sec": self.config.get_int("auto_sync_interval_sec", 300),
         }
-        dialog = SettingsDialog(current_settings, storage=self.storage)
+        dialog = SettingsDialog(
+            current_settings, storage=self.storage, sync_handler=self.sync_handler
+        )
         if dialog.exec() == QDialog.Accepted:
             # Use dialog.settings if it was set by clear_data/export_csv, otherwise get fresh settings
             if dialog.settings:
@@ -880,6 +925,11 @@ class Application(QObject):
         log.info("Starting notification handler...")
         self.notification_handler.start()
 
+        # Start sync handler if enabled
+        if self.sync_handler.enabled:
+            log.info("Starting sync handler...")
+            self.sync_handler.start()
+
         self.process_queue_timer = QTimer()
         self.process_queue_timer.timeout.connect(self.process_event_queue)
         self.process_queue_timer.start(500)  # Check every 500ms
@@ -917,6 +967,9 @@ class Application(QObject):
 
         log.info("Stopping notification handler...")
         self.notification_handler.stop()
+
+        log.info("Stopping sync handler...")
+        self.sync_handler.stop()
 
         log.info("Closing storage connection pool...")
         self.storage.close()

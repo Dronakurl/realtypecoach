@@ -43,6 +43,7 @@ class Storage:
         config: Config,
         word_boundary_timeout_ms: int = 1000,
         dictionary_config: DictionaryConfig | None = None,
+        ignore_file_path: Path | None = None,
     ):
         """Initialize storage with database adapter.
 
@@ -51,6 +52,7 @@ class Storage:
             config: Config instance for accessing settings (required)
             word_boundary_timeout_ms: Max pause between letters before word splits (ms)
             dictionary_config: Dictionary configuration object
+            ignore_file_path: Optional path to ignorewords.txt file
 
         Raises:
             ValueError: If word_boundary_timeout_ms is not positive or config is None
@@ -71,7 +73,7 @@ class Storage:
 
         # Initialize non-database components
         dict_config = dictionary_config or DictionaryConfig()
-        self.dictionary = Dictionary(dict_config)
+        self.dictionary = Dictionary(dict_config, ignore_file_path)
         self.word_detector = WordDetector(
             word_boundary_timeout_ms=word_boundary_timeout_ms, min_word_length=3
         )
@@ -101,6 +103,7 @@ class Storage:
 
         elif db_backend == "postgres":
             from core.postgres_adapter import PostgreSQLAdapter
+            from core.user_manager import UserManager
 
             log.info("Using PostgreSQL database adapter")
 
@@ -120,6 +123,13 @@ class Storage:
                     "Please set host, database, user, and password in settings."
                 )
 
+            # Get user identity and encryption key for multi-user support
+            user_manager = UserManager(self.db_path, self.config)
+            current_user = user_manager.get_or_create_current_user()
+            encryption_key = user_manager.get_encryption_key()
+
+            log.info(f"Using PostgreSQL with user_id: {current_user.user_id}")
+
             adapter = PostgreSQLAdapter(
                 host=host,
                 port=port,
@@ -127,6 +137,8 @@ class Storage:
                 user=user,
                 password=password,
                 sslmode=sslmode,
+                user_id=current_user.user_id,
+                encryption_key=encryption_key,
             )
             adapter.initialize()
             return adapter
@@ -652,6 +664,17 @@ class Storage:
         """
         return self.adapter.get_all_time_typing_time(exclude_today)
 
+    def get_today_typing_time(self, date: str) -> int:
+        """Get typing time for a specific date.
+
+        Args:
+            date: Date string (YYYY-MM-DD)
+
+        Returns:
+            Typing time in milliseconds for the given date
+        """
+        return self.adapter.get_today_typing_time(date)
+
     def get_all_time_keystrokes_and_bursts(self, exclude_today: str = None) -> tuple[int, int]:
         """Get all-time total keystrokes and bursts from adapter.
 
@@ -688,6 +711,15 @@ class Storage:
             Number of rows exported
         """
         return self.adapter.export_to_csv(file_path, start_date)
+
+    def clean_ignored_words(self) -> int:
+        """Delete word statistics for words in the ignore list.
+
+        Returns:
+            Number of rows deleted
+        """
+        ignored_words = list(self.dictionary._ignored_words)
+        return self.adapter.delete_words_by_list(ignored_words)
 
     def merge_with_remote(self) -> dict:
         """Manually sync/merge local SQLite with remote PostgreSQL.

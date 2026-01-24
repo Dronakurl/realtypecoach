@@ -13,6 +13,58 @@ class Dictionary:
 
     MIN_WORD_LENGTH: int = 3
 
+    def __init__(self, config: DictionaryConfig, ignore_file_path: Path | None = None):
+        """Initialize dictionary with configuration.
+
+        Args:
+            config: DictionaryConfig object with settings
+            ignore_file_path: Optional path to ignorewords.txt file
+        """
+        self.words: dict[str, set[str]] = {}  # language_code -> word set
+        self.loaded_paths: dict[str, str] = {}  # language_code -> file path
+        self._config: DictionaryConfig = config
+        self._ignored_words: set[str] = set()
+
+        # Load ignore words from file
+        self._load_ignore_words(ignore_file_path)
+
+        # Resolve which languages to load and get their paths
+        resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
+
+        # Load dictionaries using resolved paths
+        for lang_code, path in resolved_paths.items():
+            self._load_dictionary(lang_code, path)
+
+        # Log final state
+        if self.accept_all_mode:
+            log.warning("Dictionary in accept-all mode - all words (3+ letters) will be valid")
+        else:
+            loaded = self.get_loaded_languages()
+            if loaded:
+                log.info(f"Dictionary loaded for languages: {', '.join(loaded)}")
+
+    def _load_ignore_words(self, ignore_file_path: Path | None) -> None:
+        """Load ignore words from file.
+
+        Args:
+            ignore_file_path: Path to ignorewords.txt file, or None
+        """
+        if ignore_file_path is None or not ignore_file_path.exists():
+            return
+
+        try:
+            with open(ignore_file_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    # Skip empty lines and comments
+                    if not line or line.startswith("#"):
+                        continue
+                    # Store lowercase for case-insensitive matching
+                    self._ignored_words.add(line.lower())
+            log.info(f"Loaded {len(self._ignored_words)} ignored words from {ignore_file_path}")
+        except (OSError, UnicodeDecodeError) as e:
+            log.warning(f"Failed to load ignore words from {ignore_file_path}: {e}")
+
     @classmethod
     def _detect_dictionaries(cls) -> dict[str, str]:
         """Detect available dictionaries on the system.
@@ -68,31 +120,6 @@ class Dictionary:
                 resolved[lang] = detected[lang]
 
         return resolved
-
-    def __init__(self, config: DictionaryConfig):
-        """Initialize dictionary with configuration.
-
-        Args:
-            config: DictionaryConfig object with settings
-        """
-        self.words: dict[str, set[str]] = {}  # language_code -> word set
-        self.loaded_paths: dict[str, str] = {}  # language_code -> file path
-        self._config: DictionaryConfig = config
-
-        # Resolve which languages to load and get their paths
-        resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
-
-        # Load dictionaries using resolved paths
-        for lang_code, path in resolved_paths.items():
-            self._load_dictionary(lang_code, path)
-
-        # Log final state
-        if self.accept_all_mode:
-            log.warning("Dictionary in accept-all mode - all words (3+ letters) will be valid")
-        else:
-            loaded = self.get_loaded_languages()
-            if loaded:
-                log.info(f"Dictionary loaded for languages: {', '.join(loaded)}")
 
     def _determine_languages_to_load(self, config: DictionaryConfig) -> tuple[dict[str, str], bool]:
         """Determine which languages to load and whether to use accept_all mode.
@@ -209,11 +236,14 @@ class Dictionary:
         if not word:
             return False
 
+        # Check ignore list first
+        word_lower = word.lower()
+        if word_lower in self._ignored_words:
+            return False
+
         # In accept-all mode, validate based on word length
         if self.accept_all_mode:
             return len(word) >= self.MIN_WORD_LENGTH
-
-        word_lower = word.lower()
 
         # Check specific language if requested
         if language:

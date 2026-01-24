@@ -279,6 +279,18 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete_words_by_list(self, words: list[str]) -> int:
+        """Delete word statistics for words in the given list.
+
+        Args:
+            words: List of words (lowercase) to delete
+
+        Returns:
+            Number of rows deleted
+        """
+        pass
+
     # ========== High Score Operations ==========
 
     @abstractmethod
@@ -372,6 +384,18 @@ class DatabaseAdapter(ABC):
 
         Returns:
             Total typing time in seconds
+        """
+        pass
+
+    @abstractmethod
+    def get_today_typing_time(self, date: str) -> int:
+        """Get typing time for a specific date.
+
+        Args:
+            date: Date string (YYYY-MM-DD)
+
+        Returns:
+            Typing time in milliseconds for the given date
         """
         pass
 

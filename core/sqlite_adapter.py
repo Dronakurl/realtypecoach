@@ -1128,6 +1128,20 @@ class SQLiteAdapter(DatabaseAdapter):
                 for r in rows
             ]
 
+    def delete_words_by_list(self, words: list[str]) -> int:
+        """Delete word statistics for words in the given list."""
+        if not words:
+            return 0
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' * len(words))
+            cursor.execute(
+                f"DELETE FROM word_statistics WHERE word IN ({placeholders})",
+                words
+            )
+            conn.commit()
+            return cursor.rowcount
+
     # ========== High Score Operations ==========
 
     def store_high_score(self, date: str, wpm: float, duration_ms: int, key_count: int) -> None:
@@ -1261,6 +1275,22 @@ class SQLiteAdapter(DatabaseAdapter):
                 return self._cache_all_time_typing_sec - int(today_ms / 1000)
 
         return self._cache_all_time_typing_sec
+
+    def get_today_typing_time(self, date: str) -> int:
+        """Get typing time for a specific date."""
+        start_of_day = int(datetime.strptime(date, "%Y-%m-%d").timestamp() * 1000)
+        end_of_day = start_of_day + 86400000
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
+                WHERE start_time >= ? AND start_time < ?
+            """,
+                (start_of_day, end_of_day),
+            )
+            return cursor.fetchone()[0]
 
     def get_all_time_keystrokes_and_bursts(
         self, exclude_today: str | None = None
