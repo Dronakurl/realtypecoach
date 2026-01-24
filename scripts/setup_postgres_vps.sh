@@ -58,11 +58,17 @@ if [ ! -f "$CERTS_DIR/server.crt" ]; then
         -out "$CERTS_DIR/server.crt" \
         -keyout "$CERTS_DIR/server.key" \
         -subj "/C=US/ST=State/L=City/O=Organization/CN=$(hostname -f | head -n1 || echo 'localhost')"
-    chmod 600 "$CERTS_DIR/server.key"
-    chmod 644 "$CERTS_DIR/server.crt"
+    # PostgreSQL requires specific ownership and permissions for SSL certificates
+    # The postgres user in the container has UID 70, so we need to set ownership accordingly
+    chmod 0600 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt"
+    sudo chown 70:70 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt" 2>/dev/null || \
+        echo "Warning: Could not change ownership to UID 70. You may need to run: sudo chown 70:70 $CERTS_DIR/*"
     echo "SSL certificates generated in $CERTS_DIR"
 else
     echo "Using existing SSL certificates"
+    # Ensure existing certificates have correct permissions
+    chmod 0600 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt"
+    sudo chown 70:70 "$CERTS_DIR/server.key" "$CERTS_DIR/server.crt" 2>/dev/null || true
 fi
 
 # Create docker-compose.yml
