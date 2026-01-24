@@ -179,11 +179,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 PRIMARY KEY (id, user_id)
             )
         """)
+
+        # Migrate existing table if needed (before creating indexes)
+        self._migrate_table_if_needed(cursor, "bursts")
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_bursts_start_time ON bursts(start_time)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_bursts_user_id ON bursts(user_id)")
-
-        # Migrate if columns don't exist
-        self._migrate_table_if_needed(cursor, "bursts")
 
     def _create_statistics_table(self, conn: connection) -> None:
         """Create statistics table."""
@@ -203,10 +204,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 PRIMARY KEY (keycode, layout, user_id)
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_statistics_user_id ON statistics(user_id)")
 
-        # Migrate if columns don't exist
+        # Migrate existing table if needed (before creating indexes)
         self._migrate_table_if_needed(cursor, "statistics")
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_statistics_user_id ON statistics(user_id)")
 
     def _create_high_scores_table(self, conn: connection) -> None:
         """Create high_scores table."""
@@ -225,10 +227,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 PRIMARY KEY (id, user_id)
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_high_scores_user_id ON high_scores(user_id)")
 
-        # Migrate if columns don't exist
+        # Migrate existing table if needed (before creating indexes)
         self._migrate_table_if_needed(cursor, "high_scores")
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_high_scores_user_id ON high_scores(user_id)")
 
     def _create_daily_summaries_table(self, conn: connection) -> None:
         """Create daily_summaries table."""
@@ -248,10 +251,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 PRIMARY KEY (date, user_id)
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_summaries_user_id ON daily_summaries(user_id)")
 
-        # Migrate if columns don't exist
+        # Migrate existing table if needed (before creating indexes)
         self._migrate_table_if_needed(cursor, "daily_summaries")
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_summaries_user_id ON daily_summaries(user_id)")
 
     def _create_word_statistics_table(self, conn: connection) -> None:
         """Create word_statistics table."""
@@ -272,10 +276,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 PRIMARY KEY (word, layout, user_id)
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_word_statistics_user_id ON word_statistics(user_id)")
 
-        # Migrate if columns don't exist
+        # Migrate existing table if needed (before creating indexes)
         self._migrate_table_if_needed(cursor, "word_statistics")
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_word_statistics_user_id ON word_statistics(user_id)")
 
         # Create users and sync_log tables
         self._create_users_table(conn)
