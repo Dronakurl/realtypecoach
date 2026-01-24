@@ -134,6 +134,17 @@ class AppSettings(BaseModel):
     current_user_metadata: str = Field(default="", description="User metadata")
     last_sync_timestamp: int = Field(default=0, description="Last sync timestamp")
 
+    # Auto-sync settings
+    auto_sync_enabled: bool = Field(
+        default=False, description="Enable automatic background sync to remote database"
+    )
+    auto_sync_interval_sec: int = Field(
+        default=300,
+        ge=60,
+        le=86400,
+        description="Automatic sync interval in seconds (60-86400)",
+    )
+
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
     @field_validator("active_time_threshold_ms")

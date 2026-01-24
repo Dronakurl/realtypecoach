@@ -335,20 +335,7 @@ class Analyzer:
             current_burst_wpm = self.current_burst_wpm
 
         # Calculate total typing time from database to avoid double-counting
-        startOfDay = int(datetime.strptime(today_date, "%Y-%m-%d").timestamp() * 1000)
-        endOfDay = startOfDay + 86400000
-
-        with self.storage._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
-                WHERE start_time >= ? AND start_time < ?
-            """,
-                (startOfDay, endOfDay),
-            )
-            total_typing_ms = cursor.fetchone()[0]
-
+        total_typing_ms = self.storage.get_today_typing_time(today_date)
         total_time_sec = total_typing_ms / 1000.0
 
         return {
