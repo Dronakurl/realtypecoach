@@ -89,13 +89,13 @@ if [ -d ".venv" ]; then
     print_status "OK" "Virtual environment already exists"
 else
     echo "Creating virtual environment with Python 3.14..."
-    uv venv --python 3.14.2 .venv
+    uv venv --python 3.14.2 --force .venv
     print_status "OK" "Virtual environment created"
 fi
 
 # Install dependencies from pyproject.toml
 echo "Installing dependencies..."
-.venv/bin/pip install -e .
+uv pip install -e . --python .venv/bin/python
 
 # Verify installation
 if .venv/bin/python3 -c "import PySide6" 2>/dev/null; then
@@ -148,12 +148,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Create production virtual environment at install location
 echo "Creating production virtual environment with Python 3.14..."
-uv venv --python 3.14.2 "$INSTALL_DIR/.venv"
+uv venv --python 3.14.2 --force "$INSTALL_DIR/.venv"
 print_status "OK" "Virtual environment created at: $INSTALL_DIR/.venv"
 
 # Install dependencies in production venv
 echo "Installing dependencies..."
-"$INSTALL_DIR/.venv/bin/pip" install -e "$SCRIPT_DIR" --quiet
+uv pip install -e "$SCRIPT_DIR" --python "$INSTALL_DIR/.venv/bin/python" --quiet
 print_status "OK" "Dependencies installed"
 
 # Create wrapper script
