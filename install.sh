@@ -89,7 +89,7 @@ if [ -d ".venv" ]; then
     print_status "OK" "Virtual environment already exists"
 else
     echo "Creating virtual environment with Python 3.14..."
-    uv venv --python 3.14.2 --force .venv
+    uv venv --python 3.14.2 .venv
     print_status "OK" "Virtual environment created"
 fi
 
@@ -148,7 +148,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Create production virtual environment at install location
 echo "Creating production virtual environment with Python 3.14..."
-uv venv --python 3.14.2 --force "$INSTALL_DIR/.venv"
+# Remove existing venv if present
+if [ -d "$INSTALL_DIR/.venv" ]; then
+    rm -rf "$INSTALL_DIR/.venv"
+fi
+uv venv --python 3.14.2 "$INSTALL_DIR/.venv"
 print_status "OK" "Virtual environment created at: $INSTALL_DIR/.venv"
 
 # Install dependencies in production venv

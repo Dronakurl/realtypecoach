@@ -666,6 +666,7 @@ dependencies = [
     { name = "evdev" },
     { name = "keyring" },
     { name = "pandas" },
+    { name = "psycopg2-binary" },
     { name = "pydantic" },
     { name = "pyqtgraph" },
     { name = "pyside6" },
@@ -677,9 +678,6 @@ dev = [
     { name = "pre-commit" },
     { name = "ruff" },
 ]
-postgres = [
-    { name = "psycopg2-binary" },
-]
 
 [package.metadata]
 requires-dist = [
@@ -688,14 +686,14 @@ requires-dist = [
     { name = "keyring" },
     { name = "pandas" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9.0" },
+    { name = "psycopg2-binary", specifier = ">=2.9.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyqtgraph" },
     { name = "pyside6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
     { name = "sqlcipher3-binary" },
 ]
-provides-extras = ["postgres", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "ruff"

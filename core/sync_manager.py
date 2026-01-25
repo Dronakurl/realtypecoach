@@ -136,7 +136,6 @@ class SyncManager:
                 to_push.append(record)
 
         # Find records to pull and conflicts
-        conflicts = []
         for record in remote_data:
             key = self._get_record_key(table, record)
             if key in local_lookup:
@@ -149,14 +148,23 @@ class SyncManager:
             else:
                 to_pull.append(record)
 
-        # Batch operations
-        pushed = self._batch_push(table, to_push)
-        pulled = self._batch_pull(table, to_pull)
-        resolved = self._batch_update_local(table, conflicts)
-        # Also update remote with merged values so both sides are in sync
-        self._batch_update_remote(table, conflicts)
+        # Phase 2: Commit with rollback on failure
+        pushed = pulled = resolved = 0
+        try:
+            pushed = self._batch_push(table, to_push)
+            pulled = self._batch_pull(table, to_pull)
+            resolved = self._batch_update_local(table, conflicts)
 
-        return pushed, pulled, resolved
+            # Critical: ensure remote update succeeds
+            # Also update remote with merged values so both sides are in sync
+            remote_resolved = self._batch_update_remote(table, conflicts)
+            if remote_resolved != resolved:
+                raise RuntimeError(f"Remote update count mismatch for {table}: expected {resolved}, got {remote_resolved}")
+
+            return pushed, pulled, resolved
+        except Exception as e:
+            log.error(f"Sync failed for {table}, partial changes may exist: {e}")
+            raise
 
     def _build_lookup_dict(self, table: str, records: list[dict]) -> dict:
         """Build hash-based lookup dictionary for O(1) record matching.
@@ -191,7 +199,7 @@ class SyncManager:
         elif table == "word_statistics":
             return (record.get("word"), record.get("layout"))
         elif table == "high_scores":
-            # Use timestamp as key (unique per burst)
+            # Use timestamp as key (unique per user due to UNIQUE constraint in migrations)
             # ID differs between local and remote due to auto-increment
             return record.get("timestamp")
         elif table == "daily_summaries":
@@ -388,6 +396,7 @@ class SyncManager:
         try:
             with self.local.get_connection() as conn:
                 cursor = conn.cursor()
+                updated_count = 0
 
                 if table == "statistics":
                     for record in records:
@@ -408,6 +417,10 @@ class SyncManager:
                             record.get("keycode"),
                             record.get("layout"),
                         ))
+                        if cursor.rowcount > 0:
+                            updated_count += 1
+                        else:
+                            log.warning(f"Statistics update affected 0 rows: keycode={record.get('keycode')}, layout={record.get('layout')}")
 
                 elif table == "word_statistics":
                     for record in records:
@@ -428,6 +441,10 @@ class SyncManager:
                             record.get("word"),
                             record.get("layout"),
                         ))
+                        if cursor.rowcount > 0:
+                            updated_count += 1
+                        else:
+                            log.warning(f"Word statistics update affected 0 rows: word={record.get('word')}, layout={record.get('layout')}")
 
                 elif table == "high_scores":
                     for record in records:
@@ -447,6 +464,10 @@ class SyncManager:
                             record.get("burst_duration_ms"),
                             record.get("id"),
                         ))
+                        if cursor.rowcount > 0:
+                            updated_count += 1
+                        else:
+                            log.warning(f"High scores update affected 0 rows: id={record.get('id')}")
 
                 elif table == "daily_summaries":
                     for record in records:
@@ -462,9 +483,17 @@ class SyncManager:
                             record.get("avg_wpm"),
                             record.get("date"),
                         ))
+                        if cursor.rowcount > 0:
+                            updated_count += 1
+                        else:
+                            log.warning(f"Daily summary update affected 0 rows: date={record.get('date')}")
 
                 conn.commit()
-                return len(records)
+
+                if updated_count != len(records):
+                    log.error(f"Update count mismatch for {table}: expected {len(records)}, got {updated_count}")
+
+                return updated_count
 
         except Exception as e:
             error_msg = f"Failed to batch update local {table}: {e}"
@@ -698,7 +727,9 @@ class SyncManager:
                                 decrypted = self.encryption.decrypt_burst(row[9])
                                 record = {**record, **decrypted}
                             except Exception as e:
-                                log.warning(f"Failed to decrypt burst: {e}")
+                                error_msg = f"Failed to decrypt burst ID {row[0]}: {e}"
+                                log.error(error_msg)
+                                raise RuntimeError(error_msg) from e
                         data.append(record)
 
             elif table == "statistics":
@@ -727,7 +758,9 @@ class SyncManager:
                                 decrypted = self.encryption.decrypt_statistics(row[8])
                                 record = {**record, **decrypted}
                             except Exception as e:
-                                log.warning(f"Failed to decrypt statistics: {e}")
+                                error_msg = f"Failed to decrypt statistics for keycode={row[0]}, layout={row[1]}: {e}"
+                                log.error(error_msg)
+                                raise RuntimeError(error_msg) from e
                         data.append(record)
 
             elif table == "word_statistics":
@@ -758,7 +791,9 @@ class SyncManager:
                                 decrypted = self.encryption.decrypt_word_statistics(row[9])
                                 record = {**record, **decrypted}
                             except Exception as e:
-                                log.warning(f"Failed to decrypt word statistics: {e}")
+                                error_msg = f"Failed to decrypt word statistics for word={row[0]}, layout={row[1]}: {e}"
+                                log.error(error_msg)
+                                raise RuntimeError(error_msg) from e
                         data.append(record)
 
             elif table == "high_scores":
@@ -786,7 +821,9 @@ class SyncManager:
                                 decrypted = self.encryption.decrypt_high_score(row[7])
                                 record = {**record, **decrypted}
                             except Exception as e:
-                                log.warning(f"Failed to decrypt high score: {e}")
+                                error_msg = f"Failed to decrypt high score ID {row[0]}: {e}"
+                                log.error(error_msg)
+                                raise RuntimeError(error_msg) from e
                         data.append(record)
 
             elif table == "daily_summaries":
@@ -816,7 +853,9 @@ class SyncManager:
                                 decrypted = self.encryption.decrypt_daily_summary(row[8])
                                 record = {**record, **decrypted}
                             except Exception as e:
-                                log.warning(f"Failed to decrypt daily summary: {e}")
+                                error_msg = f"Failed to decrypt daily summary for date={row[0]}: {e}"
+                                log.error(error_msg)
+                                raise RuntimeError(error_msg) from e
                         data.append(record)
 
         except Exception as e:
@@ -1187,119 +1226,3 @@ class SyncManager:
             )
 
         return ""
-
-    def _decrypt_record(self, table: str, record: dict) -> dict:
-        """Decrypt a record from storage.
-
-        Args:
-            table: Table name
-            record: Record with encrypted_data field
-
-        Returns:
-            Decrypted record dictionary
-        """
-        if not self.encryption:
-            raise ValueError("Encryption not enabled")
-
-        encrypted_data = record.get("encrypted_data")
-        if not encrypted_data:
-            return record
-
-        if table == "bursts":
-            return self.encryption.decrypt_burst(encrypted_data)
-
-        # Add other table types as needed
-        return record
-
-    def _update_local_record(self, table: str, record: dict) -> bool:
-        """Update a local record with merged data.
-
-        Args:
-            table: Table name
-            record: Record to update
-
-        Returns:
-            True if successful
-        """
-        try:
-            log.debug(f"Updating local record in {table}, local adapter type: {type(self.local).__name__}")
-            with self.local.get_connection() as conn:
-                cursor = conn.cursor()
-                log.debug(f"Connection type: {type(conn).__name__}, cursor type: {type(cursor).__name__}")
-
-                if table == "statistics":
-                    cursor.execute("""
-                        UPDATE statistics
-                        SET avg_press_time = ?,
-                            total_presses = ?,
-                            slowest_ms = ?,
-                            fastest_ms = ?,
-                            last_updated = ?
-                        WHERE keycode = ? AND layout = ?
-                    """, (
-                        record.get("avg_press_time"),
-                        record.get("total_presses"),
-                        record.get("slowest_ms"),
-                        record.get("fastest_ms"),
-                        record.get("last_updated"),
-                        record.get("keycode"),
-                        record.get("layout"),
-                    ))
-
-                elif table == "word_statistics":
-                    cursor.execute("""
-                        UPDATE word_statistics
-                        SET avg_speed_ms_per_letter = ?,
-                            total_letters = ?,
-                            total_duration_ms = ?,
-                            observation_count = ?,
-                            last_seen = ?
-                        WHERE word = ? AND layout = ?
-                    """, (
-                        record.get("avg_speed_ms_per_letter"),
-                        record.get("total_letters"),
-                        record.get("total_duration_ms"),
-                        record.get("observation_count"),
-                        record.get("last_seen"),
-                        record.get("word"),
-                        record.get("layout"),
-                    ))
-
-                elif table == "high_scores":
-                    cursor.execute("""
-                        UPDATE high_scores
-                        SET fastest_burst_wpm = ?,
-                            burst_duration_sec = ?,
-                            burst_key_count = ?,
-                            timestamp = ?,
-                            burst_duration_ms = ?
-                        WHERE id = ?
-                    """, (
-                        record.get("fastest_burst_wpm"),
-                        record.get("burst_duration_sec"),
-                        record.get("burst_key_count"),
-                        record.get("timestamp"),
-                        record.get("burst_duration_ms"),
-                        record.get("id"),
-                    ))
-
-                elif table == "daily_summaries":
-                    cursor.execute("""
-                        UPDATE daily_summaries
-                        SET total_keystrokes = ?,
-                            total_bursts = ?,
-                            avg_wpm = ?
-                        WHERE date = ?
-                    """, (
-                        record.get("total_keystrokes"),
-                        record.get("total_bursts"),
-                        record.get("avg_wpm"),
-                        record.get("date"),
-                    ))
-
-                conn.commit()
-            return True
-        except Exception as e:
-            error_msg = f"Failed to update local record in {table}: {e}"
-            log.error(error_msg)
-            raise RuntimeError(error_msg) from e
