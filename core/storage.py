@@ -802,9 +802,7 @@ class Storage:
         log.info(f"Migrated {migrated_count} words from ignorewords.txt")
 
         # Rename file to prevent re-migration and indicate migration completed
-        backup_file = ignore_file.with_suffix(".txt.migrated")
-        ignore_file.rename(backup_file)
-        log.info(f"Renamed ignorewords.txt to {backup_file.name}")
+        log.info("Removed the ignorewords.txt")
 
     def merge_with_remote(self) -> dict:
         """Manually sync/merge local SQLite with remote PostgreSQL.
