@@ -233,6 +233,7 @@ class SQLiteAdapter(DatabaseAdapter):
             self._add_word_statistics_columns()
             self._add_backspace_tracking_to_bursts(conn)
             self._migrate_bursts_unique_start_time(conn)
+            self._migrate_high_scores_unique_timestamp(conn)
             conn.commit()
 
         # Initialize cache
@@ -292,7 +293,7 @@ class SQLiteAdapter(DatabaseAdapter):
                 fastest_burst_wpm REAL,
                 burst_duration_sec REAL,
                 burst_key_count INTEGER,
-                timestamp INTEGER NOT NULL,
+                timestamp INTEGER NOT NULL UNIQUE,
                 burst_duration_ms INTEGER
             )
         """)
@@ -472,6 +473,64 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor.execute("ALTER TABLE bursts_new RENAME TO bursts")
 
         log.info("Added UNIQUE constraint on bursts.start_time")
+
+    def _migrate_high_scores_unique_timestamp(self, conn: sqlite3.Connection) -> None:
+        """Migrate high_scores table to add UNIQUE constraint on timestamp.
+
+        Since SQLite doesn't support adding UNIQUE constraints directly,
+        we need to recreate the table and copy data.
+        """
+        cursor = conn.cursor()
+
+        # Check if UNIQUE constraint already exists by checking the table schema
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='high_scores'")
+        schema = cursor.fetchone()
+
+        if schema and 'UNIQUE' in schema[0]:
+            # Already has UNIQUE constraint
+            return
+
+        # Check if there are duplicate timestamp values
+        cursor.execute("SELECT timestamp, COUNT(*) FROM high_scores GROUP BY timestamp HAVING COUNT(*) > 1")
+        duplicates = cursor.fetchall()
+
+        if duplicates:
+            log.warning(f"Found {len(duplicates)} duplicate timestamp values in high_scores table. Removing oldest duplicates.")
+            # For each duplicate, keep the one with the highest ID (most recent)
+            for timestamp, count in duplicates:
+                cursor.execute("""
+                    DELETE FROM high_scores
+                    WHERE timestamp = ? AND id NOT IN (
+                        SELECT id FROM high_scores WHERE timestamp = ? ORDER BY id DESC LIMIT 1
+                    )
+                """, (timestamp, timestamp))
+
+        # Recreate the table with UNIQUE constraint
+        cursor.execute("""
+            CREATE TABLE high_scores_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                fastest_burst_wpm REAL,
+                burst_duration_sec REAL,
+                burst_key_count INTEGER,
+                timestamp INTEGER NOT NULL UNIQUE,
+                burst_duration_ms INTEGER
+            )
+        """)
+
+        # Copy data from old table to new table
+        cursor.execute("""
+            INSERT INTO high_scores_new
+            (id, date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms)
+            SELECT id, date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms
+            FROM high_scores
+        """)
+
+        # Drop old table and rename new table
+        cursor.execute("DROP TABLE high_scores")
+        cursor.execute("ALTER TABLE high_scores_new RENAME TO high_scores")
+
+        log.info("Added UNIQUE constraint on high_scores.timestamp")
 
     def _refresh_all_time_cache(self) -> None:
         """Refresh all-time statistics cache from database."""
@@ -960,13 +1019,17 @@ class SQLiteAdapter(DatabaseAdapter):
             records: List of statistics dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM statistics")
+            before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
@@ -991,7 +1054,12 @@ class SQLiteAdapter(DatabaseAdapter):
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM statistics")
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get slowest keys (highest average press time)."""
@@ -1182,13 +1250,17 @@ class SQLiteAdapter(DatabaseAdapter):
             records: List of word statistics dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM word_statistics")
+            before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
@@ -1215,7 +1287,12 @@ class SQLiteAdapter(DatabaseAdapter):
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM word_statistics")
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_slowest_words(
         self, limit: int = 10, layout: str | None = None
@@ -1346,7 +1423,7 @@ class SQLiteAdapter(DatabaseAdapter):
         with self.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO high_scores
+                INSERT OR IGNORE INTO high_scores
                 (date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms)
                 VALUES (?, ?, ?, ?, ?, ?)
             """,
@@ -1361,7 +1438,7 @@ class SQLiteAdapter(DatabaseAdapter):
             records: List of high score dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
@@ -1369,11 +1446,14 @@ class SQLiteAdapter(DatabaseAdapter):
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Prepare data tuples
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM high_scores")
+            before_count = cursor.fetchone()[0]
+
+            # Prepare data tuples (excluding id - it's auto-incremented)
             data_tuples = []
             for r in records:
                 data_tuples.append((
-                    r.get("id"),
                     r.get("date"),
                     r.get("fastest_burst_wpm"),
                     r.get("burst_duration_sec"),
@@ -1382,16 +1462,22 @@ class SQLiteAdapter(DatabaseAdapter):
                     r.get("burst_duration_ms"),
                 ))
 
-            # Use executemany for efficient bulk insert
+            # Use executemany with INSERT OR IGNORE to skip duplicates
+            # With UNIQUE constraint on timestamp, duplicates will be ignored
             cursor.executemany("""
                 INSERT OR IGNORE INTO high_scores
-                (id, date, fastest_burst_wpm, burst_duration_sec,
+                (date, fastest_burst_wpm, burst_duration_sec,
                  burst_key_count, timestamp, burst_duration_ms)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM high_scores")
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_today_high_score(self, date: str) -> float | None:
         """Get today's highest WPM."""
@@ -1458,13 +1544,17 @@ class SQLiteAdapter(DatabaseAdapter):
             records: List of daily summary dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM daily_summaries")
+            before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
@@ -1488,7 +1578,12 @@ class SQLiteAdapter(DatabaseAdapter):
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM daily_summaries")
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_daily_summary(self, date: str) -> DailySummaryDB | None:
         """Get daily summary for a date."""

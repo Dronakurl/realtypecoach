@@ -229,7 +229,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 timestamp BIGINT NOT NULL,
                 burst_duration_ms INTEGER,
                 encrypted_data TEXT,
-                PRIMARY KEY (id, user_id)
+                PRIMARY KEY (id, user_id),
+                UNIQUE (user_id, timestamp)
             )
         """)
 
@@ -352,6 +353,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if table == "bursts":
             self._migrate_bursts_unique_constraint(cursor)
 
+        # Migrate high_scores table to add UNIQUE constraint on (user_id, timestamp)
+        if table == "high_scores":
+            self._migrate_high_scores_unique_constraint(cursor)
+
     def _migrate_table_add_columns(self, cursor, table: str) -> None:
         """Add user_id and encrypted_data columns to existing table.
 
@@ -431,6 +436,52 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """)
 
         log.info("Added UNIQUE constraint on (user_id, start_time) for bursts table")
+
+    def _migrate_high_scores_unique_constraint(self, cursor) -> None:
+        """Migrate high_scores table to add UNIQUE constraint on (user_id, timestamp).
+
+        Args:
+            cursor: Database cursor
+        """
+        # Check if UNIQUE constraint already exists
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_name='high_scores'
+                AND constraint_name='high_scores_user_id_timestamp_key'
+            )
+        """)
+        has_unique = cursor.fetchone()[0]
+
+        if has_unique:
+            return
+
+        # Check if there are duplicate (user_id, timestamp) combinations
+        cursor.execute("""
+            SELECT user_id, timestamp, COUNT(*) FROM high_scores
+            GROUP BY user_id, timestamp HAVING COUNT(*) > 1
+        """)
+        duplicates = cursor.fetchall()
+
+        if duplicates:
+            log.warning(f"Found {len(duplicates)} duplicate (user_id, timestamp) combinations in high_scores table. Removing oldest duplicates.")
+            # For each duplicate, keep the one with the highest ID (most recent)
+            for user_id, timestamp, count in duplicates:
+                cursor.execute("""
+                    DELETE FROM high_scores
+                    WHERE user_id = %s AND timestamp = %s AND id NOT IN (
+                        SELECT id FROM high_scores WHERE user_id = %s AND timestamp = %s ORDER BY id DESC LIMIT 1
+                    )
+                """, (user_id, timestamp, user_id, timestamp))
+
+        # Add UNIQUE constraint
+        cursor.execute("""
+            ALTER TABLE high_scores
+            ADD CONSTRAINT high_scores_user_id_timestamp_key
+            UNIQUE (user_id, timestamp)
+        """)
+
+        log.info("Added UNIQUE constraint on (user_id, timestamp) for high_scores table")
 
     def _refresh_all_time_cache(self) -> None:
         """Refresh all-time statistics cache from database."""
@@ -973,13 +1024,17 @@ class PostgreSQLAdapter(DatabaseAdapter):
             records: List of statistics dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM statistics WHERE user_id = %s", (self.user_id,))
+            before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
@@ -1006,7 +1061,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM statistics WHERE user_id = %s", (self.user_id,))
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get slowest keys (highest average press time)."""
@@ -1207,13 +1267,17 @@ class PostgreSQLAdapter(DatabaseAdapter):
             records: List of word statistics dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM word_statistics WHERE user_id = %s", (self.user_id,))
+            before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
@@ -1242,7 +1306,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM word_statistics WHERE user_id = %s", (self.user_id,))
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_slowest_words(
         self, limit: int = 10, layout: str | None = None
@@ -1392,6 +1461,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 INSERT INTO high_scores
                 (user_id, date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms, encrypted_data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, timestamp) DO NOTHING
             """,
                 (self.user_id, date, wpm, duration_sec, key_count, timestamp_ms, duration_ms, encrypted_data),
             )
@@ -1404,7 +1474,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             records: List of high score dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
@@ -1412,7 +1482,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Prepare data tuples
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM high_scores WHERE user_id = %s", (self.user_id,))
+            before_count = cursor.fetchone()[0]
+
+            # Prepare data tuples (excluding id - it's auto-incremented)
             data_tuples = []
             for r in records:
                 data_tuples.append((
@@ -1432,11 +1506,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 (user_id, date, fastest_burst_wpm, burst_duration_sec,
                  burst_key_count, timestamp, burst_duration_ms, encrypted_data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (user_id, id) DO NOTHING
+                ON CONFLICT (user_id, timestamp) DO NOTHING
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM high_scores WHERE user_id = %s", (self.user_id,))
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_today_high_score(self, date: str) -> float | None:
         """Get today's highest WPM."""
@@ -1513,13 +1592,17 @@ class PostgreSQLAdapter(DatabaseAdapter):
             records: List of daily summary dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not records:
             return 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get count before insert
+            cursor.execute("SELECT COUNT(*) FROM daily_summaries WHERE user_id = %s", (self.user_id,))
+            before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
@@ -1545,7 +1628,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
             """, data_tuples)
 
             conn.commit()
-            return len(records)
+
+            # Get count after insert to determine actual inserted count
+            cursor.execute("SELECT COUNT(*) FROM daily_summaries WHERE user_id = %s", (self.user_id,))
+            after_count = cursor.fetchone()[0]
+
+            return after_count - before_count
 
     def get_daily_summary(self, date: str) -> DailySummaryDB | None:
         """Get daily summary for a date."""
