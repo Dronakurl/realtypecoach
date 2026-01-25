@@ -9,7 +9,7 @@ run:
 
 # Install/sync dependencies from pyproject.toml
 sync-deps:
-    bash -c 'if [ ! -d ".venv" ]; then python3 -m venv .venv; fi && .venv/bin/python3 -m pip install -e .'
+    bash -c 'if [ ! -d ".venv" ]; then uv venv --python 3.14.2 .venv; fi && .venv/bin/python3 -m pip install -e .'
 
 # Instance Management
 # Kill running instances

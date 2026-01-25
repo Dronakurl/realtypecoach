@@ -88,8 +88,8 @@ echo "------------------------------------------"
 if [ -d ".venv" ]; then
     print_status "OK" "Virtual environment already exists"
 else
-    echo "Creating virtual environment..."
-    python3 -m venv .venv
+    echo "Creating virtual environment with Python 3.14..."
+    uv venv --python 3.14.2 .venv
     print_status "OK" "Virtual environment created"
 fi
 
@@ -147,8 +147,8 @@ APPLICATIONS_DIR="$HOME/.local/share/applications"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Create production virtual environment at install location
-echo "Creating production virtual environment..."
-python3 -m venv "$INSTALL_DIR/.venv"
+echo "Creating production virtual environment with Python 3.14..."
+uv venv --python 3.14.2 "$INSTALL_DIR/.venv"
 print_status "OK" "Virtual environment created at: $INSTALL_DIR/.venv"
 
 # Install dependencies in production venv

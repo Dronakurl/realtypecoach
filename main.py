@@ -510,6 +510,13 @@ class Application(QObject):
         if "enabled_dictionaries" in new_settings:
             log.info(f"Saving enabled_dictionaries: {new_settings['enabled_dictionaries']!r}")
 
+        # Log postgres_sync_enabled for debugging
+        if "postgres_sync_enabled" in new_settings:
+            log.info(
+                f"apply_settings: postgres_sync_enabled = {new_settings['postgres_sync_enabled']!r} "
+                f"(type: {type(new_settings['postgres_sync_enabled']).__name__})"
+            )
+
         for key, value in new_settings.items():
             if key not in special_keys:
                 self.config.set(key, value)

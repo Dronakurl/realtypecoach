@@ -19,12 +19,12 @@ class DailySummary(BaseModel):
 class DailySummaryDB(BaseModel):
     """Daily typing summary from database."""
 
-    total_keystrokes: int = Field(..., description="Total keystrokes typed")
-    total_bursts: int = Field(..., description="Total typing bursts")
-    avg_wpm: float = Field(..., description="Average words per minute")
-    slowest_keycode: int = Field(..., description="Slowest key keycode")
-    slowest_key_name: str = Field(..., description="Slowest key name")
-    total_typing_sec: int = Field(..., description="Total typing time in seconds")
+    total_keystrokes: int = Field(default=0, description="Total keystrokes typed")
+    total_bursts: int = Field(default=0, description="Total typing bursts")
+    avg_wpm: float = Field(default=0.0, description="Average words per minute")
+    slowest_keycode: int | None = Field(default=None, description="Slowest key keycode")
+    slowest_key_name: str | None = Field(default=None, description="Slowest key name")
+    total_typing_sec: int | None = Field(default=None, description="Total typing time in seconds")
     summary_sent: bool = Field(default=False, description="Whether daily summary was sent")
 
     model_config = ConfigDict(extra="ignore")
