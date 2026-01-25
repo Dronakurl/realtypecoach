@@ -802,6 +802,7 @@ class Storage:
         log.info(f"Migrated {migrated_count} words from ignorewords.txt")
 
         # Rename file to prevent re-migration and indicate migration completed
+        ignore_file.unlink(missing_ok=True)
         log.info("Removed the ignorewords.txt")
 
     def merge_with_remote(self) -> dict:
@@ -907,6 +908,11 @@ class Storage:
 
             # Perform sync
             result = sync_mgr.bidirectional_merge()
+
+            # Clean up word statistics for newly synced ignored words on both sides
+            ignored_words = list(self.dictionary._ignored_words)
+            local_adapter.delete_words_by_list(ignored_words)
+            remote_adapter.delete_words_by_list(ignored_words)
 
             # Update last sync timestamp
             user_manager.update_last_sync()
