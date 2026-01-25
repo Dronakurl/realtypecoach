@@ -1647,8 +1647,21 @@ class SettingsDialog(QDialog):
         QApplication.processEvents()
 
         try:
-            # Use sync_handler which runs sync in background thread
-            result = self.sync_handler.sync_now()
+            # Build temporary config overrides from current UI state
+            postgres_overrides = {
+                "postgres_sync_enabled": self.postgres_sync_enabled_check.isChecked(),
+                "postgres_host": host,
+                "postgres_port": self.postgres_port_spin.value(),
+                "postgres_database": self.postgres_database_input.text().strip() or "realtypecoach",
+                "postgres_user": postgres_user,
+                "postgres_sslmode": self.sslmode_combo.currentData(),
+            }
+
+            log.debug(f"Using temporary config overrides for sync: {postgres_overrides}")
+
+            # Apply temporary config override for this sync operation
+            with self.storage.config.temporary_override(postgres_overrides):
+                result = self.sync_handler.sync_now()
 
             if result["success"]:
                 total_records = result["pushed"] + result["pulled"]

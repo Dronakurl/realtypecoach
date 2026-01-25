@@ -37,10 +37,10 @@ class SyncManager:
 
     Conflict resolution strategies:
     - bursts: Insert only (check by id + start_time to avoid duplicates)
-    - statistics: Merge - recalculate weighted avg from both totals
-    - word_statistics: Merge - weighted average by observation_count
+    - statistics: Take record with more presses (max, not sum)
+    - word_statistics: Take record with more observations (max, not sum)
     - high_scores: Keep higher WPM for same date
-    - daily_summaries: Merge - sum keystrokes/bursts, recalculate avg
+    - daily_summaries: Take more complete record (max keystrokes)
     """
 
     # Tables to sync in order
@@ -136,6 +136,7 @@ class SyncManager:
                 to_push.append(record)
 
         # Find records to pull and conflicts
+        conflicts = []
         for record in remote_data:
             key = self._get_record_key(table, record)
             if key in local_lookup:
@@ -152,7 +153,7 @@ class SyncManager:
         pushed = self._batch_push(table, to_push)
         pulled = self._batch_pull(table, to_pull)
         resolved = self._batch_update_local(table, conflicts)
-        # Also update remote with merged values to prevent conflicts on next sync
+        # Also update remote with merged values so both sides are in sync
         self._batch_update_remote(table, conflicts)
 
         return pushed, pulled, resolved
@@ -1069,48 +1070,26 @@ class SyncManager:
             return None
 
         elif table == "statistics":
-            # Merge: weighted average of press times
+            # Take the record with more presses (more complete data)
+            # Both sides track the same keys, so don't sum them
             local_presses = local.get("total_presses", 0)
             remote_presses = remote.get("total_presses", 0)
-            total_presses = local_presses + remote_presses
 
-            if total_presses == 0:
+            if local_presses >= remote_presses:
                 return local
-
-            local_avg = local.get("avg_press_time", 0)
-            remote_avg = remote.get("avg_press_time", 0)
-
-            merged_avg = (local_avg * local_presses + remote_avg * remote_presses) / total_presses
-
-            return {
-                **local,
-                "avg_press_time": merged_avg,
-                "total_presses": total_presses,
-                "slowest_ms": min(local.get("slowest_ms", 0), remote.get("slowest_ms", 0)),
-                "fastest_ms": max(local.get("fastest_ms", 0), remote.get("fastest_ms", 0)),
-            }
+            else:
+                return remote
 
         elif table == "word_statistics":
-            # Merge: weighted average by observation_count
+            # Take the record with more observations (more complete data)
+            # Both sides track the same words, so don't sum them
             local_count = local.get("observation_count", 0)
             remote_count = remote.get("observation_count", 0)
-            total_count = local_count + remote_count
 
-            if total_count == 0:
+            if local_count >= remote_count:
                 return local
-
-            local_speed = local.get("avg_speed_ms_per_letter", 0)
-            remote_speed = remote.get("avg_speed_ms_per_letter", 0)
-
-            merged_speed = (local_speed * local_count + remote_speed * remote_count) / total_count
-
-            return {
-                **local,
-                "avg_speed_ms_per_letter": merged_speed,
-                "total_letters": local.get("total_letters", 0) + remote.get("total_letters", 0),
-                "total_duration_ms": local.get("total_duration_ms", 0) + remote.get("total_duration_ms", 0),
-                "observation_count": total_count,
-            }
+            else:
+                return remote
 
         elif table == "high_scores":
             # Keep higher WPM
@@ -1119,25 +1098,18 @@ class SyncManager:
             return local if local_wpm >= remote_wpm else remote
 
         elif table == "daily_summaries":
-            # Merge: sum keystrokes/bursts, recalculate avg
-            total_keystrokes = local.get("total_keystrokes", 0) + remote.get("total_keystrokes", 0)
-            total_bursts = local.get("total_bursts", 0) + remote.get("total_bursts", 0)
+            # Merge: take the more complete record (max keystrokes)
+            # Daily summaries represent a single day - don't sum them!
+            local_keystrokes = local.get("total_keystrokes", 0)
+            remote_keystrokes = remote.get("total_keystrokes", 0)
+            local_bursts = local.get("total_bursts", 0)
+            remote_bursts = remote.get("total_bursts", 0)
 
-            # Recalculate weighted average WPM
-            local_bursts = local.get("total_bursts", 0) or 1
-            remote_bursts = remote.get("total_bursts", 0) or 1
-            total_bursts_for_avg = local_bursts + remote_bursts
-
-            local_wpm = local.get("avg_wpm", 0)
-            remote_wpm = remote.get("avg_wpm", 0)
-            merged_wpm = (local_wpm * local_bursts + remote_wpm * remote_bursts) / total_bursts_for_avg
-
-            return {
-                **local,
-                "total_keystrokes": total_keystrokes,
-                "total_bursts": total_bursts,
-                "avg_wpm": merged_wpm,
-            }
+            # Take the record with more keystrokes (more complete data)
+            if local_keystrokes >= remote_keystrokes:
+                return local
+            else:
+                return remote
 
         return None
 

@@ -1,6 +1,7 @@
 """Configuration management for RealTypeCoach."""
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -279,6 +280,12 @@ class Config:
         # Return as string
         return value
 
+    def _set_temporary(self, key: str, value: Any) -> None:
+        """Set value without persistence (in-memory only)."""
+        if not hasattr(self, '_temp_overrides'):
+            self._temp_overrides = {}
+        self._temp_overrides[key] = value
+
     def get(self, key: str, default: Any | None = None) -> Any:
         """Get configuration value.
 
@@ -287,8 +294,20 @@ class Config:
             default: Default value if not found
 
         Returns:
-            Setting value
+            Setting value (from temporary override, database, or default)
         """
+        # Check temporary overrides first
+        if hasattr(self, '_temp_overrides') and key in self._temp_overrides:
+            value = self._temp_overrides[key]
+            # Validate through pydantic if key is in AppSettings
+            if key in AppSettings.model_fields:
+                try:
+                    settings = AppSettings(**{key: value})
+                    return getattr(settings, key)
+                except Exception:
+                    return value
+            return value
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
@@ -350,6 +369,38 @@ class Config:
             return value.lower() in ("true", "1", "yes", "on")
         # Fallback for any other type
         return bool(value) if value else False
+
+    @contextmanager
+    def temporary_override(self, overrides: dict[str, Any]):
+        """Temporarily override config values within a context.
+
+        Args:
+            overrides: Dictionary of {key: value} to override
+
+        Yields:
+            self (the config instance)
+
+        Example:
+            with config.temporary_override({"postgres_host": "192.168.1.100"}):
+                storage.merge_with_remote()
+            # Original value automatically restored
+        """
+        # Store original values
+        original_values = {}
+        for key, value in overrides.items():
+            original_values[key] = self.get(key, None)
+            self._set_temporary(key, value)
+
+        try:
+            yield self
+        finally:
+            # Restore original values
+            for key, original_value in original_values.items():
+                if original_value is None:
+                    if hasattr(self, '_temp_overrides') and key in self._temp_overrides:
+                        del self._temp_overrides[key]
+                else:
+                    self._set_temporary(key, original_value)
 
     def set(self, key: str, value: Any) -> None:
         """Set configuration value with pydantic validation.
