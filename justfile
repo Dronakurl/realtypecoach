@@ -117,6 +117,14 @@ compare-stats user_id="":
         .venv/bin/python3 scripts/compare_stats.py; \
     fi
 
+# Show local database statistics
+local-stats user_id="":
+    @if [ -n "{{user_id}}" ]; then \
+        .venv/bin/python3 scripts/local_stats.py --user-id {{user_id}}; \
+    else \
+        .venv/bin/python3 scripts/local_stats.py; \
+    fi
+
 # Show remote database statistics
 remote-stats user_id="":
     @if [ -n "{{user_id}}" ]; then \
@@ -126,11 +134,11 @@ remote-stats user_id="":
     fi
 
 # Correct inflated statistics in remote database
-correct-stats user_id="":
+tmp-correct-stats user_id="":
     @.venv/bin/python3 scripts/correct_stats.py {{user_id}}
 
 # Correct inflated statistics in remote database (dry run)
-correct-stats-dry user_id="":
+tmp-correct-stats-dry user_id="":
     @.venv/bin/python3 scripts/correct_stats.py --dry-run {{user_id}}
 
 # Testing

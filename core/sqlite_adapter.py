@@ -232,6 +232,7 @@ class SQLiteAdapter(DatabaseAdapter):
             self._migrate_high_scores_duration_ms(conn)
             self._add_word_statistics_columns()
             self._add_backspace_tracking_to_bursts(conn)
+            self._migrate_bursts_unique_start_time(conn)
             conn.commit()
 
         # Initialize cache
@@ -257,7 +258,7 @@ class SQLiteAdapter(DatabaseAdapter):
         conn.execute("""
             CREATE TABLE IF NOT EXISTS bursts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                start_time INTEGER NOT NULL,
+                start_time INTEGER NOT NULL UNIQUE,
                 end_time INTEGER NOT NULL,
                 key_count INTEGER NOT NULL,
                 duration_ms INTEGER NOT NULL,
@@ -265,7 +266,6 @@ class SQLiteAdapter(DatabaseAdapter):
                 qualifies_for_high_score INTEGER DEFAULT 0
             )
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_bursts_start_time ON bursts(start_time)")
 
     def _create_statistics_table(self, conn: sqlite3.Connection) -> None:
         """Create statistics table."""
@@ -412,6 +412,67 @@ class SQLiteAdapter(DatabaseAdapter):
             """)
             log.info("Migrated high_scores data from duration_sec to duration_ms")
 
+    def _migrate_bursts_unique_start_time(self, conn: sqlite3.Connection) -> None:
+        """Migrate bursts table to add UNIQUE constraint on start_time.
+
+        Since SQLite doesn't support adding UNIQUE constraints directly,
+        we need to recreate the table and copy data.
+        """
+        cursor = conn.cursor()
+
+        # Check if UNIQUE constraint already exists by checking the table schema
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='bursts'")
+        schema = cursor.fetchone()
+
+        if schema and 'UNIQUE' in schema[0]:
+            # Already has UNIQUE constraint
+            return
+
+        # Check if there are duplicate start_time values
+        cursor.execute("SELECT start_time, COUNT(*) FROM bursts GROUP BY start_time HAVING COUNT(*) > 1")
+        duplicates = cursor.fetchall()
+
+        if duplicates:
+            log.warning(f"Found {len(duplicates)} duplicate start_time values in bursts table. Removing oldest duplicates.")
+            # For each duplicate, keep the one with the highest ID (most recent)
+            for start_time, count in duplicates:
+                cursor.execute("""
+                    DELETE FROM bursts
+                    WHERE start_time = ? AND id NOT IN (
+                        SELECT id FROM bursts WHERE start_time = ? ORDER BY id DESC LIMIT 1
+                    )
+                """, (start_time, start_time))
+
+        # Recreate the table with UNIQUE constraint
+        cursor.execute("""
+            CREATE TABLE bursts_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                start_time INTEGER NOT NULL UNIQUE,
+                end_time INTEGER NOT NULL,
+                key_count INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                avg_wpm REAL,
+                qualifies_for_high_score INTEGER DEFAULT 0,
+                backspace_count INTEGER DEFAULT 0,
+                net_key_count INTEGER DEFAULT 0
+            )
+        """)
+
+        # Copy data from old table to new table
+        cursor.execute("""
+            INSERT INTO bursts_new
+            (id, start_time, end_time, key_count, duration_ms, avg_wpm, qualifies_for_high_score, backspace_count, net_key_count)
+            SELECT id, start_time, end_time, key_count, duration_ms, avg_wpm, qualifies_for_high_score,
+                   COALESCE(backspace_count, 0), COALESCE(net_key_count, 0)
+            FROM bursts
+        """)
+
+        # Drop old table and rename new table
+        cursor.execute("DROP TABLE bursts")
+        cursor.execute("ALTER TABLE bursts_new RENAME TO bursts")
+
+        log.info("Added UNIQUE constraint on bursts.start_time")
+
     def _refresh_all_time_cache(self) -> None:
         """Refresh all-time statistics cache from database."""
         with self.get_connection() as conn:
@@ -441,9 +502,10 @@ class SQLiteAdapter(DatabaseAdapter):
     ) -> None:
         """Store a burst record."""
         with self.get_connection() as conn:
-            conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 """
-                INSERT INTO bursts
+                INSERT OR IGNORE INTO bursts
                 (start_time, end_time, key_count, backspace_count, net_key_count, duration_ms, avg_wpm, qualifies_for_high_score)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -460,10 +522,11 @@ class SQLiteAdapter(DatabaseAdapter):
             )
             conn.commit()
 
-        # Update cache
-        self._cache_all_time_typing_sec += duration_ms // 1000
-        self._cache_all_time_keystrokes += net_key_count
-        self._cache_all_time_bursts += 1
+            # Only update cache if the burst was actually inserted (not a duplicate)
+            if cursor.rowcount > 0:
+                self._cache_all_time_typing_sec += duration_ms // 1000
+                self._cache_all_time_keystrokes += net_key_count
+                self._cache_all_time_bursts += 1
 
     def batch_insert_bursts(self, bursts: list[dict]) -> int:
         """Batch insert burst records.
@@ -472,7 +535,7 @@ class SQLiteAdapter(DatabaseAdapter):
             bursts: List of burst dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not bursts:
             return 0
@@ -482,8 +545,6 @@ class SQLiteAdapter(DatabaseAdapter):
 
             # Prepare data tuples
             data_tuples = []
-            total_duration_ms = 0
-            total_net_key_count = 0
 
             for b in bursts:
                 data_tuples.append((
@@ -497,12 +558,10 @@ class SQLiteAdapter(DatabaseAdapter):
                     1 if b.get("qualifies_for_high_score") else 0,
                 ))
 
-                total_duration_ms += b.get("duration_ms", 0)
-                total_net_key_count += b.get("net_key_count", 0)
-
-            # Use executemany for efficient bulk insert
+            # Use INSERT OR IGNORE to skip duplicates
+            # With UNIQUE constraint on start_time, duplicates will be ignored
             cursor.executemany("""
-                INSERT INTO bursts
+                INSERT OR IGNORE INTO bursts
                 (start_time, end_time, key_count, backspace_count, net_key_count,
                  duration_ms, avg_wpm, qualifies_for_high_score)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -510,12 +569,14 @@ class SQLiteAdapter(DatabaseAdapter):
 
             conn.commit()
 
-            # Update cache
-            self._cache_all_time_typing_sec += total_duration_ms // 1000
-            self._cache_all_time_keystrokes += total_net_key_count
-            self._cache_all_time_bursts += len(bursts)
+            # rowcount gives the actual number of inserted rows
+            inserted_count = cursor.rowcount
 
-            return len(bursts)
+            # Recalculate cache for accuracy
+            if inserted_count > 0:
+                self._refresh_all_time_cache()
+
+            return inserted_count
 
     def get_bursts_for_timeseries(self, start_ms: int, end_ms: int) -> list[BurstTimeSeries]:
         """Get burst data for time-series graph."""

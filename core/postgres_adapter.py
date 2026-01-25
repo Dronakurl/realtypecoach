@@ -180,7 +180,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 backspace_count INTEGER DEFAULT 0,
                 net_key_count INTEGER DEFAULT 0,
                 encrypted_data TEXT,
-                PRIMARY KEY (id, user_id)
+                PRIMARY KEY (id, user_id),
+                UNIQUE (user_id, start_time)
             )
         """)
 
@@ -347,6 +348,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
             log.info(f"Migrating {table}: adding user_id and encrypted_data columns")
             self._migrate_table_add_columns(cursor, table)
 
+        # Migrate bursts table to add UNIQUE constraint on (user_id, start_time)
+        if table == "bursts":
+            self._migrate_bursts_unique_constraint(cursor)
+
     def _migrate_table_add_columns(self, cursor, table: str) -> None:
         """Add user_id and encrypted_data columns to existing table.
 
@@ -380,6 +385,52 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (date, user_id)")
 
         log.info(f"Migration completed for table {table}")
+
+    def _migrate_bursts_unique_constraint(self, cursor) -> None:
+        """Migrate bursts table to add UNIQUE constraint on (user_id, start_time).
+
+        Args:
+            cursor: Database cursor
+        """
+        # Check if UNIQUE constraint already exists
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_name='bursts'
+                AND constraint_name='bursts_user_id_start_time_key'
+            )
+        """)
+        has_unique = cursor.fetchone()[0]
+
+        if has_unique:
+            return
+
+        # Check if there are duplicate (user_id, start_time) combinations
+        cursor.execute("""
+            SELECT user_id, start_time, COUNT(*) FROM bursts
+            GROUP BY user_id, start_time HAVING COUNT(*) > 1
+        """)
+        duplicates = cursor.fetchall()
+
+        if duplicates:
+            log.warning(f"Found {len(duplicates)} duplicate (user_id, start_time) combinations in bursts table. Removing oldest duplicates.")
+            # For each duplicate, keep the one with the highest ID (most recent)
+            for user_id, start_time, count in duplicates:
+                cursor.execute("""
+                    DELETE FROM bursts
+                    WHERE user_id = %s AND start_time = %s AND id NOT IN (
+                        SELECT id FROM bursts WHERE user_id = %s AND start_time = %s ORDER BY id DESC LIMIT 1
+                    )
+                """, (user_id, start_time, user_id, start_time))
+
+        # Add UNIQUE constraint
+        cursor.execute("""
+            ALTER TABLE bursts
+            ADD CONSTRAINT bursts_user_id_start_time_key
+            UNIQUE (user_id, start_time)
+        """)
+
+        log.info("Added UNIQUE constraint on (user_id, start_time) for bursts table")
 
     def _refresh_all_time_cache(self) -> None:
         """Refresh all-time statistics cache from database."""
@@ -441,6 +492,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 (user_id, start_time, end_time, key_count, backspace_count, net_key_count,
                  duration_ms, avg_wpm, qualifies_for_high_score, encrypted_data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, start_time) DO NOTHING
             """,
                 (
                     self.user_id,
@@ -457,10 +509,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             conn.commit()
 
-        # Update cache
-        self._cache_all_time_typing_sec += duration_ms // 1000
-        self._cache_all_time_keystrokes += net_key_count
-        self._cache_all_time_bursts += 1
+            # Only update cache if the burst was actually inserted (not a duplicate)
+            if cursor.rowcount > 0:
+                self._cache_all_time_typing_sec += duration_ms // 1000
+                self._cache_all_time_keystrokes += net_key_count
+                self._cache_all_time_bursts += 1
 
     def batch_insert_bursts(self, bursts: list[dict]) -> int:
         """Batch insert burst records.
@@ -469,7 +522,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             bursts: List of burst dictionaries
 
         Returns:
-            Number of records inserted
+            Number of records actually inserted (excluding duplicates)
         """
         if not bursts:
             return 0
@@ -479,8 +532,6 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             # Prepare data tuples
             data_tuples = []
-            total_duration_ms = 0
-            total_net_key_count = 0
 
             for b in bursts:
                 encrypted_data = None
@@ -509,25 +560,26 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     encrypted_data,
                 ))
 
-                total_duration_ms += b.get("duration_ms", 0)
-                total_net_key_count += b.get("net_key_count", 0)
-
-            # Use execute_batch for efficient bulk insert
+            # Use execute_batch for efficient bulk insert with ON CONFLICT DO NOTHING
+            # With UNIQUE constraint on (user_id, start_time), duplicates will be ignored
             execute_batch(cursor, """
                 INSERT INTO bursts
                 (user_id, start_time, end_time, key_count, backspace_count, net_key_count,
                  duration_ms, avg_wpm, qualifies_for_high_score, encrypted_data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, start_time) DO NOTHING
             """, data_tuples)
 
             conn.commit()
 
-            # Update cache
-            self._cache_all_time_typing_sec += total_duration_ms // 1000
-            self._cache_all_time_keystrokes += total_net_key_count
-            self._cache_all_time_bursts += len(bursts)
+            # rowcount gives the actual number of inserted rows
+            inserted_count = cursor.rowcount
 
-            return len(bursts)
+            # Recalculate cache for accuracy
+            if inserted_count > 0:
+                self._refresh_all_time_cache()
+
+            return inserted_count
 
     def get_bursts_for_timeseries(self, start_ms: int, end_ms: int) -> list[BurstTimeSeries]:
         """Get burst data for time-series graph."""
