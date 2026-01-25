@@ -3,13 +3,11 @@
 import logging
 import threading
 import time
-from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
 from core.burst_detector import Burst
 from core.models import (
-    DailyStats,
     DailySummaryDB,
     KeyPerformance,
     TypingTimeDataPoint,
@@ -47,9 +45,7 @@ class Analyzer:
             "total_typing_ms": 0,
             "slowest_keycode": None,
             "slowest_key_name": None,
-            "slowest_ms": 0.0,
-            "keypress_times": defaultdict(list),
-            "last_press_time": 0,
+            "total_backspaces": 0,
         }
 
         self.current_wpm: float = 0.0
@@ -169,6 +165,7 @@ class Analyzer:
         with self._lock:
             self.today_stats["total_bursts"] += 1
             self.today_stats["total_typing_ms"] += burst.duration_ms
+            self.today_stats["total_backspaces"] += burst.backspace_count
 
         self.current_burst_wpm = burst_wpm
 
@@ -224,7 +221,7 @@ class Analyzer:
         Args:
             new_date: New date string (YYYY-MM-DD)
         """
-        # Copy values under lock, then finalize outside lock
+        # Hold lock during entire transition to prevent race condition
         with self._lock:
             old_date = self.today_date
             old_stats = {
@@ -232,14 +229,10 @@ class Analyzer:
                 "total_bursts": self.today_stats["total_bursts"],
                 "slowest_keycode": self.today_stats["slowest_keycode"],
                 "slowest_key_name": self.today_stats["slowest_key_name"],
+                "total_backspaces": self.today_stats["total_backspaces"],
             }
 
-        # Finalize previous day (database operation - slow)
-        if old_stats["total_keystrokes"] > 0:
-            self._finalize_day(old_date, old_stats)
-
-        # Reset state under lock
-        with self._lock:
+            # Reset state for new day
             self.today_date = new_date
             self.personal_best_today = None
 
@@ -249,12 +242,15 @@ class Analyzer:
                 "total_typing_ms": 0,
                 "slowest_keycode": None,
                 "slowest_key_name": None,
-                "slowest_ms": 0.0,
-                "keypress_times": defaultdict(list),
-                "last_press_time": 0,
+                "total_backspaces": 0,
             }
 
-    def _finalize_day(self, date: str, stats: DailyStats) -> None:
+        # Finalize previous day outside lock (database operation - slow)
+        # Note: Any events that arrive during this window will be counted toward the new day
+        if old_stats["total_keystrokes"] > 0:
+            self._finalize_day(old_date, old_stats)
+
+    def _finalize_day(self, date: str, stats: dict) -> None:
         """Finalize current day's statistics.
 
         Args:
@@ -265,18 +261,12 @@ class Analyzer:
         startOfDay = int(datetime.strptime(date, "%Y-%m-%d").timestamp() * 1000)
         endOfDay = startOfDay + 86400000
 
-        with self.storage._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(duration_ms), 0) FROM bursts
-                WHERE start_time >= ? AND start_time < ?
-            """,
-                (startOfDay, endOfDay),
-            )
-            total_typing_ms = cursor.fetchone()[0]
+        total_typing_ms = self.storage.get_total_burst_duration(startOfDay, endOfDay)
 
-        avg_wpm = self._calculate_wpm(stats["total_keystrokes"], total_typing_ms)
+        # Use backspace count for accurate WPM calculation
+        avg_wpm = self._calculate_wpm(
+            stats["total_keystrokes"], total_typing_ms, stats.get("total_backspaces", 0)
+        )
 
         self.storage.update_daily_summary(
             date,
@@ -297,12 +287,18 @@ class Analyzer:
 
     def _update_current_wpm(self) -> None:
         """Update current WPM based on recent activity."""
-        if self.today_stats["total_keystrokes"] == 0:
-            self.current_wpm = 0.0
-            return
+        # Acquire lock before reading stats for thread safety
+        with self._lock:
+            if self.today_stats["total_keystrokes"] == 0:
+                self.current_wpm = 0.0
+                return
+
+            total_keystrokes = self.today_stats["total_keystrokes"]
+            total_backspaces = self.today_stats["total_backspaces"]
+            today_date = self.today_date
 
         # Calculate total typing time from database
-        startOfDay = int(datetime.strptime(self.today_date, "%Y-%m-%d").timestamp() * 1000)
+        startOfDay = int(datetime.strptime(today_date, "%Y-%m-%d").timestamp() * 1000)
         endOfDay = startOfDay + 86400000
 
         total_typing_ms = self.storage.get_total_burst_duration(startOfDay, endOfDay)
@@ -312,9 +308,7 @@ class Analyzer:
             self.current_wpm = 0.0
             return
 
-        self.current_wpm = self._calculate_wpm(
-            self.today_stats["total_keystrokes"], total_typing_ms
-        )
+        self.current_wpm = self._calculate_wpm(total_keystrokes, total_typing_ms, total_backspaces)
 
     def get_statistics(self) -> dict:
         """Get current statistics summary.
@@ -329,7 +323,6 @@ class Analyzer:
             total_bursts = self.today_stats["total_bursts"]
             slowest_keycode = self.today_stats["slowest_keycode"]
             slowest_key_name = self.today_stats["slowest_key_name"]
-            slowest_ms = self.today_stats["slowest_ms"]
             personal_best = self.personal_best_today
             current_wpm = self.current_wpm
             current_burst_wpm = self.current_burst_wpm
@@ -348,7 +341,6 @@ class Analyzer:
             "personal_best_today": personal_best,
             "slowest_keycode": slowest_keycode,
             "slowest_key_name": slowest_key_name,
-            "slowest_ms": slowest_ms,
         }
 
     def get_slowest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
@@ -409,16 +401,7 @@ class Analyzer:
         Returns:
             Average WPM or None if no bursts recorded
         """
-        with self.storage._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT AVG(avg_wpm) FROM bursts
-                WHERE avg_wpm > 0
-            """,
-            )
-            result = cursor.fetchone()
-            return result[0] if result and result[0] else None
+        return self.storage.get_average_burst_wpm()
 
     def get_all_time_high_score(self) -> float | None:
         """Get all-time highest WPM.
@@ -502,11 +485,8 @@ class Analyzer:
         Returns:
             Tuple of (wpm_values, x_positions) where x_positions are burst numbers
         """
-        # Get all bursts ordered by time
-        with self.storage._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT avg_wpm FROM bursts ORDER BY start_time")
-            raw_wpm = [row[0] for row in cursor.fetchall() if row[0] is not None]
+        # Get all bursts ordered by time from Storage facade
+        raw_wpm = self.storage.get_all_burst_wpms_ordered()
 
         if not raw_wpm:
             return [], []

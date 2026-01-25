@@ -1687,6 +1687,26 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return (self._cache_all_time_keystrokes, self._cache_all_time_bursts)
 
+    def get_average_burst_wpm(self) -> float | None:
+        """Get long-term average WPM across all recorded bursts."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT AVG(avg_wpm) FROM bursts
+                WHERE avg_wpm > 0
+            """,
+            )
+            result = cursor.fetchone()
+            return result[0] if result and result[0] else None
+
+    def get_all_burst_wpms_ordered(self) -> list[float]:
+        """Get all burst WPM values ordered by time."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT avg_wpm FROM bursts ORDER BY start_time")
+            return [row[0] for row in cursor.fetchall() if row[0] is not None]
+
     # ========== Data Management ==========
 
     def delete_old_data(self, retention_days: int) -> None:

@@ -413,6 +413,24 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_average_burst_wpm(self) -> float | None:
+        """Get long-term average WPM across all recorded bursts.
+
+        Returns:
+            Average WPM or None if no bursts recorded
+        """
+        pass
+
+    @abstractmethod
+    def get_all_burst_wpms_ordered(self) -> list[float]:
+        """Get all burst WPM values ordered by time.
+
+        Returns:
+            List of WPM values ordered by start_time
+        """
+        pass
+
     # ========== Data Management ==========
 
     @abstractmethod

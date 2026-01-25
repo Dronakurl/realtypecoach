@@ -640,6 +640,22 @@ class Storage:
         """
         return self.adapter.get_all_time_keystrokes_and_bursts(exclude_today)
 
+    def get_average_burst_wpm(self) -> float | None:
+        """Get long-term average WPM across all recorded bursts.
+
+        Returns:
+            Average WPM or None if no bursts recorded
+        """
+        return self.adapter.get_average_burst_wpm()
+
+    def get_all_burst_wpms_ordered(self) -> list[float]:
+        """Get all burst WPM values ordered by time.
+
+        Returns:
+            List of WPM values ordered by start_time
+        """
+        return self.adapter.get_all_burst_wpms_ordered()
+
     # Data Management
 
     def delete_old_data(self, retention_days: int) -> None:
