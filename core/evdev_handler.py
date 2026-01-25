@@ -127,6 +127,9 @@ class EvdevHandler:
         """Main event loop that reads from devices."""
         # Reopen devices in this thread
         devices = []
+        consecutive_empty_selects = 0
+        max_empty_selects = 10  # After 10 consecutive empty selects, add backoff
+
         try:
             for path in self.device_paths:
                 try:
@@ -152,6 +155,20 @@ class EvdevHandler:
                 timeout = 1.0 if is_visible else None
                 r, _, _ = select(devices, [], [], timeout)
 
+                # Defensive busy-loop prevention
+                if not r:
+                    consecutive_empty_selects += 1
+                    # If select keeps returning empty, add exponential backoff
+                    if consecutive_empty_selects > max_empty_selects:
+                        backoff = min(5.0, 0.1 * (consecutive_empty_selects - max_empty_selects))
+                        log.warning(
+                            f"Select returned empty {consecutive_empty_selects} times, "
+                            f"backing off {backoff:.1f}s"
+                        )
+                        self._stop_event.wait(backoff)
+                else:
+                    consecutive_empty_selects = 0  # Reset on successful select
+
                 for device in r:
                     if not self.running:
                         break
@@ -159,8 +176,9 @@ class EvdevHandler:
                         for event in device.read():
                             if event.type == ecodes.EV_KEY:
                                 self._process_key_event(event)
-                    except OSError:
-                        # Device disconnected
+                    except OSError as e:
+                        # Device disconnected or error
+                        log.debug(f"Device read error: {e}")
                         continue
 
         except Exception:

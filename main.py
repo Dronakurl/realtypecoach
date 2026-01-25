@@ -386,11 +386,11 @@ class Application(QObject):
         self.analyzer.process_burst(burst)
 
         # Update statistics with debouncing when a burst completes, but only if panel is visible
-        is_visible = self.stats_panel.isVisible()
         log.info(
-            f"Burst complete: {burst.key_count} keys, {burst.duration_ms / 1000:.1f}s, panel visible: {is_visible}"
+            f"Burst complete: {burst.key_count} keys, {burst.duration_ms / 1000:.1f}s, "
+            f"panel visible: {self._stats_panel_visible}"
         )
-        if is_visible:
+        if self._stats_panel_visible:
             self._schedule_stats_update()
 
         # Update recent bursts display immediately (lightweight query)
@@ -723,7 +723,7 @@ class Application(QObject):
                 break  # Queue empty
 
         # Only update stats panel if it's visible (avoid wasting resources when hidden)
-        if self.stats_panel.isVisible():
+        if self._stats_panel_visible:
             current_time = int(time.time())
 
             # Update activity time when processing events
@@ -926,7 +926,7 @@ class Application(QObject):
         self.analyzer.start()
 
         # Load and display existing statistics (only if panel is visible)
-        if self.stats_panel.isVisible():
+        if self._stats_panel_visible:
             self.update_statistics()
 
         log.info("Starting notification handler...")
