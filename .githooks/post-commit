@@ -7,7 +7,8 @@ COMMIT_TIMESTAMP=$(git log -1 --format=%ct)
 # Write to VERSION file in core directory
 echo "$COMMIT_TIMESTAMP" > core/VERSION
 
-# Add VERSION to the commit (but don't amend - it goes into next commit)
+# Add VERSION to the same commit we just made
 git add core/VERSION
+git commit --amend --no-edit --no-verify
 
 exit 0
