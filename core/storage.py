@@ -751,7 +751,9 @@ class Storage:
         # Delete statistics for this word (local)
         deleted_count = self.adapter.delete_words_by_list([word.lower()])
 
-        log.info(f"Added '{word}' to ignored list, deleted {deleted_count} statistics")
+        log.info(
+            f"Added word to ignored list (hash: {word_hash[:16]}...), deleted {deleted_count} statistics"
+        )
         return (True, deleted_count)
 
     def is_word_ignored(self, word: str) -> bool:
