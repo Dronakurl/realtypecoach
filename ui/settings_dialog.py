@@ -1281,9 +1281,9 @@ class SettingsDialog(QDialog):
         self.validate_mode_radio.setChecked(dict_mode == "validate")
 
         # Load database settings
-        self.postgres_sync_enabled_check.setChecked(
-            self.current_settings.get("postgres_sync_enabled", False)
-        )
+        postgres_sync_enabled = self.current_settings.get("postgres_sync_enabled", False)
+        log.info(f"load_current_settings: postgres_sync_enabled = {postgres_sync_enabled!r} (type: {type(postgres_sync_enabled).__name__})")
+        self.postgres_sync_enabled_check.setChecked(postgres_sync_enabled)
 
         self.postgres_host_input.setText(self.current_settings.get("postgres_host", ""))
         self.postgres_port_spin.setValue(self.current_settings.get("postgres_port", 5432))
@@ -1334,6 +1334,14 @@ class SettingsDialog(QDialog):
                 enabled_lang_codes.add(dict_info.language_code)
         enabled_langs_str = ",".join(sorted(enabled_lang_codes)) if enabled_lang_codes else "en,de"
 
+        # Capture checkbox states for logging
+        postgres_sync_check_state = self.postgres_sync_enabled_check.isChecked()
+        auto_sync_check_state = self.auto_sync_enabled_check.isChecked()
+        log.info(
+            f"get_settings: postgres_sync_enabled checkbox = {postgres_sync_check_state!r}, "
+            f"auto_sync_enabled checkbox = {auto_sync_check_state!r}"
+        )
+
         return {
             "burst_timeout_ms": str(self.burst_timeout_spin.value()),
             "word_boundary_timeout_ms": str(self.word_boundary_timeout_spin.value()),
@@ -1360,14 +1368,14 @@ class SettingsDialog(QDialog):
             "enabled_languages": enabled_langs_str,
             "enabled_dictionaries": enabled_dicts_str,
             # Database settings
-            "postgres_sync_enabled": str(self.postgres_sync_enabled_check.isChecked()),
+            "postgres_sync_enabled": str(postgres_sync_check_state),
             "postgres_host": self.postgres_host_input.text(),
             "postgres_port": str(self.postgres_port_spin.value()),
             "postgres_database": self.postgres_database_input.text() or "realtypecoach",
             "postgres_user": self.postgres_user_input.text(),
             "postgres_sslmode": self.sslmode_combo.currentData(),
             # Auto-sync settings
-            "auto_sync_enabled": str(self.auto_sync_enabled_check.isChecked()),
+            "auto_sync_enabled": str(auto_sync_check_state),
             "auto_sync_interval_sec": str(self.sync_interval_spin.value()),
         }
 
