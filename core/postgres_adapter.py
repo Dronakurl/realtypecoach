@@ -13,6 +13,7 @@ try:
     from psycopg2 import pool
     from psycopg2.extensions import connection as pg_connection
     from psycopg2.extras import execute_batch
+
     psycopg2 = psycopg2
 except ImportError:
     psycopg2 = None
@@ -29,7 +30,7 @@ from core.models import (
 )
 
 if TYPE_CHECKING:
-    from core.data_encryption import DataEncryption
+    pass
 
 log = logging.getLogger("realtypecoach.postgres_adapter")
 
@@ -91,11 +92,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
         # User and encryption settings
         self.user_id = user_id or LEGACY_USER_ID
         self.encryption_key = encryption_key
+        from core.data_encryption import DataEncryption
+
         self.encryption: DataEncryption | None = None
 
         if encryption_key:
-            from core.data_encryption import DataEncryption
-
             self.encryption = DataEncryption(encryption_key)
 
         # Initialize cache for all-time statistics
@@ -139,6 +140,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             self._create_high_scores_table(conn)
             self._create_daily_summaries_table(conn)
             self._create_word_statistics_table(conn)
+            self._create_ignored_words_table(conn)
             conn.commit()
 
         # Initialize cache
@@ -261,7 +263,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
         # Migrate existing table if needed (before creating indexes)
         self._migrate_table_if_needed(cursor, "daily_summaries")
 
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_summaries_user_id ON daily_summaries(user_id)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_daily_summaries_user_id ON daily_summaries(user_id)"
+        )
 
     def _create_word_statistics_table(self, conn: pg_connection) -> None:
         """Create word_statistics table."""
@@ -286,11 +290,29 @@ class PostgreSQLAdapter(DatabaseAdapter):
         # Migrate existing table if needed (before creating indexes)
         self._migrate_table_if_needed(cursor, "word_statistics")
 
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_word_statistics_user_id ON word_statistics(user_id)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_word_statistics_user_id ON word_statistics(user_id)"
+        )
 
         # Create users and sync_log tables
         self._create_users_table(conn)
         self._create_sync_log_table(conn)
+        self._create_ignored_words_table(conn)
+
+    def _create_ignored_words_table(self, conn: pg_connection) -> None:
+        """Create ignored_words table for hash-based word filtering."""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ignored_words (
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+                word_hash TEXT NOT NULL,
+                added_at BIGINT NOT NULL,
+                PRIMARY KEY (user_id, word_hash)
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ignored_words_user_id ON ignored_words(user_id)"
+        )
 
     def _create_users_table(self, conn: pg_connection) -> None:
         """Create users table."""
@@ -365,7 +387,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             table: Table name to migrate
         """
         # Add columns
-        cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'")
+        cursor.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'"
+        )
         cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS encrypted_data TEXT")
 
         # Create index on user_id
@@ -418,15 +442,20 @@ class PostgreSQLAdapter(DatabaseAdapter):
         duplicates = cursor.fetchall()
 
         if duplicates:
-            log.warning(f"Found {len(duplicates)} duplicate (user_id, start_time) combinations in bursts table. Removing oldest duplicates.")
+            log.warning(
+                f"Found {len(duplicates)} duplicate (user_id, start_time) combinations in bursts table. Removing oldest duplicates."
+            )
             # For each duplicate, keep the one with the highest ID (most recent)
             for user_id, start_time, count in duplicates:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     DELETE FROM bursts
                     WHERE user_id = %s AND start_time = %s AND id NOT IN (
                         SELECT id FROM bursts WHERE user_id = %s AND start_time = %s ORDER BY id DESC LIMIT 1
                     )
-                """, (user_id, start_time, user_id, start_time))
+                """,
+                    (user_id, start_time, user_id, start_time),
+                )
 
         # Add UNIQUE constraint
         cursor.execute("""
@@ -464,15 +493,20 @@ class PostgreSQLAdapter(DatabaseAdapter):
         duplicates = cursor.fetchall()
 
         if duplicates:
-            log.warning(f"Found {len(duplicates)} duplicate (user_id, timestamp) combinations in high_scores table. Removing oldest duplicates.")
+            log.warning(
+                f"Found {len(duplicates)} duplicate (user_id, timestamp) combinations in high_scores table. Removing oldest duplicates."
+            )
             # For each duplicate, keep the one with the highest ID (most recent)
             for user_id, timestamp, count in duplicates:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     DELETE FROM high_scores
                     WHERE user_id = %s AND timestamp = %s AND id NOT IN (
                         SELECT id FROM high_scores WHERE user_id = %s AND timestamp = %s ORDER BY id DESC LIMIT 1
                     )
-                """, (user_id, timestamp, user_id, timestamp))
+                """,
+                    (user_id, timestamp, user_id, timestamp),
+                )
 
         # Add UNIQUE constraint
         cursor.execute("""
@@ -489,21 +523,18 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT COALESCE(SUM(duration_ms), 0) FROM bursts WHERE user_id = %s",
-                (self.user_id,)
+                (self.user_id,),
             )
             total_ms = cursor.fetchone()[0]
             self._cache_all_time_typing_sec = int(total_ms / 1000)
 
             cursor.execute(
                 "SELECT COALESCE(SUM(net_key_count), 0) FROM bursts WHERE user_id = %s",
-                (self.user_id,)
+                (self.user_id,),
             )
             self._cache_all_time_keystrokes = int(cursor.fetchone()[0])
 
-            cursor.execute(
-                "SELECT COUNT(*) FROM bursts WHERE user_id = %s",
-                (self.user_id,)
-            )
+            cursor.execute("SELECT COUNT(*) FROM bursts WHERE user_id = %s", (self.user_id,))
             self._cache_all_time_bursts = int(cursor.fetchone()[0])
 
     # ========== Burst Operations ==========
@@ -598,28 +629,34 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         qualifies_for_high_score=b.get("qualifies_for_high_score", False),
                     )
 
-                data_tuples.append((
-                    self.user_id,
-                    b.get("start_time", 0),
-                    b.get("end_time", 0),
-                    b.get("key_count", 0),
-                    b.get("backspace_count", 0),
-                    b.get("net_key_count", 0),
-                    b.get("duration_ms", 0),
-                    b.get("avg_wpm", 0.0),
-                    1 if b.get("qualifies_for_high_score") else 0,
-                    encrypted_data,
-                ))
+                data_tuples.append(
+                    (
+                        self.user_id,
+                        b.get("start_time", 0),
+                        b.get("end_time", 0),
+                        b.get("key_count", 0),
+                        b.get("backspace_count", 0),
+                        b.get("net_key_count", 0),
+                        b.get("duration_ms", 0),
+                        b.get("avg_wpm", 0.0),
+                        1 if b.get("qualifies_for_high_score") else 0,
+                        encrypted_data,
+                    )
+                )
 
             # Use execute_batch for efficient bulk insert with ON CONFLICT DO NOTHING
             # With UNIQUE constraint on (user_id, start_time), duplicates will be ignored
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO bursts
                 (user_id, start_time, end_time, key_count, backspace_count, net_key_count,
                  duration_ms, avg_wpm, qualifies_for_high_score, encrypted_data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, start_time) DO NOTHING
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
@@ -656,7 +693,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Get all WPM values for current user
             cursor.execute(
                 "SELECT avg_wpm FROM bursts WHERE user_id = %s AND avg_wpm IS NOT NULL ORDER BY avg_wpm",
-                (self.user_id,)
+                (self.user_id,),
             )
             wpm_values = [row[0] for row in cursor.fetchall()]
 
@@ -1039,26 +1076,32 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    r.get("keycode"),
-                    r.get("key_name"),
-                    r.get("layout"),
-                    r.get("avg_press_time"),
-                    r.get("total_presses"),
-                    r.get("slowest_ms"),
-                    r.get("fastest_ms"),
-                    r.get("last_updated"),
-                    self.user_id,
-                ))
+                data_tuples.append(
+                    (
+                        r.get("keycode"),
+                        r.get("key_name"),
+                        r.get("layout"),
+                        r.get("avg_press_time"),
+                        r.get("total_presses"),
+                        r.get("slowest_ms"),
+                        r.get("fastest_ms"),
+                        r.get("last_updated"),
+                        self.user_id,
+                    )
+                )
 
             # Use execute_batch for efficient bulk insert
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO statistics
                 (keycode, key_name, layout, avg_press_time, total_presses,
                  slowest_ms, fastest_ms, last_updated, user_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, keycode, layout) DO NOTHING
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
@@ -1091,7 +1134,15 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     ORDER BY s.avg_press_time DESC
                     LIMIT %s
                 """,
-                    (layout, self.user_id, letter_pattern, layout, self.user_id, letter_pattern, limit),
+                    (
+                        layout,
+                        self.user_id,
+                        letter_pattern,
+                        layout,
+                        self.user_id,
+                        letter_pattern,
+                        limit,
+                    ),
                 )
             else:
                 cursor.execute(
@@ -1139,7 +1190,15 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     ORDER BY s.avg_press_time ASC
                     LIMIT %s
                 """,
-                    (layout, self.user_id, letter_pattern, layout, self.user_id, letter_pattern, limit),
+                    (
+                        layout,
+                        self.user_id,
+                        letter_pattern,
+                        layout,
+                        self.user_id,
+                        letter_pattern,
+                        limit,
+                    ),
                 )
             else:
                 cursor.execute(
@@ -1276,39 +1335,49 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor = conn.cursor()
 
             # Get count before insert
-            cursor.execute("SELECT COUNT(*) FROM word_statistics WHERE user_id = %s", (self.user_id,))
+            cursor.execute(
+                "SELECT COUNT(*) FROM word_statistics WHERE user_id = %s", (self.user_id,)
+            )
             before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    r.get("word"),
-                    r.get("layout"),
-                    r.get("avg_speed_ms_per_letter"),
-                    r.get("total_letters"),
-                    r.get("total_duration_ms"),
-                    r.get("observation_count"),
-                    r.get("last_seen"),
-                    r.get("backspace_count", 0),
-                    r.get("editing_time_ms", 0),
-                    self.user_id,
-                ))
+                data_tuples.append(
+                    (
+                        r.get("word"),
+                        r.get("layout"),
+                        r.get("avg_speed_ms_per_letter"),
+                        r.get("total_letters"),
+                        r.get("total_duration_ms"),
+                        r.get("observation_count"),
+                        r.get("last_seen"),
+                        r.get("backspace_count", 0),
+                        r.get("editing_time_ms", 0),
+                        self.user_id,
+                    )
+                )
 
             # Use execute_batch for efficient bulk insert
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO word_statistics
                 (word, layout, avg_speed_ms_per_letter, total_letters,
                  total_duration_ms, observation_count, last_seen,
                  backspace_count, editing_time_ms, user_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, word, layout) DO NOTHING
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
             # Get count after insert to determine actual inserted count
-            cursor.execute("SELECT COUNT(*) FROM word_statistics WHERE user_id = %s", (self.user_id,))
+            cursor.execute(
+                "SELECT COUNT(*) FROM word_statistics WHERE user_id = %s", (self.user_id,)
+            )
             after_count = cursor.fetchone()[0]
 
             return after_count - before_count
@@ -1427,13 +1496,49 @@ class PostgreSQLAdapter(DatabaseAdapter):
             return 0
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            placeholders = ','.join(['%s'] * len(words))
+            placeholders = ",".join(["%s"] * len(words))
             cursor.execute(
                 f"DELETE FROM word_statistics WHERE user_id = %s AND word IN ({placeholders})",
-                [self.user_id] + words
+                [self.user_id] + words,
             )
             conn.commit()
             return cursor.rowcount
+
+    # ========== Ignored Words Operations ==========
+
+    def add_ignored_word(self, word_hash: str, timestamp_ms: int) -> bool:
+        """Add ignored word hash to database."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO ignored_words (user_id, word_hash, added_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, word_hash) DO NOTHING
+                """,
+                (self.user_id, word_hash, timestamp_ms),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def is_word_ignored(self, word_hash: str) -> bool:
+        """Check if word hash is in ignored list."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM ignored_words WHERE user_id = %s AND word_hash = %s LIMIT 1",
+                (self.user_id, word_hash),
+            )
+            return cursor.fetchone() is not None
+
+    def get_all_ignored_word_hashes(self) -> list[dict]:
+        """Get all ignored word hashes for sync."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT word_hash, added_at FROM ignored_words WHERE user_id = %s", (self.user_id,)
+            )
+            return [{"word_hash": row[0], "added_at": row[1]} for row in cursor.fetchall()]
 
     # ========== High Score Operations ==========
 
@@ -1463,7 +1568,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, timestamp) DO NOTHING
             """,
-                (self.user_id, date, wpm, duration_sec, key_count, timestamp_ms, duration_ms, encrypted_data),
+                (
+                    self.user_id,
+                    date,
+                    wpm,
+                    duration_sec,
+                    key_count,
+                    timestamp_ms,
+                    duration_ms,
+                    encrypted_data,
+                ),
             )
             conn.commit()
 
@@ -1489,25 +1603,31 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples (excluding id - it's auto-incremented)
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    self.user_id,
-                    r.get("date"),
-                    r.get("fastest_burst_wpm"),
-                    r.get("burst_duration_sec"),
-                    r.get("burst_key_count"),
-                    r.get("timestamp"),
-                    r.get("burst_duration_ms"),
-                    None,  # encrypted_data - not needed for batch insert from sync
-                ))
+                data_tuples.append(
+                    (
+                        self.user_id,
+                        r.get("date"),
+                        r.get("fastest_burst_wpm"),
+                        r.get("burst_duration_sec"),
+                        r.get("burst_key_count"),
+                        r.get("timestamp"),
+                        r.get("burst_duration_ms"),
+                        None,  # encrypted_data - not needed for batch insert from sync
+                    )
+                )
 
             # Use execute_batch for efficient bulk insert
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO high_scores
                 (user_id, date, fastest_burst_wpm, burst_duration_sec,
                  burst_key_count, timestamp, burst_duration_ms, encrypted_data)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, timestamp) DO NOTHING
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
@@ -1601,36 +1721,46 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor = conn.cursor()
 
             # Get count before insert
-            cursor.execute("SELECT COUNT(*) FROM daily_summaries WHERE user_id = %s", (self.user_id,))
+            cursor.execute(
+                "SELECT COUNT(*) FROM daily_summaries WHERE user_id = %s", (self.user_id,)
+            )
             before_count = cursor.fetchone()[0]
 
             # Prepare data tuples
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    self.user_id,
-                    r.get("date"),
-                    r.get("total_keystrokes"),
-                    r.get("total_bursts"),
-                    r.get("avg_wpm"),
-                    r.get("slowest_keycode"),
-                    r.get("slowest_key_name"),
-                    r.get("total_typing_sec"),
-                ))
+                data_tuples.append(
+                    (
+                        self.user_id,
+                        r.get("date"),
+                        r.get("total_keystrokes"),
+                        r.get("total_bursts"),
+                        r.get("avg_wpm"),
+                        r.get("slowest_keycode"),
+                        r.get("slowest_key_name"),
+                        r.get("total_typing_sec"),
+                    )
+                )
 
             # Use execute_batch for efficient bulk insert
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO daily_summaries
                 (user_id, date, total_keystrokes, total_bursts, avg_wpm,
                  slowest_keycode, slowest_key_name, total_typing_sec)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, date) DO NOTHING
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
             # Get count after insert to determine actual inserted count
-            cursor.execute("SELECT COUNT(*) FROM daily_summaries WHERE user_id = %s", (self.user_id,))
+            cursor.execute(
+                "SELECT COUNT(*) FROM daily_summaries WHERE user_id = %s", (self.user_id,)
+            )
             after_count = cursor.fetchone()[0]
 
             return after_count - before_count
@@ -1660,7 +1790,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 summary_sent=bool(row[6]),
             )
 
-    def batch_update_statistics(self, records: list[dict], encrypted_data_list: list[bytes | None]) -> int:
+    def batch_update_statistics(
+        self, records: list[dict], encrypted_data_list: list[bytes | None]
+    ) -> int:
         """Batch update statistics records using INSERT...ON CONFLICT DO UPDATE.
 
         Args:
@@ -1679,21 +1811,25 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for i, r in enumerate(records):
-                data_tuples.append((
-                    r.get("keycode"),
-                    r.get("key_name"),
-                    r.get("layout"),
-                    r.get("avg_press_time"),
-                    r.get("total_presses"),
-                    r.get("slowest_ms"),
-                    r.get("fastest_ms"),
-                    r.get("last_updated"),
-                    self.user_id,
-                    encrypted_data_list[i] if i < len(encrypted_data_list) else None,
-                ))
+                data_tuples.append(
+                    (
+                        r.get("keycode"),
+                        r.get("key_name"),
+                        r.get("layout"),
+                        r.get("avg_press_time"),
+                        r.get("total_presses"),
+                        r.get("slowest_ms"),
+                        r.get("fastest_ms"),
+                        r.get("last_updated"),
+                        self.user_id,
+                        encrypted_data_list[i] if i < len(encrypted_data_list) else None,
+                    )
+                )
 
             # Use execute_batch with upsert for efficient bulk update
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO statistics
                 (keycode, key_name, layout, avg_press_time, total_presses,
                  slowest_ms, fastest_ms, last_updated, user_id, encrypted_data)
@@ -1706,12 +1842,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     fastest_ms = EXCLUDED.fastest_ms,
                     last_updated = EXCLUDED.last_updated,
                     encrypted_data = EXCLUDED.encrypted_data
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
             return len(records)
 
-    def batch_update_word_statistics(self, records: list[dict], encrypted_data_list: list[bytes | None]) -> int:
+    def batch_update_word_statistics(
+        self, records: list[dict], encrypted_data_list: list[bytes | None]
+    ) -> int:
         """Batch update word statistics records using INSERT...ON CONFLICT DO UPDATE.
 
         Args:
@@ -1730,20 +1870,24 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for i, r in enumerate(records):
-                data_tuples.append((
-                    r.get("word"),
-                    r.get("layout"),
-                    r.get("avg_speed_ms_per_letter"),
-                    r.get("total_letters"),
-                    r.get("total_duration_ms"),
-                    r.get("observation_count"),
-                    r.get("last_seen"),
-                    self.user_id,
-                    encrypted_data_list[i] if i < len(encrypted_data_list) else None,
-                ))
+                data_tuples.append(
+                    (
+                        r.get("word"),
+                        r.get("layout"),
+                        r.get("avg_speed_ms_per_letter"),
+                        r.get("total_letters"),
+                        r.get("total_duration_ms"),
+                        r.get("observation_count"),
+                        r.get("last_seen"),
+                        self.user_id,
+                        encrypted_data_list[i] if i < len(encrypted_data_list) else None,
+                    )
+                )
 
             # Use execute_batch with upsert for efficient bulk update
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO word_statistics
                 (word, layout, avg_speed_ms_per_letter, total_letters,
                  total_duration_ms, observation_count, last_seen, user_id, encrypted_data)
@@ -1756,12 +1900,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     observation_count = EXCLUDED.observation_count,
                     last_seen = EXCLUDED.last_seen,
                     encrypted_data = EXCLUDED.encrypted_data
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
             return len(records)
 
-    def batch_update_high_scores(self, records: list[dict], encrypted_data_list: list[bytes | None]) -> int:
+    def batch_update_high_scores(
+        self, records: list[dict], encrypted_data_list: list[bytes | None]
+    ) -> int:
         """Batch update high score records.
 
         Since id is auto-incremented differently in SQLite vs PostgreSQL, we use
@@ -1784,28 +1932,36 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # First, delete any existing records with matching timestamps
             # (to avoid duplicates when id differs between systems)
             timestamps = [r.get("timestamp") for r in records]
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 DELETE FROM high_scores
                 WHERE user_id = %s AND timestamp = %s
-            """, [(self.user_id, ts) for ts in timestamps])
+            """,
+                [(self.user_id, ts) for ts in timestamps],
+            )
 
             # Prepare data tuples for insert
             data_tuples = []
             for i, r in enumerate(records):
-                data_tuples.append((
-                    self.user_id,
-                    r.get("id"),
-                    r.get("date"),
-                    r.get("fastest_burst_wpm"),
-                    r.get("burst_duration_sec"),
-                    r.get("burst_key_count"),
-                    r.get("timestamp"),
-                    r.get("burst_duration_ms"),
-                    encrypted_data_list[i] if i < len(encrypted_data_list) else None,
-                ))
+                data_tuples.append(
+                    (
+                        self.user_id,
+                        r.get("id"),
+                        r.get("date"),
+                        r.get("fastest_burst_wpm"),
+                        r.get("burst_duration_sec"),
+                        r.get("burst_key_count"),
+                        r.get("timestamp"),
+                        r.get("burst_duration_ms"),
+                        encrypted_data_list[i] if i < len(encrypted_data_list) else None,
+                    )
+                )
 
             # Insert records (ON CONFLICT handles case where id somehow matches)
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO high_scores
                 (user_id, id, date, fastest_burst_wpm, burst_duration_sec,
                  burst_key_count, timestamp, burst_duration_ms, encrypted_data)
@@ -1818,12 +1974,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     timestamp = EXCLUDED.timestamp,
                     burst_duration_ms = EXCLUDED.burst_duration_ms,
                     encrypted_data = EXCLUDED.encrypted_data
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
             return len(records)
 
-    def batch_update_daily_summaries(self, records: list[dict], encrypted_data_list: list[bytes | None]) -> int:
+    def batch_update_daily_summaries(
+        self, records: list[dict], encrypted_data_list: list[bytes | None]
+    ) -> int:
         """Batch update daily summary records using INSERT...ON CONFLICT DO UPDATE.
 
         Args:
@@ -1842,17 +2002,21 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for i, r in enumerate(records):
-                data_tuples.append((
-                    self.user_id,
-                    r.get("date"),
-                    r.get("total_keystrokes"),
-                    r.get("total_bursts"),
-                    r.get("avg_wpm"),
-                    encrypted_data_list[i] if i < len(encrypted_data_list) else None,
-                ))
+                data_tuples.append(
+                    (
+                        self.user_id,
+                        r.get("date"),
+                        r.get("total_keystrokes"),
+                        r.get("total_bursts"),
+                        r.get("avg_wpm"),
+                        encrypted_data_list[i] if i < len(encrypted_data_list) else None,
+                    )
+                )
 
             # Use execute_batch with upsert for efficient bulk update
-            execute_batch(cursor, """
+            execute_batch(
+                cursor,
+                """
                 INSERT INTO daily_summaries
                 (user_id, date, total_keystrokes, total_bursts, avg_wpm, encrypted_data)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -1862,7 +2026,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     total_bursts = EXCLUDED.total_bursts,
                     avg_wpm = EXCLUDED.avg_wpm,
                     encrypted_data = EXCLUDED.encrypted_data
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
             return len(records)
@@ -1956,8 +2122,20 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cutoff_date = (datetime.now() - timedelta(days=retention_days)).strftime("%Y-%m-%d")
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM bursts WHERE user_id = %s AND start_time < %s", (self.user_id, cutoff_ms,))
-            cursor.execute("DELETE FROM daily_summaries WHERE user_id = %s AND date < %s", (self.user_id, cutoff_date,))
+            cursor.execute(
+                "DELETE FROM bursts WHERE user_id = %s AND start_time < %s",
+                (
+                    self.user_id,
+                    cutoff_ms,
+                ),
+            )
+            cursor.execute(
+                "DELETE FROM daily_summaries WHERE user_id = %s AND date < %s",
+                (
+                    self.user_id,
+                    cutoff_date,
+                ),
+            )
             conn.commit()
 
     def clear_database(self) -> None:
@@ -2024,13 +2202,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
         created_at = int(time.time() * 1000)
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO users (user_id, username, created_at, is_active)
                 VALUES (%s, %s, %s, 1)
                 ON CONFLICT (user_id) DO UPDATE
                     SET username = EXCLUDED.username,
                         last_sync = EXCLUDED.created_at
-            """, (user_id, username, created_at))
+            """,
+                (user_id, username, created_at),
+            )
             conn.commit()
 
     def get_test_record_for_decryption(self, user_id: str) -> dict | None:
@@ -2044,12 +2225,15 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, encrypted_data
                 FROM bursts
                 WHERE user_id = %s AND encrypted_data IS NOT NULL
                 LIMIT 1
-            """, (user_id,))
+            """,
+                (user_id,),
+            )
             row = cursor.fetchone()
             if row:
                 return {"id": row[0], "encrypted_data": row[1]}

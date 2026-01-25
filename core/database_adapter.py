@@ -291,6 +291,42 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    # ========== Ignored Words Operations ==========
+
+    @abstractmethod
+    def add_ignored_word(self, word_hash: str, timestamp_ms: int) -> bool:
+        """Add ignored word hash to database.
+
+        Args:
+            word_hash: BLAKE2b-256 hash of the word (64 hex chars)
+            timestamp_ms: When the word was added (milliseconds since epoch)
+
+        Returns:
+            True if word was added, False if already exists
+        """
+        pass
+
+    @abstractmethod
+    def is_word_ignored(self, word_hash: str) -> bool:
+        """Check if word hash is in ignored list.
+
+        Args:
+            word_hash: BLAKE2b-256 hash of the word (64 hex chars)
+
+        Returns:
+            True if word is ignored, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_all_ignored_word_hashes(self) -> list[dict]:
+        """Get all ignored word hashes for sync.
+
+        Returns:
+            List of dicts with keys: word_hash, added_at
+        """
+        pass
+
     # ========== High Score Operations ==========
 
     @abstractmethod

@@ -229,6 +229,7 @@ class SQLiteAdapter(DatabaseAdapter):
             self._create_high_scores_table(conn)
             self._create_daily_summaries_table(conn)
             self._create_word_statistics_table(conn)
+            self._create_ignored_words_table(conn)
             self._migrate_high_scores_duration_ms(conn)
             self._add_word_statistics_columns()
             self._add_backspace_tracking_to_bursts(conn)
@@ -330,6 +331,15 @@ class SQLiteAdapter(DatabaseAdapter):
             )
         """)
 
+    def _create_ignored_words_table(self, conn: sqlite3.Connection) -> None:
+        """Create ignored_words table for hash-based word filtering."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ignored_words (
+                word_hash TEXT PRIMARY KEY,
+                added_at INTEGER NOT NULL
+            )
+        """)
+
     def _add_word_statistics_columns(self) -> None:
         """Add new columns to word_statistics table if they don't exist."""
         with self.get_connection() as conn:
@@ -425,24 +435,31 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='bursts'")
         schema = cursor.fetchone()
 
-        if schema and 'UNIQUE' in schema[0]:
+        if schema and "UNIQUE" in schema[0]:
             # Already has UNIQUE constraint
             return
 
         # Check if there are duplicate start_time values
-        cursor.execute("SELECT start_time, COUNT(*) FROM bursts GROUP BY start_time HAVING COUNT(*) > 1")
+        cursor.execute(
+            "SELECT start_time, COUNT(*) FROM bursts GROUP BY start_time HAVING COUNT(*) > 1"
+        )
         duplicates = cursor.fetchall()
 
         if duplicates:
-            log.warning(f"Found {len(duplicates)} duplicate start_time values in bursts table. Removing oldest duplicates.")
+            log.warning(
+                f"Found {len(duplicates)} duplicate start_time values in bursts table. Removing oldest duplicates."
+            )
             # For each duplicate, keep the one with the highest ID (most recent)
             for start_time, count in duplicates:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     DELETE FROM bursts
                     WHERE start_time = ? AND id NOT IN (
                         SELECT id FROM bursts WHERE start_time = ? ORDER BY id DESC LIMIT 1
                     )
-                """, (start_time, start_time))
+                """,
+                    (start_time, start_time),
+                )
 
         # Recreate the table with UNIQUE constraint
         cursor.execute("""
@@ -486,24 +503,31 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='high_scores'")
         schema = cursor.fetchone()
 
-        if schema and 'UNIQUE' in schema[0]:
+        if schema and "UNIQUE" in schema[0]:
             # Already has UNIQUE constraint
             return
 
         # Check if there are duplicate timestamp values
-        cursor.execute("SELECT timestamp, COUNT(*) FROM high_scores GROUP BY timestamp HAVING COUNT(*) > 1")
+        cursor.execute(
+            "SELECT timestamp, COUNT(*) FROM high_scores GROUP BY timestamp HAVING COUNT(*) > 1"
+        )
         duplicates = cursor.fetchall()
 
         if duplicates:
-            log.warning(f"Found {len(duplicates)} duplicate timestamp values in high_scores table. Removing oldest duplicates.")
+            log.warning(
+                f"Found {len(duplicates)} duplicate timestamp values in high_scores table. Removing oldest duplicates."
+            )
             # For each duplicate, keep the one with the highest ID (most recent)
             for timestamp, count in duplicates:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     DELETE FROM high_scores
                     WHERE timestamp = ? AND id NOT IN (
                         SELECT id FROM high_scores WHERE timestamp = ? ORDER BY id DESC LIMIT 1
                     )
-                """, (timestamp, timestamp))
+                """,
+                    (timestamp, timestamp),
+                )
 
         # Recreate the table with UNIQUE constraint
         cursor.execute("""
@@ -606,25 +630,30 @@ class SQLiteAdapter(DatabaseAdapter):
             data_tuples = []
 
             for b in bursts:
-                data_tuples.append((
-                    b.get("start_time", 0),
-                    b.get("end_time", 0),
-                    b.get("key_count", 0),
-                    b.get("backspace_count", 0),
-                    b.get("net_key_count", 0),
-                    b.get("duration_ms", 0),
-                    b.get("avg_wpm", 0.0),
-                    1 if b.get("qualifies_for_high_score") else 0,
-                ))
+                data_tuples.append(
+                    (
+                        b.get("start_time", 0),
+                        b.get("end_time", 0),
+                        b.get("key_count", 0),
+                        b.get("backspace_count", 0),
+                        b.get("net_key_count", 0),
+                        b.get("duration_ms", 0),
+                        b.get("avg_wpm", 0.0),
+                        1 if b.get("qualifies_for_high_score") else 0,
+                    )
+                )
 
             # Use INSERT OR IGNORE to skip duplicates
             # With UNIQUE constraint on start_time, duplicates will be ignored
-            cursor.executemany("""
+            cursor.executemany(
+                """
                 INSERT OR IGNORE INTO bursts
                 (start_time, end_time, key_count, backspace_count, net_key_count,
                  duration_ms, avg_wpm, qualifies_for_high_score)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
@@ -1034,24 +1063,29 @@ class SQLiteAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    r.get("keycode"),
-                    r.get("key_name"),
-                    r.get("layout"),
-                    r.get("avg_press_time"),
-                    r.get("total_presses"),
-                    r.get("slowest_ms"),
-                    r.get("fastest_ms"),
-                    r.get("last_updated"),
-                ))
+                data_tuples.append(
+                    (
+                        r.get("keycode"),
+                        r.get("key_name"),
+                        r.get("layout"),
+                        r.get("avg_press_time"),
+                        r.get("total_presses"),
+                        r.get("slowest_ms"),
+                        r.get("fastest_ms"),
+                        r.get("last_updated"),
+                    )
+                )
 
             # Use executemany for efficient bulk insert
-            cursor.executemany("""
+            cursor.executemany(
+                """
                 INSERT OR IGNORE INTO statistics
                 (keycode, key_name, layout, avg_press_time, total_presses,
                  slowest_ms, fastest_ms, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
@@ -1265,26 +1299,31 @@ class SQLiteAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    r.get("word"),
-                    r.get("layout"),
-                    r.get("avg_speed_ms_per_letter"),
-                    r.get("total_letters"),
-                    r.get("total_duration_ms"),
-                    r.get("observation_count"),
-                    r.get("last_seen"),
-                    r.get("backspace_count", 0),
-                    r.get("editing_time_ms", 0),
-                ))
+                data_tuples.append(
+                    (
+                        r.get("word"),
+                        r.get("layout"),
+                        r.get("avg_speed_ms_per_letter"),
+                        r.get("total_letters"),
+                        r.get("total_duration_ms"),
+                        r.get("observation_count"),
+                        r.get("last_seen"),
+                        r.get("backspace_count", 0),
+                        r.get("editing_time_ms", 0),
+                    )
+                )
 
             # Use executemany for efficient bulk insert
-            cursor.executemany("""
+            cursor.executemany(
+                """
                 INSERT OR IGNORE INTO word_statistics
                 (word, layout, avg_speed_ms_per_letter, total_letters,
                  total_duration_ms, observation_count, last_seen,
                  backspace_count, editing_time_ms)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
@@ -1406,13 +1445,40 @@ class SQLiteAdapter(DatabaseAdapter):
             return 0
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            placeholders = ','.join('?' * len(words))
-            cursor.execute(
-                f"DELETE FROM word_statistics WHERE word IN ({placeholders})",
-                words
-            )
+            placeholders = ",".join("?" * len(words))
+            cursor.execute(f"DELETE FROM word_statistics WHERE word IN ({placeholders})", words)
             conn.commit()
             return cursor.rowcount
+
+    # ========== Ignored Words Operations ==========
+
+    def add_ignored_word(self, word_hash: str, timestamp_ms: int) -> bool:
+        """Add ignored word hash to database."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "INSERT INTO ignored_words (word_hash, added_at) VALUES (?, ?)",
+                    (word_hash, timestamp_ms),
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def is_word_ignored(self, word_hash: str) -> bool:
+        """Check if word hash is in ignored list."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM ignored_words WHERE word_hash = ? LIMIT 1", (word_hash,))
+            return cursor.fetchone() is not None
+
+    def get_all_ignored_word_hashes(self) -> list[dict]:
+        """Get all ignored word hashes for sync."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT word_hash, added_at FROM ignored_words")
+            return [{"word_hash": row[0], "added_at": row[1]} for row in cursor.fetchall()]
 
     # ========== High Score Operations ==========
 
@@ -1453,23 +1519,28 @@ class SQLiteAdapter(DatabaseAdapter):
             # Prepare data tuples (excluding id - it's auto-incremented)
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    r.get("date"),
-                    r.get("fastest_burst_wpm"),
-                    r.get("burst_duration_sec"),
-                    r.get("burst_key_count"),
-                    r.get("timestamp"),
-                    r.get("burst_duration_ms"),
-                ))
+                data_tuples.append(
+                    (
+                        r.get("date"),
+                        r.get("fastest_burst_wpm"),
+                        r.get("burst_duration_sec"),
+                        r.get("burst_key_count"),
+                        r.get("timestamp"),
+                        r.get("burst_duration_ms"),
+                    )
+                )
 
             # Use executemany with INSERT OR IGNORE to skip duplicates
             # With UNIQUE constraint on timestamp, duplicates will be ignored
-            cursor.executemany("""
+            cursor.executemany(
+                """
                 INSERT OR IGNORE INTO high_scores
                 (date, fastest_burst_wpm, burst_duration_sec,
                  burst_key_count, timestamp, burst_duration_ms)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 
@@ -1559,23 +1630,28 @@ class SQLiteAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for r in records:
-                data_tuples.append((
-                    r.get("date"),
-                    r.get("total_keystrokes"),
-                    r.get("total_bursts"),
-                    r.get("avg_wpm"),
-                    r.get("slowest_keycode"),
-                    r.get("slowest_key_name"),
-                    r.get("total_typing_sec"),
-                ))
+                data_tuples.append(
+                    (
+                        r.get("date"),
+                        r.get("total_keystrokes"),
+                        r.get("total_bursts"),
+                        r.get("avg_wpm"),
+                        r.get("slowest_keycode"),
+                        r.get("slowest_key_name"),
+                        r.get("total_typing_sec"),
+                    )
+                )
 
             # Use executemany for efficient bulk insert
-            cursor.executemany("""
+            cursor.executemany(
+                """
                 INSERT OR IGNORE INTO daily_summaries
                 (date, total_keystrokes, total_bursts, avg_wpm,
                  slowest_keycode, slowest_key_name, total_typing_sec)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, data_tuples)
+            """,
+                data_tuples,
+            )
 
             conn.commit()
 

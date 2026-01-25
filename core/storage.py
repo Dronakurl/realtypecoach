@@ -5,6 +5,7 @@ different database backends (SQLite, PostgreSQL) using the adapter pattern.
 """
 
 import logging
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -71,9 +72,27 @@ class Storage:
         # Initialize database adapter based on configuration
         self.adapter = self._create_adapter()
 
+        # Initialize hash manager after encryption is available
+        self.hash_manager = None
+        try:
+            from core.hash_manager import HashManager
+
+            encryption_key = self.crypto.get_key()
+            if encryption_key:
+                self.hash_manager = HashManager(encryption_key)
+                log.info("HashManager initialized for ignored words")
+            else:
+                log.warning("No encryption key available, ignored words feature disabled")
+        except Exception as e:
+            log.warning(f"Failed to initialize HashManager: {e}")
+
+        # Migrate legacy ignorewords.txt if it exists
+        if self.hash_manager:
+            self._migrate_ignorewords_file()
+
         # Initialize non-database components
         dict_config = dictionary_config or DictionaryConfig()
-        self.dictionary = Dictionary(dict_config, ignore_file_path)
+        self.dictionary = Dictionary(dict_config, ignore_file_path, storage=self)
         self.word_detector = WordDetector(
             word_boundary_timeout_ms=word_boundary_timeout_ms, min_word_length=3
         )
@@ -691,6 +710,100 @@ class Storage:
         ignored_words = list(self.dictionary._ignored_words)
         return self.adapter.delete_words_by_list(ignored_words)
 
+    # ========== Ignored Words Operations ==========
+
+    def add_ignored_word(self, word: str) -> tuple[bool, int]:
+        """Add word to ignored list, delete statistics, return (success, deleted_count).
+
+        Args:
+            word: The word to ignore (case-insensitive)
+
+        Returns:
+            Tuple of (success: bool, deleted_count: int)
+            - success: True if word was added, False if already ignored or hash_manager unavailable
+            - deleted_count: Number of statistics records deleted for this word
+
+        Example:
+            >>> success, deleted = storage.add_ignored_word("example")
+            >>> if success:
+            ...     print(f"Added 'example' to ignored list, deleted {deleted} statistics")
+        """
+        import time
+
+        if self.hash_manager is None:
+            log.warning("Cannot add ignored word: hash_manager not available")
+            return (False, 0)
+
+        # Hash the word
+        word_hash = self.hash_manager.hash_word(word)
+
+        # Check if already ignored
+        if self.adapter.is_word_ignored(word_hash):
+            return (False, 0)
+
+        # Add to ignored list
+        timestamp_ms = int(time.time() * 1000)
+        added = self.adapter.add_ignored_word(word_hash, timestamp_ms)
+
+        if not added:
+            return (False, 0)
+
+        # Delete statistics for this word (local)
+        deleted_count = self.adapter.delete_words_by_list([word.lower()])
+
+        log.info(f"Added '{word}' to ignored list, deleted {deleted_count} statistics")
+        return (True, deleted_count)
+
+    def is_word_ignored(self, word: str) -> bool:
+        """Check if word is in ignored list.
+
+        Args:
+            word: The word to check (case-insensitive)
+
+        Returns:
+            True if word is ignored, False otherwise
+        """
+        if self.hash_manager is None:
+            return False
+        word_hash = self.hash_manager.hash_word(word)
+        return self.adapter.is_word_ignored(word_hash)
+
+    def _migrate_ignorewords_file(self) -> None:
+        """Migrate legacy ignorewords.txt to new system and remove file.
+
+        Reads words from the legacy ignorewords.txt file and adds them to the
+        new hash-based ignored words system. The file is then renamed to
+        prevent re-migration.
+        """
+        config_dir = (
+            Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "realtypecoach"
+        )
+        ignore_file = config_dir / "ignorewords.txt"
+        if not ignore_file.exists():
+            return
+
+        # Read words from file
+        with open(ignore_file) as f:
+            words = [
+                line.strip().lower() for line in f if line.strip() and not line.startswith("#")
+            ]
+
+        if not words:
+            return
+
+        # Migrate to new system
+        migrated_count = 0
+        for word in words:
+            if self.add_ignored_word(word)[0]:
+                migrated_count += 1
+
+        log.info(f"Migrated {migrated_count} words from ignorewords.txt")
+
+        # Rename file to prevent re-migration and indicate migration completed
+        backup_file = ignore_file.with_suffix(".txt.migrated")
+        ignore_file.rename(backup_file)
+        log.info(f"Renamed ignorewords.txt to {backup_file.name}")
+
     def merge_with_remote(self) -> dict:
         """Manually sync/merge local SQLite with remote PostgreSQL.
 
@@ -765,7 +878,9 @@ class Storage:
                 encryption_key=encryption_key,
             )
             remote_adapter.initialize()
-            log.info(f"Created PostgreSQL remote adapter for sync, type: {type(remote_adapter).__name__}")
+            log.info(
+                f"Created PostgreSQL remote adapter for sync, type: {type(remote_adapter).__name__}"
+            )
 
             # Initialize sync manager
             # Always use SQLite as local adapter for sync, regardless of main storage backend

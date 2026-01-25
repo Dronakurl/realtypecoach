@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStyle,
     QTabWidget,
+    QTextEdit,
     QToolTip,
     QVBoxLayout,
     QWidget,
@@ -614,20 +615,40 @@ class SettingsDialog(QDialog):
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
 
-        # Add info label about ignore words file
-        ignore_info_label = QLabel()
-        ignore_info_label.setWordWrap(True)
-        ignore_info_label.setStyleSheet("color: #666; font-style: italic; font-size: 11px;")
-        ignore_info_label.setText(
-            "To ignore specific words, add them (one per line) to:\n"
-            f"{Path.home() / '.config' / 'realtypecoach' / 'ignorewords.txt'}"
+        # Ignored Words Management Group
+        ignored_group = QGroupBox("Ignored Words")
+        ignored_layout = QVBoxLayout()
+
+        info_label = QLabel(
+            "Words added here will be excluded from word statistics.\n"
+            "Privacy: Words are encrypted before storage, so they cannot be retrieved."
         )
-        ignore_info_label.setToolTip(
-            "Words listed in ignorewords.txt will be excluded from statistics.\n"
-            "Add one word per line. Lines starting with # are treated as comments.\n\n"
-            "Changes take effect on next application start."
-        )
-        layout.addWidget(ignore_info_label)
+        info_label.setWordWrap(True)
+        ignored_layout.addWidget(info_label)
+
+        # Input field and button
+        input_container = QWidget()
+        input_layout = QHBoxLayout(input_container)
+        input_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ignore_word_input = QLineEdit()
+        self.ignore_word_input.setPlaceholderText("Enter a word to ignore...")
+        input_layout.addWidget(self.ignore_word_input)
+
+        add_ignore_btn = QPushButton("Add Word")
+        add_ignore_btn.clicked.connect(self.add_ignored_word)
+        input_layout.addWidget(add_ignore_btn)
+
+        ignored_layout.addWidget(input_container)
+
+        # Status label
+        self.ignore_status_label = QLabel()
+        self.ignore_status_label.setWordWrap(True)
+        self.ignore_status_label.setStyleSheet("color: #666; font-style: italic;")
+        ignored_layout.addWidget(self.ignore_status_label)
+
+        ignored_group.setLayout(ignored_layout)
+        layout.addWidget(ignored_group)
 
         # Language Selection Group
         lang_group = QGroupBox("Active Languages")
@@ -977,9 +998,9 @@ class SettingsDialog(QDialog):
 
         # Get password from keyring
         db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
-        from utils.crypto import CryptoManager
         from core.user_manager import UserManager
         from utils.config import Config
+        from utils.crypto import CryptoManager
 
         crypto = CryptoManager(db_path)
         password = crypto.get_postgres_password()
@@ -1038,8 +1059,8 @@ class SettingsDialog(QDialog):
                 sslmode=sslmode,
                 connect_timeout=10,
             )
-            from core.postgres_adapter import PostgreSQLAdapter
             from core.data_encryption import DataEncryption
+            from core.postgres_adapter import PostgreSQLAdapter
 
             # Create a temporary adapter to run the checks
             adapter = PostgreSQLAdapter(
@@ -1087,7 +1108,9 @@ class SettingsDialog(QDialog):
 
         self.conn_status_label.setText("\n".join(status_lines))
         self.conn_status_label.setStyleSheet(
-            "color: green; font-style: italic;" if all_passed else "color: orange; font-style: italic;"
+            "color: green; font-style: italic;"
+            if all_passed
+            else "color: orange; font-style: italic;"
         )
 
     def _update_detected_layout(self) -> None:
@@ -1220,6 +1243,47 @@ class SettingsDialog(QDialog):
 
         return enabled_paths
 
+    def add_ignored_word(self) -> None:
+        """Add a word to the ignored list."""
+        from PySide6.QtWidgets import QMessageBox
+
+        word = self.ignore_word_input.text().strip()
+
+        if not word:
+            QMessageBox.warning(self, "Empty Word", "Please enter a word to ignore.")
+            return
+
+        # Validate: only letters allowed
+        if not word.isalpha():
+            QMessageBox.warning(
+                self, "Invalid Word", "Only letters (a-z) are allowed in ignored words."
+            )
+            return
+
+        if len(word) < 3:
+            QMessageBox.warning(self, "Word Too Short", "Words must be at least 3 letters long.")
+            return
+
+        # Check if storage is available
+        if self.storage is None:
+            QMessageBox.warning(
+                self, "Storage Not Available", "Please restart the application and try again."
+            )
+            return
+
+        # Add the word
+        success, deleted_count = self.storage.add_ignored_word(word)
+
+        if success:
+            self.ignore_word_input.clear()
+            self.ignore_status_label.setText(
+                f"Added '{word}' to ignored list. Deleted {deleted_count} statistics."
+            )
+            self.ignore_status_label.setStyleSheet("color: green; font-style: italic;")
+        else:
+            self.ignore_status_label.setText(f"Word '{word}' is already in the ignored list.")
+            self.ignore_status_label.setStyleSheet("color: orange; font-style: italic;")
+
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
         self.burst_timeout_spin.setValue(self.current_settings.get("burst_timeout_ms", 1000))
@@ -1282,7 +1346,9 @@ class SettingsDialog(QDialog):
 
         # Load database settings
         postgres_sync_enabled = self.current_settings.get("postgres_sync_enabled", False)
-        log.info(f"load_current_settings: postgres_sync_enabled = {postgres_sync_enabled!r} (type: {type(postgres_sync_enabled).__name__})")
+        log.info(
+            f"load_current_settings: postgres_sync_enabled = {postgres_sync_enabled!r} (type: {type(postgres_sync_enabled).__name__})"
+        )
         self.postgres_sync_enabled_check.setChecked(postgres_sync_enabled)
 
         self.postgres_host_input.setText(self.current_settings.get("postgres_host", ""))
@@ -1304,9 +1370,7 @@ class SettingsDialog(QDialog):
         self.auto_sync_enabled_check.setChecked(
             self.current_settings.get("auto_sync_enabled", False)
         )
-        self.sync_interval_spin.setValue(
-            self.current_settings.get("auto_sync_interval_sec", 300)
-        )
+        self.sync_interval_spin.setValue(self.current_settings.get("auto_sync_interval_sec", 300))
 
         # Trigger postgres sync changed to enable/disable postgres settings
         self.on_postgres_sync_changed()
@@ -1388,6 +1452,7 @@ class SettingsDialog(QDialog):
 
             if not host:
                 from PySide6.QtWidgets import QMessageBox
+
                 QMessageBox.warning(
                     self,
                     "Incomplete PostgreSQL Settings",
@@ -1399,6 +1464,7 @@ class SettingsDialog(QDialog):
 
             if not user:
                 from PySide6.QtWidgets import QMessageBox
+
                 QMessageBox.warning(
                     self,
                     "Incomplete PostgreSQL Settings",
@@ -1468,8 +1534,9 @@ class SettingsDialog(QDialog):
 
     def update_username(self) -> None:
         """Update username for current user."""
-        from core.user_manager import UserManager
         from PySide6.QtWidgets import QMessageBox
+
+        from core.user_manager import UserManager
 
         new_username = self.username_edit.text().strip()
         if not new_username:
@@ -1480,6 +1547,7 @@ class SettingsDialog(QDialog):
             db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
             # We need to create a Config instance here
             from utils.config import Config
+
             config = Config(db_path)
             user_manager = UserManager(db_path, config)
             user_manager.update_username(new_username)
@@ -1489,11 +1557,13 @@ class SettingsDialog(QDialog):
 
     def export_encryption_key(self) -> None:
         """Show encryption key for copying to another device."""
-        from core.user_manager import UserManager
         from PySide6.QtWidgets import QMessageBox, QTextEdit
+
+        from core.user_manager import UserManager
 
         db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
         from utils.config import Config
+
         config = Config(db_path)
 
         try:
@@ -1534,11 +1604,11 @@ class SettingsDialog(QDialog):
 
     def import_encryption_key(self) -> None:
         """Import encryption key from another device."""
-        from core.user_manager import UserManager
-        from PySide6.QtWidgets import QMessageBox, QTextEdit
+        from PySide6.QtWidgets import QTextEdit
 
         db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
         from utils.config import Config
+
         config = Config(db_path)
 
         dialog = QDialog(self)
@@ -1561,7 +1631,9 @@ class SettingsDialog(QDialog):
         cancel_btn.clicked.connect(dialog.reject)
         import_btn = QPushButton("Import Key")
         import_btn.setStyleSheet("background-color: #d32f2f; color: white;")
-        import_btn.clicked.connect(lambda: self._do_import_key(key_input.toPlainText(), dialog, db_path, config))
+        import_btn.clicked.connect(
+            lambda: self._do_import_key(key_input.toPlainText(), dialog, db_path, config)
+        )
 
         buttons.addWidget(cancel_btn)
         buttons.addWidget(import_btn)
@@ -1582,13 +1654,15 @@ class SettingsDialog(QDialog):
         # Brief feedback
         original_text = key_data
         dialog.findChild(QTextEdit, None).setPlainText("✓ Copied to clipboard!")
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(1000, lambda: dialog.findChild(QTextEdit, None).setPlainText(original_text))
+        QTimer.singleShot(
+            1000, lambda: dialog.findChild(QTextEdit, None).setPlainText(original_text)
+        )
 
     def _do_import_key(self, key_data: str, dialog: QDialog, db_path: Path, config) -> None:
         """Actually import the key after validation."""
-        from core.user_manager import UserManager
         from PySide6.QtWidgets import QMessageBox
+
+        from core.user_manager import UserManager
 
         try:
             user_manager = UserManager(db_path, config)
@@ -1616,31 +1690,29 @@ class SettingsDialog(QDialog):
 
     def upload_history_to_database(self) -> None:
         """Manual merge/sync button handler."""
-        from PySide6.QtWidgets import QMessageBox, QPushButton
+        from PySide6.QtWidgets import QMessageBox
 
         # Check if we have access to storage
         if self.storage is None:
             QMessageBox.warning(
                 self,
                 "Storage Not Available",
-                "Storage instance not available. Please restart the application and try again."
+                "Storage instance not available. Please restart the application and try again.",
             )
             return
 
         # Check if PostgreSQL is configured
         if not self.postgres_sync_enabled_check.isChecked():
-            QMessageBox.warning(
-                self,
-                "Not Configured",
-                "Please enable PostgreSQL sync first."
-            )
+            QMessageBox.warning(self, "Not Configured", "Please enable PostgreSQL sync first.")
             return
 
         host = self.postgres_host_input.text().strip()
         postgres_user = self.postgres_user_input.text().strip()
 
         if not all([host, postgres_user]):
-            QMessageBox.warning(self, "Not Configured", "Please configure PostgreSQL connection first.")
+            QMessageBox.warning(
+                self, "Not Configured", "Please configure PostgreSQL connection first."
+            )
             return
 
         # Store current button state
@@ -1683,15 +1755,13 @@ class SettingsDialog(QDialog):
                     f"Pushed: {result['pushed']} records\n"
                     f"Pulled: {result['pulled']} records\n"
                     f"Conflicts resolved: {result['conflicts_resolved']}\n"
-                    f"Duration: {result['duration_ms'] / 1000:.2f} s"
+                    f"Duration: {result['duration_ms'] / 1000:.2f} s",
                 )
             else:
                 self.last_sync_label.setText("✗ Sync failed - check logs")
                 self.last_sync_label.setStyleSheet("color: red; font-style: italic;")
                 QMessageBox.critical(
-                    self,
-                    "Sync Failed",
-                    f"Sync failed:\n{result.get('error', 'Unknown error')}"
+                    self, "Sync Failed", f"Sync failed:\n{result.get('error', 'Unknown error')}"
                 )
 
         except Exception as e:
@@ -1709,6 +1779,7 @@ class SettingsDialog(QDialog):
 
         db_path = Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
         from utils.config import Config
+
         config = Config(db_path)
 
         try:
@@ -1730,6 +1801,7 @@ class SettingsDialog(QDialog):
         last_sync = config.get_int("last_sync_timestamp")
         if last_sync:
             from datetime import datetime
+
             sync_time = datetime.fromtimestamp(last_sync / 1000).strftime("%Y-%m-%d %H:%M:%S")
             self.last_sync_label.setText(f"Last sync: {sync_time}")
         else:

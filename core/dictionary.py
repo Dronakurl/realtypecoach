@@ -13,17 +13,21 @@ class Dictionary:
 
     MIN_WORD_LENGTH: int = 3
 
-    def __init__(self, config: DictionaryConfig, ignore_file_path: Path | None = None):
+    def __init__(
+        self, config: DictionaryConfig, ignore_file_path: Path | None = None, storage=None
+    ):
         """Initialize dictionary with configuration.
 
         Args:
             config: DictionaryConfig object with settings
             ignore_file_path: Optional path to ignorewords.txt file
+            storage: Optional Storage instance for hash-based ignored words
         """
         self.words: dict[str, set[str]] = {}  # language_code -> word set
         self.loaded_paths: dict[str, str] = {}  # language_code -> file path
         self._config: DictionaryConfig = config
         self._ignored_words: set[str] = set()
+        self._storage = storage
 
         # Load ignore words from file
         self._load_ignore_words(ignore_file_path)
@@ -238,7 +242,13 @@ class Dictionary:
 
         # Check ignore list first
         word_lower = word.lower()
-        if word_lower in self._ignored_words:
+
+        # NEW: Check hash-based ignored words from storage
+        if (
+            self._storage
+            and self._storage.is_word_ignored(word_lower)
+            or word_lower in self._ignored_words
+        ):
             return False
 
         # In accept-all mode, validate based on word length
