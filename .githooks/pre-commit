@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pre-commit hook to prevent large files from being committed
+# Pre-commit hook to prevent large files and update VERSION
 
 MAX_FILE_SIZE_MB=5
 MAX_FILE_SIZE_BYTES=$((MAX_FILE_SIZE_MB * 1024 * 1024))
@@ -20,5 +20,9 @@ for FILE in $STAGED_FILES; do
         fi
     fi
 done
+
+# Update VERSION file with current timestamp
+date +%s > core/VERSION
+git add core/VERSION
 
 exit 0
