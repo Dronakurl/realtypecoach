@@ -705,7 +705,7 @@ class SyncManager:
                 with self.remote.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
-                        SELECT keycode, layout, avg_press_time, total_presses,
+                        SELECT keycode, layout, key_name, avg_press_time, total_presses,
                                slowest_ms, fastest_ms, last_updated, encrypted_data
                         FROM statistics
                         WHERE user_id = %s
@@ -714,16 +714,17 @@ class SyncManager:
                         record = {
                             "keycode": row[0],
                             "layout": row[1],
-                            "avg_press_time": row[2],
-                            "total_presses": row[3],
-                            "slowest_ms": row[4],
-                            "fastest_ms": row[5],
-                            "last_updated": row[6],
+                            "key_name": row[2],
+                            "avg_press_time": row[3],
+                            "total_presses": row[4],
+                            "slowest_ms": row[5],
+                            "fastest_ms": row[6],
+                            "last_updated": row[7],
                         }
                         # Decrypt if encrypted
-                        if row[7] and self.encryption:
+                        if row[8] and self.encryption:
                             try:
-                                decrypted = self.encryption.decrypt_statistics(row[7])
+                                decrypted = self.encryption.decrypt_statistics(row[8])
                                 record = {**record, **decrypted}
                             except Exception as e:
                                 log.warning(f"Failed to decrypt statistics: {e}")
