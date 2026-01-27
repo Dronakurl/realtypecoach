@@ -558,6 +558,9 @@ class SQLiteAdapter(DatabaseAdapter):
 
     def _refresh_all_time_cache(self) -> None:
         """Refresh all-time statistics cache from database."""
+        import time
+
+        start = time.time()
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COALESCE(SUM(duration_ms), 0) FROM bursts")
@@ -569,6 +572,12 @@ class SQLiteAdapter(DatabaseAdapter):
 
             cursor.execute("SELECT COUNT(*) FROM bursts")
             self._cache_all_time_bursts = int(cursor.fetchone()[0])
+
+        elapsed = (time.time() - start) * 1000
+        if elapsed > 10:  # Log if takes more than 10ms
+            log.warning(
+                f"_refresh_all_time_cache took {elapsed:.1f}ms (bursts: {self._cache_all_time_bursts})"
+            )
 
     # ========== Burst Operations ==========
 

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from queue import Full, Queue
 from select import select
+from typing import TYPE_CHECKING
 
 try:
     from evdev import InputDevice, ecodes, list_devices
@@ -13,6 +14,9 @@ try:
     EVDEV_AVAILABLE = True
 except ImportError:
     EVDEV_AVAILABLE = False
+    # Type stub for when evdev is not available
+    if TYPE_CHECKING:
+        from evdev import InputDevice
 
 from utils.keycodes import get_key_name
 
@@ -61,7 +65,7 @@ class EvdevHandler:
         self._drop_count: int = 0
         self._stop_event = threading.Event()
 
-    def _find_keyboard_devices(self) -> list[InputDevice]:
+    def _find_keyboard_devices(self) -> list["InputDevice"]:
         """Find all keyboard input devices."""
         keyboards = []
         for path in list_devices():
@@ -145,6 +149,19 @@ class EvdevHandler:
             log.info(f"Listening on {len(devices)} keyboard device(s)...")
 
             while not self._stop_event.is_set():
+                # Filter out any bad devices before select
+                valid_devices = [d for d in devices if self._is_device_valid(d)]
+                if len(valid_devices) < len(devices):
+                    log.warning(f"Removed {len(devices) - len(valid_devices)} invalid device(s)")
+                    devices = valid_devices
+                    # Update self.devices for consistency
+                    self.devices = devices
+
+                # Check if we still have devices
+                if not devices:
+                    log.error("No valid devices remaining, exiting listener thread")
+                    return
+
                 # Use adaptive timeout: block indefinitely when stats panel hidden,
                 # use 1s timeout when visible for responsive updates
                 is_visible = (
@@ -153,7 +170,15 @@ class EvdevHandler:
                     else self._stats_panel_visible
                 )
                 timeout = 1.0 if is_visible else None
-                r, _, _ = select(devices, [], [], timeout)
+
+                try:
+                    r, _, _ = select(devices, [], [], timeout)
+                except OSError as e:
+                    # select() failed - likely bad file descriptor
+                    log.error(f"select() failed: {e}, attempting to recover")
+                    # Find and remove bad device
+                    devices = self._remove_bad_devices(devices, e)
+                    continue  # Retry with cleaned device list
 
                 # Defensive busy-loop prevention
                 if not r:
@@ -177,8 +202,17 @@ class EvdevHandler:
                             if event.type == ecodes.EV_KEY:
                                 self._process_key_event(event)
                     except OSError as e:
-                        # Device disconnected or error
-                        log.debug(f"Device read error: {e}")
+                        # Device disconnected or error - remove it from list
+                        log.warning(
+                            f"Device {device.name} at {device.path} failed: {e}, removing from device list"
+                        )
+                        if device in devices:
+                            devices.remove(device)
+                        # Close the bad device
+                        try:
+                            device.close()
+                        except Exception:
+                            pass
                         continue
 
         except Exception:
@@ -242,6 +276,51 @@ class EvdevHandler:
                 log.warning(
                     f"Queue full! Dropped {self._drop_count} events. Queue size: {self.event_queue.qsize()}"
                 )
+
+    def _is_device_valid(self, device) -> bool:
+        """Check if a device file descriptor is still valid.
+
+        Args:
+            device: InputDevice to check
+
+        Returns:
+            True if device FD is valid, False otherwise
+        """
+        try:
+            # Try to get the file descriptor number
+            fd = device.fileno()
+            # Check if FD is valid using fcntl
+            import fcntl
+
+            fcntl.fcntl(fd, fcntl.F_GETFL)
+            return True
+        except (OSError, AttributeError):
+            return False
+
+    def _remove_bad_devices(self, devices: list, error: OSError) -> list:
+        """Remove bad devices from list after select() failure.
+
+        Args:
+            devices: List of InputDevice objects
+            error: The OSError that occurred
+
+        Returns:
+            Filtered list with only valid devices
+        """
+        valid_devices = []
+        for device in devices:
+            if self._is_device_valid(device):
+                valid_devices.append(device)
+            else:
+                log.warning(f"Removing invalid device: {device.name} at {device.path}")
+                try:
+                    device.close()
+                except Exception:
+                    pass
+
+        # Also update self.devices for consistency
+        self.devices = valid_devices
+        return valid_devices
 
     def get_state(self) -> dict:
         """Get current handler state.

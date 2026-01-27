@@ -282,7 +282,7 @@ class Config:
 
     def _set_temporary(self, key: str, value: Any) -> None:
         """Set value without persistence (in-memory only)."""
-        if not hasattr(self, '_temp_overrides'):
+        if not hasattr(self, "_temp_overrides"):
             self._temp_overrides = {}
         self._temp_overrides[key] = value
 
@@ -297,7 +297,7 @@ class Config:
             Setting value (from temporary override, database, or default)
         """
         # Check temporary overrides first
-        if hasattr(self, '_temp_overrides') and key in self._temp_overrides:
+        if hasattr(self, "_temp_overrides") and key in self._temp_overrides:
             value = self._temp_overrides[key]
             # Validate through pydantic if key is in AppSettings
             if key in AppSettings.model_fields:
@@ -397,7 +397,7 @@ class Config:
             # Restore original values
             for key, original_value in original_values.items():
                 if original_value is None:
-                    if hasattr(self, '_temp_overrides') and key in self._temp_overrides:
+                    if hasattr(self, "_temp_overrides") and key in self._temp_overrides:
                         del self._temp_overrides[key]
                 else:
                     self._set_temporary(key, original_value)

@@ -13,7 +13,6 @@ from pathlib import Path
 
 import sqlcipher3 as sqlite3
 
-from utils.config import Config
 from utils.crypto import CryptoManager
 
 
@@ -90,7 +89,9 @@ def _show_user_stats(cursor, user_id: str) -> None:
     cursor.execute("SELECT COUNT(*) FROM bursts WHERE user_id = ?", (user_id,))
     burst_count = cursor.fetchone()[0]
 
-    cursor.execute("SELECT MIN(start_time), MAX(start_time) FROM bursts WHERE user_id = ?", (user_id,))
+    cursor.execute(
+        "SELECT MIN(start_time), MAX(start_time) FROM bursts WHERE user_id = ?", (user_id,)
+    )
     time_row = cursor.fetchone()
 
     # Statistics
@@ -110,7 +111,9 @@ def _show_user_stats(cursor, user_id: str) -> None:
     cursor.execute("SELECT COUNT(DISTINCT word) FROM word_statistics WHERE user_id = ?", (user_id,))
     distinct_words = cursor.fetchone()[0]
 
-    cursor.execute("SELECT SUM(observation_count) FROM word_statistics WHERE user_id = ?", (user_id,))
+    cursor.execute(
+        "SELECT SUM(observation_count) FROM word_statistics WHERE user_id = ?", (user_id,)
+    )
     total_obs = cursor.fetchone()[0] or 0
 
     # High scores
@@ -130,13 +133,18 @@ def _show_user_stats(cursor, user_id: str) -> None:
     cursor.execute("SELECT MIN(date), MAX(date) FROM daily_summaries WHERE user_id = ?", (user_id,))
     daily_row = cursor.fetchone()
 
-    cursor.execute("SELECT SUM(total_keystrokes), SUM(total_bursts) FROM daily_summaries WHERE user_id = ?", (user_id,))
+    cursor.execute(
+        "SELECT SUM(total_keystrokes), SUM(total_bursts) FROM daily_summaries WHERE user_id = ?",
+        (user_id,),
+    )
     totals_row = cursor.fetchone()
 
     # Print stats
     print(f"   📊 Bursts: {burst_count:,}")
     if time_row[0]:
-        print(f"      Time range: {datetime.fromtimestamp(time_row[0] / 1000).strftime('%Y-%m-%d')} to {datetime.fromtimestamp(time_row[1] / 1000).strftime('%Y-%m-%d')}")
+        print(
+            f"      Time range: {datetime.fromtimestamp(time_row[0] / 1000).strftime('%Y-%m-%d')} to {datetime.fromtimestamp(time_row[1] / 1000).strftime('%Y-%m-%d')}"
+        )
 
     print(f"   📊 Key statistics: {stats_count:,} records, {distinct_keys} distinct keys")
     print(f"      Total key presses: {total_presses:,}")
@@ -206,7 +214,9 @@ def _show_single_user_stats(cursor) -> None:
     # Print stats
     print(f"   📊 Bursts: {burst_count:,}")
     if time_row[0]:
-        print(f"      Time range: {datetime.fromtimestamp(time_row[0] / 1000).strftime('%Y-%m-%d')} to {datetime.fromtimestamp(time_row[1] / 1000).strftime('%Y-%m-%d')}")
+        print(
+            f"      Time range: {datetime.fromtimestamp(time_row[0] / 1000).strftime('%Y-%m-%d')} to {datetime.fromtimestamp(time_row[1] / 1000).strftime('%Y-%m-%d')}"
+        )
 
     print(f"   📊 Key statistics: {stats_count:,} records, {distinct_keys} distinct keys")
     print(f"      Total key presses: {total_presses:,}")

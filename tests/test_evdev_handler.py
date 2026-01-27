@@ -490,3 +490,206 @@ class TestEvdevAvailability:
         """Test handler can be created when EVDEV_AVAILABLE is True."""
         handler = EvdevHandler(event_queue, mock_layout_getter)
         assert handler is not None
+
+
+class TestDeviceErrorHandling:
+    """Tests for device error handling and removal."""
+
+    @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
+    def test_is_device_valid_with_good_device(self, event_queue, mock_layout_getter):
+        """Test _is_device_valid returns True for valid device."""
+        handler = EvdevHandler(event_queue, mock_layout_getter)
+
+        # Mock a valid device
+        device = MagicMock()
+        device.fileno.return_value = 42
+        device.name = "Test Keyboard"
+        device.path = "/dev/input/event0"
+
+        with patch("fcntl.fcntl"):
+            assert handler._is_device_valid(device) is True
+
+    @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
+    def test_is_device_valid_with_bad_device(self, event_queue, mock_layout_getter):
+        """Test _is_device_valid returns False for invalid device."""
+        handler = EvdevHandler(event_queue, mock_layout_getter)
+
+        # Mock an invalid device (fileno raises OSError)
+        device = MagicMock()
+        device.fileno.side_effect = OSError("Bad file descriptor")
+        device.name = "Bad Keyboard"
+        device.path = "/dev/input/event1"
+
+        assert handler._is_device_valid(device) is False
+
+    @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
+    def test_remove_bad_devices_filters_invalid(self, event_queue, mock_layout_getter):
+        """Test _remove_bad_devices removes invalid devices."""
+        handler = EvdevHandler(event_queue, mock_layout_getter)
+
+        # Create devices - one valid, one invalid
+        good_device = MagicMock()
+        good_device.fileno.return_value = 42
+        good_device.name = "Good Keyboard"
+        good_device.path = "/dev/input/event0"
+
+        bad_device = MagicMock()
+        bad_device.fileno.side_effect = OSError("Bad file descriptor")
+        bad_device.name = "Bad Keyboard"
+        bad_device.path = "/dev/input/event1"
+
+        devices = [good_device, bad_device]
+        error = OSError("select failed")
+
+        with patch("fcntl.fcntl"):
+            valid_devices = handler._remove_bad_devices(devices, error)
+
+        # Should only contain the good device
+        assert len(valid_devices) == 1
+        assert valid_devices[0] == good_device
+        # Bad device should have been closed
+        bad_device.close.assert_called_once()
+
+    @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
+    @patch("core.evdev_handler.list_devices")
+    @patch("core.evdev_handler.InputDevice")
+    @patch("core.evdev_handler.ecodes")
+    @patch("select.select")
+    def test_device_read_oserror_removes_device(
+        self,
+        mock_select,
+        mock_ecodes,
+        mock_input_device,
+        mock_list_devices,
+        event_queue,
+        mock_layout_getter,
+        setup_ecodes,
+    ):
+        """Test that OSError during device.read() removes the device."""
+        # Setup ecodes constants
+        setup_ecodes(mock_ecodes)
+
+        # Setup device mocks
+        mock_list_devices.return_value = ["/dev/input/event0"]
+        device = MagicMock()
+        device.name = "Test Keyboard"
+        device.path = "/dev/input/event0"
+        device.capabilities.return_value = {1: [30, 57]}
+        # First read fails, then we stop
+        device.read.side_effect = OSError("[Errno 19] No such device")
+        mock_input_device.return_value = device
+
+        # Make select return the device
+        mock_select.return_value = ([device], [], [])
+
+        handler = EvdevHandler(event_queue, mock_layout_getter)
+        handler.start()
+
+        # Give thread time to run and hit the error
+        import time
+
+        time.sleep(0.2)
+
+        handler.stop()
+
+        # Device should have been closed due to error
+        device.close.assert_called()
+
+    @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
+    @patch("core.evdev_handler.list_devices")
+    @patch("core.evdev_handler.InputDevice")
+    @patch("core.evdev_handler.ecodes")
+    @patch("select.select")
+    def test_select_error_with_bad_fd(
+        self,
+        mock_select,
+        mock_ecodes,
+        mock_input_device,
+        mock_list_devices,
+        event_queue,
+        mock_layout_getter,
+        setup_ecodes,
+    ):
+        """Test OSError from select() triggers device removal and retry."""
+        # Setup ecodes constants
+        setup_ecodes(mock_ecodes)
+
+        # Setup device mocks
+        mock_list_devices.return_value = ["/dev/input/event0"]
+        device = MagicMock()
+        device.name = "Test Keyboard"
+        device.path = "/dev/input/event0"
+        device.capabilities.return_value = {1: [30, 57]}
+        device.fileno.side_effect = OSError("Bad file descriptor")
+        mock_input_device.return_value = device
+
+        # Make select raise OSError
+        mock_select.side_effect = OSError("Bad file descriptor")
+
+        handler = EvdevHandler(event_queue, mock_layout_getter)
+        handler.start()
+
+        # Give thread time to run
+        import time
+
+        time.sleep(0.2)
+
+        handler.stop()
+
+        # Device should have been closed
+        device.close.assert_called()
+
+    @patch("core.evdev_handler.EVDEV_AVAILABLE", True)
+    @patch("core.evdev_handler.list_devices")
+    @patch("core.evdev_handler.InputDevice")
+    @patch("core.evdev_handler.ecodes")
+    @patch("select.select")
+    def test_multiple_devices_one_fails(
+        self,
+        mock_select,
+        mock_ecodes,
+        mock_input_device,
+        mock_list_devices,
+        event_queue,
+        mock_layout_getter,
+        setup_ecodes,
+    ):
+        """Test that when one device fails, others continue working."""
+        # Setup ecodes constants
+        setup_ecodes(mock_ecodes)
+
+        # Setup two devices
+        mock_list_devices.return_value = ["/dev/input/event0", "/dev/input/event1"]
+
+        good_device = MagicMock()
+        good_device.name = "Good Keyboard"
+        good_device.path = "/dev/input/event0"
+        good_device.capabilities.return_value = {1: [30, 57]}
+        good_device.fileno.return_value = 42
+        good_device.read.return_value = []
+
+        bad_device = MagicMock()
+        bad_device.name = "Bad Keyboard"
+        bad_device.path = "/dev/input/event1"
+        bad_device.capabilities.return_value = {1: [30, 57]}
+        bad_device.fileno.side_effect = OSError("Bad file descriptor")
+
+        mock_input_device.side_effect = [good_device, bad_device]
+
+        # Make select raise OSError initially
+        mock_select.side_effect = OSError("Bad file descriptor")
+
+        handler = EvdevHandler(event_queue, mock_layout_getter)
+        handler.start()
+
+        # Give thread time to process
+        import time
+
+        time.sleep(0.2)
+
+        handler.stop()
+
+        # Bad device should be closed
+        bad_device.close.assert_called()
+        # Good device should also be closed (in finally block)
+        good_device.close.assert_called()

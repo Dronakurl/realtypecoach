@@ -767,11 +767,14 @@ class Application(QObject):
 
     def update_statistics(self) -> None:
         """Update statistics display."""
+        start_time = time.time()
         log.info("update_statistics() called")
 
         stats = self.analyzer.get_statistics()
         long_term_avg = self.analyzer.get_long_term_average_wpm() or 0
         all_time_best = self.analyzer.get_all_time_high_score() or 0
+
+        log.info(f"get_statistics took {(time.time() - start_time) * 1000:.1f}ms")
 
         log.info(
             f"Emitting stats signal: burst_wpm={stats['burst_wpm']:.1f}, today_best={stats['personal_best_today'] or 0:.1f}"
@@ -783,6 +786,7 @@ class Application(QObject):
             all_time_best,
         )
 
+        keys_start = time.time()
         slowest_keys = self.analyzer.get_slowest_keys(
             limit=10,
             layout=self.get_current_layout(),
@@ -794,12 +798,15 @@ class Application(QObject):
             layout=self.get_current_layout(),
         )
         self.signal_update_fastest_keys.emit(fastest_keys)
+        log.info(f"Slowest/fastest keys queries took {(time.time() - keys_start) * 1000:.1f}ms")
 
+        words_start = time.time()
         hardest_words = self.analyzer.get_slowest_words(limit=10, layout=self.get_current_layout())
         self.signal_update_hardest_words.emit(hardest_words)
 
         fastest_words = self.analyzer.get_fastest_words(limit=10, layout=self.get_current_layout())
         self.signal_update_fastest_words_stats.emit(fastest_words)
+        log.info(f"Slowest/fastest words queries took {(time.time() - words_start) * 1000:.1f}ms")
 
         # Update typing time display (today + all-time excluding today)
         all_time_typing_sec = self.storage.get_all_time_typing_time(
@@ -841,6 +848,41 @@ class Application(QObject):
         # Update average burst duration stats
         avg_ms, min_ms, max_ms = self.storage.get_burst_duration_stats_ms()
         self.signal_update_avg_burst_duration.emit(avg_ms, min_ms, max_ms)
+
+        total_time = (time.time() - start_time) * 1000
+        log.info(f"update_statistics() completed in {total_time:.1f}ms")
+
+    def _health_check(self) -> None:
+        """Periodic health check logging - runs every 5 minutes regardless of panel state."""
+        import os
+
+        # Get memory usage from /proc (Linux)
+        try:
+            with open(f"/proc/{os.getpid()}/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        mem_kb = int(line.split()[1])
+                        mem_mb = mem_kb / 1024
+                        break
+        except Exception:
+            mem_mb = 0
+
+        queue_size = self.event_queue.qsize()
+        timer_interval = self.process_queue_timer.interval()
+
+        log.info(
+            f"=== HEALTH CHECK === Memory: {mem_mb:.1f}MB | Queue: {queue_size} | "
+            f"Timer: {timer_interval}ms | Panel visible: {self._stats_panel_visible} ==="
+        )
+
+        # Sample expensive queries to track performance over time
+        start = time.time()
+        try:
+            self.storage.get_slowest_keys(limit=10, layout=self.get_current_layout())
+            query_time = (time.time() - start) * 1000
+            log.info(f"HEALTH: Slowest keys query took {query_time:.1f}ms")
+        except Exception as e:
+            log.warning(f"HEALTH: Query test failed: {e}")
 
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""
@@ -940,6 +982,11 @@ class Application(QObject):
         self.process_queue_timer = QTimer()
         self.process_queue_timer.timeout.connect(self.process_event_queue)
         self.process_queue_timer.start(500)  # Check every 500ms
+
+        # Periodic health check timer (logs diagnostics every 5 minutes)
+        self._health_check_timer = QTimer()
+        self._health_check_timer.timeout.connect(self._health_check)
+        self._health_check_timer.start(300000)  # Every 5 minutes
 
         self.tray_icon.show()
 

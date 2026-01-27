@@ -11,9 +11,9 @@ Usage:
 
 import argparse
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -57,6 +57,7 @@ def get_user_id(db_path: Path, config: Config, provided_id: str = None) -> str:
         return provided_id
 
     from core.user_manager import UserManager
+
     user_manager = UserManager(db_path, config)
     user = user_manager.get_or_create_current_user()
     return user.user_id
@@ -70,12 +71,15 @@ def recalculate_statistics_from_bursts(conn, user_id: str, dry_run: bool = False
     print("🔍 Recalculating statistics from bursts...")
 
     # Get all bursts for this user
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT start_time, key_count, duration_ms, avg_wpm
         FROM bursts
         WHERE user_id = %s
         ORDER BY start_time
-    """, (user_id,))
+    """,
+        (user_id,),
+    )
     bursts = cursor.fetchall()
 
     if not bursts:
@@ -90,12 +94,15 @@ def recalculate_statistics_from_bursts(conn, user_id: str, dry_run: bool = False
     # So we'll distribute keystrokes evenly across keys
 
     # First, let's see what keys exist in statistics
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT keycode, key_name, layout, total_presses, avg_press_time,
                slowest_ms, fastest_ms, last_updated
         FROM statistics
         WHERE user_id = %s
-    """, (user_id,))
+    """,
+        (user_id,),
+    )
     existing_stats = cursor.fetchall()
 
     # Calculate total from bursts
@@ -131,7 +138,16 @@ def recalculate_statistics_from_bursts(conn, user_id: str, dry_run: bool = False
 
     # Scale down each record proportionally
     for stat in existing_stats:
-        keycode, key_name, layout, total_presses, avg_press_time, slowest_ms, fastest_ms, last_updated = stat
+        (
+            keycode,
+            key_name,
+            layout,
+            total_presses,
+            avg_press_time,
+            slowest_ms,
+            fastest_ms,
+            last_updated,
+        ) = stat
 
         # Calculate corrected values
         corrected_presses = int(total_presses / inflation_factor)
@@ -139,24 +155,31 @@ def recalculate_statistics_from_bursts(conn, user_id: str, dry_run: bool = False
         # slowest_ms and fastest_ms should stay the same
 
         if dry_run:
-            result["updates"].append({
-                "keycode": keycode,
-                "layout": layout,
-                "old_presses": total_presses,
-                "new_presses": corrected_presses,
-            })
+            result["updates"].append(
+                {
+                    "keycode": keycode,
+                    "layout": layout,
+                    "old_presses": total_presses,
+                    "new_presses": corrected_presses,
+                }
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE statistics
                 SET total_presses = %s
                 WHERE user_id = %s AND keycode = %s AND layout = %s
-            """, (corrected_presses, user_id, keycode, layout))
-            result["updates"].append({
-                "keycode": keycode,
-                "layout": layout,
-                "old_presses": total_presses,
-                "new_presses": corrected_presses,
-            })
+            """,
+                (corrected_presses, user_id, keycode, layout),
+            )
+            result["updates"].append(
+                {
+                    "keycode": keycode,
+                    "layout": layout,
+                    "old_presses": total_presses,
+                    "new_presses": corrected_presses,
+                }
+            )
 
     if not dry_run:
         conn.commit()
@@ -164,7 +187,9 @@ def recalculate_statistics_from_bursts(conn, user_id: str, dry_run: bool = False
     return result
 
 
-def recalculate_word_statistics_from_local(conn, user_id: str, local_db_path: Path, dry_run: bool = False) -> dict:
+def recalculate_word_statistics_from_local(
+    conn, user_id: str, local_db_path: Path, dry_run: bool = False
+) -> dict:
     """Recalculate word_statistics by copying from local database.
 
     Local database should have accurate values since the bug only affects sync.
@@ -194,11 +219,14 @@ def recalculate_word_statistics_from_local(conn, user_id: str, local_db_path: Pa
     print(f"   Found {len(local_word_stats)} word statistics in local database")
 
     # Get current remote word stats
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT word, layout, observation_count
         FROM word_statistics
         WHERE user_id = %s
-    """, (user_id,))
+    """,
+        (user_id,),
+    )
     remote_word_stats = {(row[0], row[1]): row[2] for row in cursor.fetchall()}
 
     print(f"   Found {len(remote_word_stats)} word statistics in remote database")
@@ -214,16 +242,29 @@ def recalculate_word_statistics_from_local(conn, user_id: str, local_db_path: Pa
         print("   No existing remote word statistics")
         # Insert all local stats
         for stat in local_word_stats:
-            word, layout, avg_speed, total_letters, total_duration, obs_count, last_seen, bs_count, edit_time = stat
+            (
+                word,
+                layout,
+                avg_speed,
+                total_letters,
+                total_duration,
+                obs_count,
+                last_seen,
+                bs_count,
+                edit_time,
+            ) = stat
             if dry_run:
-                result["updates"].append({
-                    "word": word,
-                    "layout": layout,
-                    "old_count": 0,
-                    "new_count": obs_count,
-                })
+                result["updates"].append(
+                    {
+                        "word": word,
+                        "layout": layout,
+                        "old_count": 0,
+                        "new_count": obs_count,
+                    }
+                )
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO word_statistics
                     (word, layout, avg_speed_ms_per_letter, total_letters,
                      total_duration_ms, observation_count, last_seen,
@@ -234,31 +275,58 @@ def recalculate_word_statistics_from_local(conn, user_id: str, local_db_path: Pa
                         total_letters = EXCLUDED.total_letters,
                         total_duration_ms = EXCLUDED.total_duration_ms,
                         avg_speed_ms_per_letter = EXCLUDED.avg_speed_ms_per_letter
-                """, (word, layout, avg_speed, total_letters, total_duration,
-                      obs_count, last_seen, bs_count or 0, edit_time or 0, user_id))
-                result["updates"].append({
-                    "word": word,
-                    "layout": layout,
-                    "old_count": 0,
-                    "new_count": obs_count,
-                })
+                """,
+                    (
+                        word,
+                        layout,
+                        avg_speed,
+                        total_letters,
+                        total_duration,
+                        obs_count,
+                        last_seen,
+                        bs_count or 0,
+                        edit_time or 0,
+                        user_id,
+                    ),
+                )
+                result["updates"].append(
+                    {
+                        "word": word,
+                        "layout": layout,
+                        "old_count": 0,
+                        "new_count": obs_count,
+                    }
+                )
     else:
         # Update existing records
         for stat in local_word_stats:
-            word, layout, avg_speed, total_letters, total_duration, obs_count, last_seen, bs_count, edit_time = stat
+            (
+                word,
+                layout,
+                avg_speed,
+                total_letters,
+                total_duration,
+                obs_count,
+                last_seen,
+                bs_count,
+                edit_time,
+            ) = stat
             key = (word, layout)
             old_count = remote_word_stats.get(key, 0)
 
             if old_count != obs_count:
                 if dry_run:
-                    result["updates"].append({
-                        "word": word,
-                        "layout": layout,
-                        "old_count": old_count,
-                        "new_count": obs_count,
-                    })
+                    result["updates"].append(
+                        {
+                            "word": word,
+                            "layout": layout,
+                            "old_count": old_count,
+                            "new_count": obs_count,
+                        }
+                    )
                 else:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         UPDATE word_statistics
                         SET observation_count = %s,
                             total_letters = %s,
@@ -266,14 +334,26 @@ def recalculate_word_statistics_from_local(conn, user_id: str, local_db_path: Pa
                             avg_speed_ms_per_letter = %s,
                             last_seen = %s
                         WHERE user_id = %s AND word = %s AND layout = %s
-                    """, (obs_count, total_letters, total_duration, avg_speed,
-                          last_seen, user_id, word, layout))
-                    result["updates"].append({
-                        "word": word,
-                        "layout": layout,
-                        "old_count": old_count,
-                        "new_count": obs_count,
-                    })
+                    """,
+                        (
+                            obs_count,
+                            total_letters,
+                            total_duration,
+                            avg_speed,
+                            last_seen,
+                            user_id,
+                            word,
+                            layout,
+                        ),
+                    )
+                    result["updates"].append(
+                        {
+                            "word": word,
+                            "layout": layout,
+                            "old_count": old_count,
+                            "new_count": obs_count,
+                        }
+                    )
 
     if not dry_run:
         conn.commit()
@@ -307,31 +387,46 @@ def correct_daily_summaries(conn, user_id: str, local_db_path: Path, dry_run: bo
     print(f"   Found {len(local_summaries)} daily summaries in local database")
 
     # Get current remote summaries
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT date, total_keystrokes, total_bursts
         FROM daily_summaries
         WHERE user_id = %s
-    """, (user_id,))
+    """,
+        (user_id,),
+    )
     remote_summaries = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
 
     print(f"   Found {len(remote_summaries)} daily summaries in remote database")
 
     # Update or insert summaries
     for summary in local_summaries:
-        date, keystrokes, bursts, avg_wpm, slowest_keycode, slowest_keyname, typing_sec, summary_sent = summary
+        (
+            date,
+            keystrokes,
+            bursts,
+            avg_wpm,
+            slowest_keycode,
+            slowest_keyname,
+            typing_sec,
+            summary_sent,
+        ) = summary
 
         remote_values = remote_summaries.get(date)
         if remote_values:
             remote_keystrokes, remote_bursts = remote_values
             if remote_keystrokes != keystrokes or remote_bursts != bursts:
                 if dry_run:
-                    result["updates"].append({
-                        "date": date,
-                        "old_keystrokes": remote_keystrokes,
-                        "new_keystrokes": keystrokes,
-                    })
+                    result["updates"].append(
+                        {
+                            "date": date,
+                            "old_keystrokes": remote_keystrokes,
+                            "new_keystrokes": keystrokes,
+                        }
+                    )
                 else:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         UPDATE daily_summaries
                         SET total_keystrokes = %s,
                             total_bursts = %s,
@@ -341,23 +436,39 @@ def correct_daily_summaries(conn, user_id: str, local_db_path: Path, dry_run: bo
                             total_typing_sec = %s,
                             summary_sent = %s
                         WHERE user_id = %s AND date = %s
-                    """, (keystrokes, bursts, avg_wpm, slowest_keycode, slowest_keyname,
-                          typing_sec, summary_sent or 0, user_id, date))
-                    result["updates"].append({
-                        "date": date,
-                        "old_keystrokes": remote_keystrokes,
-                        "new_keystrokes": keystrokes,
-                    })
+                    """,
+                        (
+                            keystrokes,
+                            bursts,
+                            avg_wpm,
+                            slowest_keycode,
+                            slowest_keyname,
+                            typing_sec,
+                            summary_sent or 0,
+                            user_id,
+                            date,
+                        ),
+                    )
+                    result["updates"].append(
+                        {
+                            "date": date,
+                            "old_keystrokes": remote_keystrokes,
+                            "new_keystrokes": keystrokes,
+                        }
+                    )
         else:
             # Insert new
             if dry_run:
-                result["updates"].append({
-                    "date": date,
-                    "old_keystrokes": 0,
-                    "new_keystrokes": keystrokes,
-                })
+                result["updates"].append(
+                    {
+                        "date": date,
+                        "old_keystrokes": 0,
+                        "new_keystrokes": keystrokes,
+                    }
+                )
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO daily_summaries
                     (date, total_keystrokes, total_bursts, avg_wpm,
                      slowest_keycode, slowest_key_name, total_typing_sec,
@@ -367,13 +478,26 @@ def correct_daily_summaries(conn, user_id: str, local_db_path: Path, dry_run: bo
                         total_keystrokes = EXCLUDED.total_keystrokes,
                         total_bursts = EXCLUDED.total_bursts,
                         avg_wpm = EXCLUDED.avg_wpm
-                """, (date, keystrokes, bursts, avg_wpm, slowest_keycode,
-                      slowest_keyname, typing_sec, summary_sent or 0, user_id))
-                result["updates"].append({
-                    "date": date,
-                    "old_keystrokes": 0,
-                    "new_keystrokes": keystrokes,
-                })
+                """,
+                    (
+                        date,
+                        keystrokes,
+                        bursts,
+                        avg_wpm,
+                        slowest_keycode,
+                        slowest_keyname,
+                        typing_sec,
+                        summary_sent or 0,
+                        user_id,
+                    ),
+                )
+                result["updates"].append(
+                    {
+                        "date": date,
+                        "old_keystrokes": 0,
+                        "new_keystrokes": keystrokes,
+                    }
+                )
 
     if not dry_run:
         conn.commit()
@@ -392,12 +516,15 @@ def recalculate_daily_summaries_from_bursts(conn, user_id: str, dry_run: bool = 
     print("🔍 Recalculating daily_summaries from bursts...")
 
     # Get all bursts for this user
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT start_time, key_count, duration_ms, avg_wpm
         FROM bursts
         WHERE user_id = %s
         ORDER BY start_time
-    """, (user_id,))
+    """,
+        (user_id,),
+    )
     bursts = cursor.fetchall()
 
     if not bursts:
@@ -407,72 +534,89 @@ def recalculate_daily_summaries_from_bursts(conn, user_id: str, dry_run: bool = 
     print(f"   Found {len(bursts)} bursts")
 
     # Group bursts by date
-    from collections import defaultdict
+
     bursts_by_date = defaultdict(list)
 
     for burst in bursts:
         start_time_ms, key_count, duration_ms, avg_wpm = burst
         # Convert millisecond timestamp to date string
-        from datetime import datetime
-        date_str = datetime.fromtimestamp(start_time_ms / 1000).strftime('%Y-%m-%d')
-        bursts_by_date[date_str].append({
-            'key_count': key_count,
-            'duration_ms': duration_ms,
-            'avg_wpm': avg_wpm,
-        })
+
+        date_str = datetime.fromtimestamp(start_time_ms / 1000).strftime("%Y-%m-%d")
+        bursts_by_date[date_str].append(
+            {
+                "key_count": key_count,
+                "duration_ms": duration_ms,
+                "avg_wpm": avg_wpm,
+            }
+        )
 
     # Calculate daily summaries from bursts
     for date_str, date_bursts in sorted(bursts_by_date.items()):
-        total_keystrokes = sum(b['key_count'] for b in date_bursts)
+        total_keystrokes = sum(b["key_count"] for b in date_bursts)
         total_bursts = len(date_bursts)
-        total_duration_ms = sum(b['duration_ms'] for b in date_bursts)
+        total_duration_ms = sum(b["duration_ms"] for b in date_bursts)
 
         # Calculate weighted average WPM
         if total_duration_ms > 0:
-            weighted_wpm = sum(b['avg_wpm'] * b['duration_ms'] for b in date_bursts) / total_duration_ms
+            weighted_wpm = (
+                sum(b["avg_wpm"] * b["duration_ms"] for b in date_bursts) / total_duration_ms
+            )
         else:
             weighted_wpm = 0
 
         # Get current values
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT total_keystrokes, total_bursts, avg_wpm
             FROM daily_summaries
             WHERE user_id = %s AND date = %s
-        """, (user_id, date_str))
+        """,
+            (user_id, date_str),
+        )
         current = cursor.fetchone()
 
         if current:
             current_keystrokes, current_bursts, current_wpm = current
             if current_keystrokes != total_keystrokes or current_bursts != total_bursts:
                 if dry_run:
-                    result["updates"].append({
-                        "date": date_str,
-                        "old_keystrokes": current_keystrokes,
-                        "new_keystrokes": total_keystrokes,
-                    })
+                    result["updates"].append(
+                        {
+                            "date": date_str,
+                            "old_keystrokes": current_keystrokes,
+                            "new_keystrokes": total_keystrokes,
+                        }
+                    )
                 else:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         UPDATE daily_summaries
                         SET total_keystrokes = %s,
                             total_bursts = %s,
                             avg_wpm = %s
                         WHERE user_id = %s AND date = %s
-                    """, (total_keystrokes, total_bursts, weighted_wpm, user_id, date_str))
-                    result["updates"].append({
-                        "date": date_str,
-                        "old_keystrokes": current_keystrokes,
-                        "new_keystrokes": total_keystrokes,
-                    })
+                    """,
+                        (total_keystrokes, total_bursts, weighted_wpm, user_id, date_str),
+                    )
+                    result["updates"].append(
+                        {
+                            "date": date_str,
+                            "old_keystrokes": current_keystrokes,
+                            "new_keystrokes": total_keystrokes,
+                        }
+                    )
         else:
             # Insert new summary (with minimal data)
             if dry_run:
-                result["updates"].append({
-                    "date": date_str,
-                    "old_keystrokes": 0,
-                    "new_keystrokes": total_keystrokes,
-                })
+                result["updates"].append(
+                    {
+                        "date": date_str,
+                        "old_keystrokes": 0,
+                        "new_keystrokes": total_keystrokes,
+                    }
+                )
             else:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO daily_summaries
                     (date, total_keystrokes, total_bursts, avg_wpm,
                      slowest_keycode, slowest_key_name, total_typing_sec,
@@ -482,12 +626,16 @@ def recalculate_daily_summaries_from_bursts(conn, user_id: str, dry_run: bool = 
                         total_keystrokes = EXCLUDED.total_keystrokes,
                         total_bursts = EXCLUDED.total_bursts,
                         avg_wpm = EXCLUDED.avg_wpm
-                """, (date_str, total_keystrokes, total_bursts, weighted_wpm, user_id))
-                result["updates"].append({
-                    "date": date_str,
-                    "old_keystrokes": 0,
-                    "new_keystrokes": total_keystrokes,
-                })
+                """,
+                    (date_str, total_keystrokes, total_bursts, weighted_wpm, user_id),
+                )
+                result["updates"].append(
+                    {
+                        "date": date_str,
+                        "old_keystrokes": 0,
+                        "new_keystrokes": total_keystrokes,
+                    }
+                )
 
     if not dry_run:
         conn.commit()
@@ -513,8 +661,15 @@ Examples:
     )
 
     parser.add_argument("--user-id", metavar="UUID", help="Filter by user ID")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be corrected without making changes")
-    parser.add_argument("--target-daily-keystrokes", type=int, default=5000, help="Target keystrokes per day (default: 5000)")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be corrected without making changes"
+    )
+    parser.add_argument(
+        "--target-daily-keystrokes",
+        type=int,
+        default=5000,
+        help="Target keystrokes per day (default: 5000)",
+    )
 
     args = parser.parse_args()
 

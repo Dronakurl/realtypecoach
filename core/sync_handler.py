@@ -48,9 +48,7 @@ class SyncHandler(QObject):
         self.sync_thread = threading.Thread(target=self._run_sync_loop, daemon=True)
         self.sync_thread.start()
 
-        log.info(
-            f"Sync handler started: enabled={self.enabled}, interval={self.interval_sec}s"
-        )
+        log.info(f"Sync handler started: enabled={self.enabled}, interval={self.interval_sec}s")
 
     def stop(self) -> None:
         """Stop background sync thread."""
@@ -148,17 +146,13 @@ class SyncHandler(QObject):
             enabled: New enabled state
             interval_sec: New interval in seconds
         """
-        settings_changed = (
-            self.enabled != enabled or self.interval_sec != interval_sec
-        )
+        settings_changed = self.enabled != enabled or self.interval_sec != interval_sec
 
         self.enabled = enabled
         self.interval_sec = interval_sec
 
         if settings_changed and self.running:
-            log.info(
-                f"Sync settings changed: enabled={enabled}, interval={interval_sec}s"
-            )
+            log.info(f"Sync settings changed: enabled={enabled}, interval={interval_sec}s")
             # Stop and restart to apply new settings
             self.stop()
             if enabled:

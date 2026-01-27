@@ -3,6 +3,8 @@
 **Date:** 2026-01-18
 **Issue:** High CPU usage (~40-41%) observed during idle periods
 
+> **UPDATE (2026-01-28):** A related device disconnection busy loop issue has been [fixed](./issues/device-disconnection-busy-loop-fix.md). This fix addresses high CPU usage when Bluetooth keyboards disconnect.
+
 ## Investigation Summary
 
 Investigation conducted on a running RealTypeCoach instance (PID 2117937) that was consuming **41.3% CPU** continuously. The process was running for approximately 5 hours with abnormally high CPU usage despite minimal user activity.
@@ -196,7 +198,11 @@ raw_wpm = [row[0] for row in cursor.fetchall() if row[0] is not None]
 
 ## Resolution Status
 
-**As of 2026-01-18:**
+**As of 2026-01-28:**
+- **FIXED:** Device disconnection busy loop issue resolved
+- See [Device Disconnection Busy Loop Fix](./issues/device-disconnection-busy-loop-fix.md) for details
+
+**Previous status (2026-01-18):**
 - Original high-CPU process (PID 2117937) has exited
 - New process running at normal CPU usage (~1.8%)
 - Root cause not definitively confirmed due to lack of debugging access

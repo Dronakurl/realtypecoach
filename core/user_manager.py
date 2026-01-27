@@ -9,14 +9,16 @@ Supports export/import of encryption key for multi-device setup.
 
 import base64
 import logging
-import os
-import platform
 import secrets
 import socket
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from utils.config import Config
 
 try:
     import keyring
@@ -73,7 +75,7 @@ class UserManager:
     - Validate user_id from key (user_id encoded in key or stored separately)
     """
 
-    def __init__(self, db_path: Path, config: "Config"):
+    def __init__(self, db_path: Path, config: Config):
         """Initialize user manager.
 
         Args:

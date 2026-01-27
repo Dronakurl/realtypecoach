@@ -40,9 +40,7 @@ Examples:
         """,
     )
 
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose logging"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
@@ -97,7 +95,7 @@ Examples:
             print(f"  Conflicts resolved: {result['conflicts_resolved']}")
             print(f"  Total records transferred: {total_records}")
         else:
-            print(f"✗ Sync failed")
+            print("✗ Sync failed")
             print(f"  Error: {result.get('error', 'Unknown error')}")
         print("=" * 70)
 
@@ -106,7 +104,7 @@ Examples:
     except Exception as e:
         print()
         print("=" * 70)
-        print(f"✗ Sync failed with exception")
+        print("✗ Sync failed with exception")
         print(f"  Error: {e}")
         print("=" * 70)
         sys.exit(1)
