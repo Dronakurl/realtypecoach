@@ -4,9 +4,9 @@
 
 # RealTypeCoach
 
-**Improve your typing speed naturally by analyzing your real-world typing patterns**
+**Passive typing analytics that identify your slowest keys and words—no practice tests required**
 
-Unlike typing tests that measure artificial performance, RealTypeCoach tracks your daily typing to identify your slowest keys and words, giving you actionable insights to type faster in your actual work.
+Unlike artificial typing tests, RealTypeCoach analyzes your real-world typing to pinpoint exactly what's slowing you down. See your WPM progress over time, discover which words cost you the most speed, and track your personal bests—all while working normally.
 
 [![Screenshot](screenshot.png)](screenshot.png)
 
@@ -14,12 +14,12 @@ Unlike typing tests that measure artificial performance, RealTypeCoach tracks yo
 
 ## Features
 
-- ⌨️ **Works silently in the background** - Tracks your natural typing patterns without interrupting your workflow
-- 🔒 **Privacy-focused** - Only aggregated statistics are stored (WPM, slowest keys/words) - no keystroke history
-- 📊 **Encrypted storage** - Your statistics data stays on your device in an encrypted database
-- 📈 **Visualize your progress** - See your WPM improvement over time with interactive charts
-- 🔤 **Find your problem words** - Discover which specific words slow you down the most
-- 🎯 **Targeted improvement** - Identifies your slowest keys so you can focus practice where it counts
+- 📊 **Real-world analytics** - Learn from your actual typing, not artificial exercises
+- 🎯 **Identify bottlenecks** - See your slowest keys and words at a glance
+- 🔒 **Privacy-first** - Encrypted local storage, zero keystroke logging
+- 📈 **Track progress** - Monitor WPM improvement and personal bests over time
+- ⚡ **Zero distraction** - Runs silently in your system tray
+- 🧠 **Data-driven insights** - Know exactly what to practice for maximum impact
 
 ## Requirements
 
