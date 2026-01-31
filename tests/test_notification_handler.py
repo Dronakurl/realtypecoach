@@ -260,10 +260,11 @@ class TestThresholdUpdate:
 
     def test_update_threshold_calculates_95th_percentile(self, notification_handler):
         """Test threshold calculation with sufficient data."""
-        # Insert 100 bursts with various WPMs
+        # Insert 100 bursts with various WPMs (use unique start times)
         now_ms = int(datetime.now().timestamp() * 1000)
-        for wpm in range(40, 140):  # 40 to 139
-            burst = create_test_burst(now_ms - 1000, now_ms + 10000, 50)
+        for i, wpm in enumerate(range(40, 140)):  # 40 to 139
+            start_time = now_ms - 1000 - (i * 1000)  # Unique start times
+            burst = create_test_burst(start_time, start_time + 11000, 50)
             notification_handler.storage.store_burst(burst, float(wpm))
 
         notification_handler._update_threshold()
@@ -275,9 +276,10 @@ class TestThresholdUpdate:
     def test_update_threshold_insufficient_data(self, notification_handler):
         """Test threshold with < 20 bursts uses max * 1.1."""
         now_ms = int(datetime.now().timestamp() * 1000)
-        # Insert only 10 bursts with WPM 50-59
+        # Insert only 10 bursts with WPM 50-59 (use unique start times)
         for i, wpm in enumerate(range(50, 60)):
-            burst = create_test_burst(now_ms - 1000, now_ms + 10000, 50)
+            start_time = now_ms - 1000 - (i * 1000)  # Unique start times
+            burst = create_test_burst(start_time, start_time + 11000, 50)
             notification_handler.storage.store_burst(burst, float(wpm))
 
         notification_handler._update_threshold()

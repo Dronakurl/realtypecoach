@@ -600,8 +600,10 @@ class TestDeviceErrorHandling:
     @patch("core.evdev_handler.InputDevice")
     @patch("core.evdev_handler.ecodes")
     @patch("select.select")
+    @patch("fcntl.fcntl", return_value=0)  # Mock fcntl to make devices appear valid
     def test_select_error_with_bad_fd(
         self,
+        mock_fcntl,
         mock_select,
         mock_ecodes,
         mock_input_device,
@@ -620,10 +622,11 @@ class TestDeviceErrorHandling:
         device.name = "Test Keyboard"
         device.path = "/dev/input/event0"
         device.capabilities.return_value = {1: [30, 57]}
-        device.fileno.side_effect = OSError("Bad file descriptor")
+        device.fileno.return_value = 42  # Valid FD initially
+        device.read.return_value = []
         mock_input_device.return_value = device
 
-        # Make select raise OSError
+        # Make select raise OSError (triggers error handling in _run_listener)
         mock_select.side_effect = OSError("Bad file descriptor")
 
         handler = EvdevHandler(event_queue, mock_layout_getter)
@@ -644,8 +647,10 @@ class TestDeviceErrorHandling:
     @patch("core.evdev_handler.InputDevice")
     @patch("core.evdev_handler.ecodes")
     @patch("select.select")
+    @patch("fcntl.fcntl", return_value=0)  # Mock fcntl to make devices appear valid
     def test_multiple_devices_one_fails(
         self,
+        mock_fcntl,
         mock_select,
         mock_ecodes,
         mock_input_device,
@@ -672,9 +677,12 @@ class TestDeviceErrorHandling:
         bad_device.name = "Bad Keyboard"
         bad_device.path = "/dev/input/event1"
         bad_device.capabilities.return_value = {1: [30, 57]}
-        bad_device.fileno.side_effect = OSError("Bad file descriptor")
+        # Return valid FD first (for _find_keyboard_devices), then raise (for _run_listener)
+        bad_device.fileno.side_effect = [43, OSError("Bad file descriptor")]
+        bad_device.read.return_value = []
 
-        mock_input_device.side_effect = [good_device, bad_device]
+        # Provide enough mock instances for _find_keyboard_devices (2 calls) + _run_listener (1-2 calls)
+        mock_input_device.side_effect = [good_device, bad_device, good_device, bad_device]
 
         # Make select raise OSError initially
         mock_select.side_effect = OSError("Bad file descriptor")
