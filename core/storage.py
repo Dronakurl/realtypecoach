@@ -860,6 +860,63 @@ class Storage:
         word_hash = self.hash_manager.hash_word(word)
         return self.adapter.is_word_ignored(word_hash)
 
+    def delete_all_names_from_database(self) -> int:
+        """Delete all common name statistics from the database.
+
+        Loads common names from the embedded list for enabled languages
+        and deletes all word statistics matching those names.
+
+        Returns:
+            Number of statistics records deleted
+
+        Example:
+            >>> deleted = storage.delete_all_names_from_database()
+            >>> print(f"Deleted {deleted} name statistics")
+        """
+        from core.common_names import COMMON_NAMES
+
+        # Get enabled languages from config
+        enabled_langs = set()
+        if hasattr(self, "config") and hasattr(self.config, "enabled_dictionaries"):
+            dict_paths = self.config.enabled_dictionaries.split(",") if self.config.enabled_dictionaries else []
+            from utils.dict_detector import DictionaryDetector
+
+            for path in dict_paths:
+                dict_info = DictionaryDetector.identify_dictionary(path)
+                if dict_info:
+                    enabled_langs.add(dict_info.language_code)
+
+        # Fallback to common languages if none enabled
+        if not enabled_langs:
+            enabled_langs = {"en", "de"}
+
+        # Collect all names from enabled languages
+        names_to_delete = set()
+        for lang in enabled_langs:
+            if lang in COMMON_NAMES:
+                names_to_delete.update(COMMON_NAMES[lang])
+
+        # Also get any words currently in the database that are names
+        # (in case the embedded list has changed or custom names exist)
+        # Query the database for words that match the name pattern
+        all_words = self.adapter.get_all_word_statistics_words()
+        for word in all_words:
+            word_lower = word.lower()
+            # Check if this word is in our names list
+            for lang in enabled_langs:
+                if lang in COMMON_NAMES and word_lower in COMMON_NAMES[lang]:
+                    names_to_delete.add(word_lower)
+
+        if not names_to_delete:
+            log.info("No names to delete from database")
+            return 0
+
+        # Delete all name statistics
+        deleted_count = self.adapter.delete_words_by_list(list(names_to_delete))
+
+        log.info(f"Deleted {deleted_count} name statistics from database")
+        return deleted_count
+
     def _migrate_ignorewords_file(self) -> None:
         """Migrate legacy ignorewords.txt to new system and remove file.
 

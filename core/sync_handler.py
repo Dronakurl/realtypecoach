@@ -117,6 +117,24 @@ class SyncHandler(QObject):
             result["duration_ms"] = duration_ms
 
             if result["success"]:
+                # Check if exclude_names_enabled setting changed during sync
+                local_exclude_names = self.config.get_bool("exclude_names_enabled", False)
+                remote_exclude_names_str = self.storage.adapter.get_setting("exclude_names_enabled")
+                remote_exclude_names = False
+                if remote_exclude_names_str is not None:
+                    remote_exclude_names = remote_exclude_names_str.lower() in ("true", "1", "yes")
+
+                # If remote has exclude_names_enabled=True and local was False, update config and delete names
+                if remote_exclude_names and not local_exclude_names:
+                    log.info("Remote exclude_names_enabled is True, deleting names from local database")
+                    try:
+                        deleted_count = self.storage.delete_all_names_from_database()
+                        log.info(f"Deleted {deleted_count} name statistics after sync")
+                        # Update local config
+                        self.config.set("exclude_names_enabled", True)
+                    except Exception as e:
+                        log.error(f"Failed to delete names after sync: {e}")
+
                 self._last_sync_time = time.time()
                 log.info(
                     f"Sync completed: pushed={result['pushed']}, "

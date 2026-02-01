@@ -660,6 +660,7 @@ class SettingsDialog(QDialog):
             "Uses embedded list of popular names for enabled languages.\n"
             "Names not in the list can still be added manually to ignored words."
         )
+        self.exclude_names_check.stateChanged.connect(self.on_exclude_names_changed)
         names_layout.addWidget(self.exclude_names_check)
 
         info_label = QLabel(
@@ -918,6 +919,58 @@ class SettingsDialog(QDialog):
 
         for widget in auto_sync_widgets:
             widget.setEnabled(is_enabled)
+
+    def on_exclude_names_changed(self) -> None:
+        """Handle exclude names checkbox change."""
+        is_checked = self.exclude_names_check.isChecked()
+
+        # Only handle when enabling (False → True)
+        if not is_checked:
+            return
+
+        # Check if this was previously disabled (from current settings)
+        was_disabled = not self.current_settings.get("exclude_names_enabled", False)
+
+        if was_disabled:
+            # Block signals to prevent recursive calls
+            self.exclude_names_check.blockSignals(True)
+
+            from PySide6.QtWidgets import QMessageBox
+
+            reply = QMessageBox.question(
+                self,
+                "Delete All Name Statistics?",
+                "This will delete all existing name statistics (e.g., 'Melanie', 'John', 'Smith')\n"
+                "from the database. This action cannot be undone.\n\n"
+                "Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                # Delete names from database
+                if self.storage:
+                    try:
+                        deleted_count = self.storage.delete_all_names_from_database()
+                        QMessageBox.information(
+                            self,
+                            "Names Deleted",
+                            f"Successfully deleted {deleted_count} name statistics from the database.",
+                        )
+                    except Exception as e:
+                        QMessageBox.critical(
+                            self,
+                            "Deletion Failed",
+                            f"Failed to delete name statistics:\n{e}",
+                        )
+                        # Revert checkbox on error
+                        self.exclude_names_check.setChecked(False)
+            else:
+                # User cancelled, revert checkbox
+                self.exclude_names_check.setChecked(False)
+
+            # Unblock signals
+            self.exclude_names_check.blockSignals(False)
 
     def set_postgres_password(self) -> None:
         """Set PostgreSQL password in keyring."""

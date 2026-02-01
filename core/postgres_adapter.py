@@ -143,6 +143,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             self._create_daily_summaries_table(conn)
             self._create_word_statistics_table(conn)
             self._create_ignored_words_table(conn)
+            self._create_settings_table(conn)
             conn.commit()
 
         # Initialize cache
@@ -337,6 +338,22 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """)
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_ignored_words_user_id ON ignored_words(user_id)"
+        )
+
+    def _create_settings_table(self, conn: pg_connection) -> None:
+        """Create settings table for syncing configuration between machines."""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at BIGINT NOT NULL,
+                PRIMARY KEY (user_id, key)
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id)"
         )
 
     def _create_users_table(self, conn: pg_connection) -> None:
@@ -1734,6 +1751,20 @@ class PostgreSQLAdapter(DatabaseAdapter):
             conn.commit()
             return cursor.rowcount
 
+    def get_all_word_statistics_words(self) -> list[str]:
+        """Get all words currently stored in word_statistics.
+
+        Returns:
+            List of all words (lowercase)
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT DISTINCT word FROM word_statistics WHERE user_id = %s",
+                (self.user_id,),
+            )
+            return [row[0] for row in cursor.fetchall()]
+
     def clean_ignored_words_stats(self, is_ignored_callback: callable) -> int:
         """Delete word statistics for ignored words using hash check.
 
@@ -1803,6 +1834,96 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 "SELECT word_hash, added_at FROM ignored_words WHERE user_id = %s", (self.user_id,)
             )
             return [{"word_hash": row[0], "added_at": row[1]} for row in cursor.fetchall()]
+
+    # ========== Settings Operations ==========
+
+    def upsert_setting(self, key: str, value: str) -> None:
+        """Insert or update a setting value.
+
+        Args:
+            key: Setting key
+            value: Setting value (stored as TEXT, convert as needed)
+        """
+        timestamp_ms = int(time.time() * 1000)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO settings (user_id, key, value, updated_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id, key) DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_at = EXCLUDED.updated_at
+            """,
+                (self.user_id, key, value, timestamp_ms),
+            )
+            conn.commit()
+
+    def get_setting(self, key: str) -> str | None:
+        """Get a setting value.
+
+        Args:
+            key: Setting key
+
+        Returns:
+            Setting value or None if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT value FROM settings WHERE user_id = %s AND key = %s",
+                (self.user_id, key),
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def get_all_settings(self) -> list[dict]:
+        """Get all settings for sync.
+
+        Returns:
+            List of setting dictionaries with keys: key, value, updated_at
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT key, value, updated_at FROM settings WHERE user_id = %s",
+                (self.user_id,),
+            )
+            return [{"key": row[0], "value": row[1], "updated_at": row[2]} for row in cursor.fetchall()]
+
+    def batch_insert_settings(self, records: list[dict]) -> int:
+        """Batch insert setting records.
+
+        Args:
+            records: List of setting dictionaries
+
+        Returns:
+            Number of records actually inserted (excluding duplicates)
+        """
+        if not records:
+            return 0
+
+        inserted = 0
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for record in records:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO settings (user_id, key, value, updated_at)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (user_id, key) DO UPDATE SET
+                            value = EXCLUDED.value,
+                            updated_at = EXCLUDED.updated_at
+                    """,
+                        (self.user_id, record["key"], record["value"], record["updated_at"]),
+                    )
+                    if cursor.rowcount > 0:
+                        inserted += 1
+                except Exception:
+                    pass
+            conn.commit()
+        return inserted
 
     # ========== High Score Operations ==========
 

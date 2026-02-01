@@ -232,6 +232,7 @@ class SQLiteAdapter(DatabaseAdapter):
             self._create_daily_summaries_table(conn)
             self._create_word_statistics_table(conn)
             self._create_ignored_words_table(conn)
+            self._create_settings_table(conn)
             self._migrate_high_scores_duration_ms(conn)
             self._add_word_statistics_columns()
             self._add_backspace_tracking_to_bursts(conn)
@@ -357,6 +358,16 @@ class SQLiteAdapter(DatabaseAdapter):
             CREATE TABLE IF NOT EXISTS ignored_words (
                 word_hash TEXT PRIMARY KEY,
                 added_at INTEGER NOT NULL
+            )
+        """)
+
+    def _create_settings_table(self, conn: sqlite3.Connection) -> None:
+        """Create settings table for syncing configuration between machines."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
             )
         """)
 
@@ -1676,6 +1687,17 @@ class SQLiteAdapter(DatabaseAdapter):
             conn.commit()
             return cursor.rowcount
 
+    def get_all_word_statistics_words(self) -> list[str]:
+        """Get all words currently stored in word_statistics.
+
+        Returns:
+            List of all words (lowercase)
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT word FROM word_statistics")
+            return [row[0] for row in cursor.fetchall()]
+
     def clean_ignored_words_stats(self, is_ignored_callback: callable) -> int:
         """Delete word statistics for ignored words using hash check.
 
@@ -1736,6 +1758,89 @@ class SQLiteAdapter(DatabaseAdapter):
             cursor = conn.cursor()
             cursor.execute("SELECT word_hash, added_at FROM ignored_words")
             return [{"word_hash": row[0], "added_at": row[1]} for row in cursor.fetchall()]
+
+    # ========== Settings Operations ==========
+
+    def upsert_setting(self, key: str, value: str) -> None:
+        """Insert or update a setting value.
+
+        Args:
+            key: Setting key
+            value: Setting value (stored as TEXT, convert as needed)
+        """
+        timestamp_ms = int(time.time() * 1000)
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+            """,
+                (key, value, timestamp_ms),
+            )
+            conn.commit()
+
+    def get_setting(self, key: str) -> str | None:
+        """Get a setting value.
+
+        Args:
+            key: Setting key
+
+        Returns:
+            Setting value or None if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def get_all_settings(self) -> list[dict]:
+        """Get all settings for sync.
+
+        Returns:
+            List of setting dictionaries with keys: key, value, updated_at
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value, updated_at FROM settings")
+            return [{"key": row[0], "value": row[1], "updated_at": row[2]} for row in cursor.fetchall()]
+
+    def batch_insert_settings(self, records: list[dict]) -> int:
+        """Batch insert setting records.
+
+        Args:
+            records: List of setting dictionaries
+
+        Returns:
+            Number of records actually inserted (excluding duplicates)
+        """
+        if not records:
+            return 0
+
+        inserted = 0
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for record in records:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO settings (key, value, updated_at)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(key) DO UPDATE SET
+                            value = excluded.value,
+                            updated_at = excluded.updated_at
+                    """,
+                        (record["key"], record["value"], record["updated_at"]),
+                    )
+                    if cursor.rowcount > 0:
+                        inserted += 1
+                except sqlite3.IntegrityError:
+                    pass
+            conn.commit()
+        return inserted
 
     # ========== High Score Operations ==========
 

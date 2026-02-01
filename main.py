@@ -536,6 +536,17 @@ class Application(QObject):
             if key not in special_keys:
                 self.config.set(key, value)
 
+        # Save exclude_names_enabled to database settings table for sync
+        if "exclude_names_enabled" in new_settings:
+            old_value = self.config.get_bool("exclude_names_enabled", False)
+            new_value = self.config.get_bool("exclude_names_enabled", False)
+            # Save to database for sync
+            try:
+                self.storage.adapter.upsert_setting("exclude_names_enabled", str(new_value))
+                log.info(f"Saved exclude_names_enabled={new_value} to database settings")
+            except Exception as e:
+                log.warning(f"Failed to save exclude_names_enabled to database: {e}")
+
         # Reload dictionary configuration if language settings changed
         if (
             "dictionary_mode" in new_settings

@@ -346,6 +346,15 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_all_word_statistics_words(self) -> list[str]:
+        """Get all words currently stored in word_statistics.
+
+        Returns:
+            List of all words (lowercase)
+        """
+        pass
+
     # ========== Ignored Words Operations ==========
 
     @abstractmethod

@@ -51,6 +51,7 @@ class SyncManager:
         "high_scores",
         "daily_summaries",
         "ignored_words",
+        "settings",
     ]
 
     def __init__(
@@ -209,6 +210,8 @@ class SyncManager:
             return record.get("date")
         elif table == "ignored_words":
             return record.get("word_hash")
+        elif table == "settings":
+            return record.get("key")
         return None
 
     def _records_equal(self, table: str, local: dict, remote: dict) -> bool:
@@ -268,6 +271,14 @@ class SyncManager:
                 local.get("total_keystrokes") == remote.get("total_keystrokes")
                 and local.get("total_bursts") == remote.get("total_bursts")
                 and self._float_equal(local.get("avg_wpm"), remote.get("avg_wpm"))
+            )
+
+        elif table == "settings":
+            # Compare key, value, and timestamp
+            return (
+                local.get("key") == remote.get("key")
+                and local.get("value") == remote.get("value")
+                and local.get("updated_at") == remote.get("updated_at")
             )
 
         return False
@@ -723,6 +734,10 @@ class SyncManager:
             # Use adapter's get_all_ignored_word_hashes method
             return self.local.get_all_ignored_word_hashes()
 
+        elif table == "settings":
+            # Use adapter's get_all_settings method
+            return self.local.get_all_settings()
+
         return data
 
     def _get_remote_data(self, table: str) -> list[dict]:
@@ -922,6 +937,10 @@ class SyncManager:
                 # Use adapter's get_all_ignored_word_hashes method
                 return self.remote.get_all_ignored_word_hashes()
 
+            elif table == "settings":
+                # Use adapter's get_all_settings method
+                return self.remote.get_all_settings()
+
         except Exception as e:
             error_msg = f"Failed to get remote data for {table}: {e}"
             log.error(error_msg)
@@ -1063,6 +1082,12 @@ class SyncManager:
                         word_hash=record.get("word_hash"), timestamp_ms=record.get("added_at")
                     )
 
+                elif table == "settings":
+                    # Use adapter's upsert_setting method
+                    self.remote.upsert_setting(
+                        key=record.get("key"), value=record.get("value")
+                    )
+
                 conn.commit()
             return True
         except Exception as e:
@@ -1186,6 +1211,12 @@ class SyncManager:
                         word_hash=record.get("word_hash"), timestamp_ms=record.get("added_at")
                     )
 
+                elif table == "settings":
+                    # Use adapter's upsert_setting method
+                    self.local.upsert_setting(
+                        key=record.get("key"), value=record.get("value")
+                    )
+
                 conn.commit()
             return True
         except Exception as e:
@@ -1246,6 +1277,15 @@ class SyncManager:
 
             # Take the record with more keystrokes (more complete data)
             if local_keystrokes >= remote_keystrokes:
+                return local
+            else:
+                return remote
+
+        elif table == "settings":
+            # Last write wins based on updated_at timestamp
+            local_updated = local.get("updated_at", 0)
+            remote_updated = remote.get("updated_at", 0)
+            if local_updated >= remote_updated:
                 return local
             else:
                 return remote
