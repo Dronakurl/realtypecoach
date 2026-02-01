@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.models import KeyPerformance, TypingTimeDataPoint, WordStatisticsLite
+from core.models import DigraphPerformance, KeyPerformance, TypingTimeDataPoint, WordStatisticsLite
 
 
 class StatsPanel(QWidget):
@@ -39,6 +39,7 @@ class StatsPanel(QWidget):
         self._trend_data_loaded = False
         self._typing_time_data_loaded = False
         self._histogram_data_loaded = False
+        self._digraph_data_loaded = False
         self._trend_data_callback = None
         self._typing_time_data_callback = None
         self._histogram_data_callback = None
@@ -96,6 +97,73 @@ class StatsPanel(QWidget):
             colorized_icon.addPixmap(colorized_pixmap, QIcon.Selected, QIcon.On)
 
         return colorized_icon if not colorized_icon.isNull() else icon
+
+    @staticmethod
+    def _create_keycap_a_icon() -> QIcon:
+        """Create a stylized 'A' keycap icon.
+
+        Draws a keyboard key cap with the letter 'A' inside,
+        using the application's palette colors for theme adaptation.
+
+        Returns:
+            QIcon with a keycap 'A' design
+        """
+        palette = QApplication.palette()
+        text_color = palette.color(QPalette.Text)
+        window_color = palette.color(QPalette.Window)
+
+        icon = QIcon()
+        sizes = [16, 22, 24, 32]
+
+        for size in sizes:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.transparent)
+
+            from PySide6.QtGui import QPainter, QPen, QFontMetricsF
+
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+
+            # Key cap dimensions
+            margin = 1
+            key_width = size - 2 * margin
+            key_height = size - 2 * margin
+            corner_radius = size * 0.15
+
+            # Draw key cap background (slightly lighter than window)
+            bg_color = window_color.lighter(110)
+            painter.setBrush(bg_color)
+            painter.setPen(QPen(text_color, 1))
+
+            # Draw rounded rectangle for key cap
+            from PySide6.QtCore import QRectF
+            key_rect = QRectF(margin, margin, key_width, key_height)
+            painter.drawRoundedRect(key_rect, corner_radius, corner_radius)
+
+            # Draw letter 'A' centered
+            font = painter.font()
+            font.setPixelSize(int(size * 0.5))
+            font.setBold(True)
+            painter.setFont(font)
+
+            fm = QFontMetricsF(font)
+            text = "A"
+            text_width = fm.horizontalAdvance(text)
+            text_height = fm.height()
+            x = (size - text_width) / 2
+            y = (size + text_height) / 2 - fm.descent()
+
+            painter.setPen(text_color)
+            painter.drawText(int(x), int(y), text)
+
+            painter.end()
+
+            # Add to icon with proper modes
+            icon.addPixmap(pixmap, QIcon.Normal, QIcon.On)
+            icon.addPixmap(pixmap, QIcon.Active, QIcon.On)
+            icon.addPixmap(pixmap, QIcon.Selected, QIcon.On)
+
+        return icon
 
     def _create_metric_card(self, label_text: str, color: str) -> QGroupBox:
         """Create a large metric display card.
@@ -318,7 +386,7 @@ class StatsPanel(QWidget):
 
         keys_layout.addWidget(slowest_keys_widget)
 
-        tab_widget.addTab(keys_tab, self._create_palette_aware_icon("input-keyboard"), "Keys")
+        tab_widget.addTab(keys_tab, self._create_keycap_a_icon(), "Keys")
 
         # Tab 3: Words
         words_tab = QWidget()
@@ -379,6 +447,8 @@ class StatsPanel(QWidget):
         self.hardest_words_count_combo.addItem("50", 50)
         self.hardest_words_count_combo.addItem("75", 75)
         self.hardest_words_count_combo.addItem("100", 100)
+        self.hardest_words_count_combo.addItem("500", 500)
+        self.hardest_words_count_combo.addItem("1000", 1000)
         self.hardest_words_count_combo.setCurrentIndex(0)  # Default to 10
         self.hardest_words_count_combo.setMaximumWidth(80)
         controls_layout.addWidget(self.hardest_words_count_combo)
@@ -395,7 +465,57 @@ class StatsPanel(QWidget):
 
         tab_widget.addTab(words_tab, self._create_palette_aware_icon("text-x-generic"), "Words")
 
-        # Tab 4: Trends (NEW)
+        # Tab 4: Digraphs
+        digraphs_tab = QWidget()
+        digraphs_layout = QHBoxLayout(digraphs_tab)
+
+        # Fastest Digraphs (Left)
+        fastest_digraphs_widget = QWidget()
+        fastest_digraphs_layout = QVBoxLayout(fastest_digraphs_widget)
+        self.fastest_digraphs_title = QLabel(f"⚡ Fastest Digraphs (Top {self.slowest_keys_count})")
+        self.fastest_digraphs_title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        fastest_digraphs_layout.addWidget(self.fastest_digraphs_title)
+
+        self.fastest_digraphs_table = QTableWidget()
+        self.fastest_digraphs_table.setFont(font)
+        self.fastest_digraphs_table.setColumnCount(3)
+        self.fastest_digraphs_table.setHorizontalHeaderLabels(["Digraph", "WPM", "Rank"])
+        self.fastest_digraphs_table.verticalHeader().setVisible(False)
+        self.fastest_digraphs_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.fastest_digraphs_table.setRowCount(self.slowest_keys_count)
+        for i in range(self.slowest_keys_count):
+            self.fastest_digraphs_table.setItem(i, 0, QTableWidgetItem("--"))
+            self.fastest_digraphs_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.fastest_digraphs_table.setItem(i, 2, QTableWidgetItem("--"))
+        fastest_digraphs_layout.addWidget(self.fastest_digraphs_table)
+
+        digraphs_layout.addWidget(fastest_digraphs_widget)
+
+        # Slowest Digraphs (Right)
+        slowest_digraphs_widget = QWidget()
+        slowest_digraphs_layout = QVBoxLayout(slowest_digraphs_widget)
+        self.slowest_digraphs_title = QLabel(f"🐌 Slowest Digraphs (Top {self.slowest_keys_count})")
+        self.slowest_digraphs_title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        slowest_digraphs_layout.addWidget(self.slowest_digraphs_title)
+
+        self.slowest_digraphs_table = QTableWidget()
+        self.slowest_digraphs_table.setFont(font)
+        self.slowest_digraphs_table.setColumnCount(3)
+        self.slowest_digraphs_table.setHorizontalHeaderLabels(["Digraph", "WPM", "Rank"])
+        self.slowest_digraphs_table.verticalHeader().setVisible(False)
+        self.slowest_digraphs_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.slowest_digraphs_table.setRowCount(self.slowest_keys_count)
+        for i in range(self.slowest_keys_count):
+            self.slowest_digraphs_table.setItem(i, 0, QTableWidgetItem("--"))
+            self.slowest_digraphs_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.slowest_digraphs_table.setItem(i, 2, QTableWidgetItem("--"))
+        slowest_digraphs_layout.addWidget(self.slowest_digraphs_table)
+
+        digraphs_layout.addWidget(slowest_digraphs_widget)
+
+        tab_widget.addTab(digraphs_tab, self._create_palette_aware_icon("format-text-underline"), "Digraphs")
+
+        # Tab 5: Trends (NEW)
         trends_tab = QWidget()
         trends_layout = QVBoxLayout(trends_tab)
 
@@ -406,7 +526,7 @@ class StatsPanel(QWidget):
 
         tab_widget.addTab(trends_tab, self._create_palette_aware_icon("go-up"), "Trends")
 
-        # Tab 5: Typing Time
+        # Tab 6: Typing Time
         typing_time_tab = QWidget()
         typing_time_layout = QVBoxLayout(typing_time_tab)
 
@@ -418,10 +538,10 @@ class StatsPanel(QWidget):
         tab_widget.addTab(
             typing_time_tab,
             self._create_palette_aware_icon("x-office-calendar"),
-            "Typing Time",
+            "Timeline",
         )
 
-        # Tab 6: Burst Speed Distribution
+        # Tab 7: Burst Speed Distribution
         histogram_tab = QWidget()
         histogram_layout = QVBoxLayout(histogram_tab)
 
@@ -433,7 +553,7 @@ class StatsPanel(QWidget):
         tab_widget.addTab(
             histogram_tab,
             self._create_palette_aware_icon("view-statistics"),
-            "Burst Speeds",
+            "Bursts",
         )
 
         layout.addWidget(tab_widget)
@@ -831,22 +951,29 @@ class StatsPanel(QWidget):
         Args:
             index: New tab index
         """
-        # Tab 3 is Trends (index 3)
-        if index == 3 and not self._trend_data_loaded:
+        # Tab 3 is Digraphs (index 3)
+        if index == 3 and not self._digraph_data_loaded:
+            self._digraph_data_loaded = True
+            # Trigger data load via callback
+            if hasattr(self, "_digraph_data_callback") and self._digraph_data_callback is not None:
+                self._digraph_data_callback()
+
+        # Tab 4 is Trends (index 4)
+        if index == 4 and not self._trend_data_loaded:
             self._trend_data_loaded = True
             # Trigger data load via callback
             if self._trend_data_callback is not None:
                 self._trend_data_callback(self.wpm_graph.current_smoothness)
 
-        # Tab 4 is Typing Time (index 4)
-        if index == 4 and not self._typing_time_data_loaded:
+        # Tab 5 is Typing Time (index 5)
+        if index == 5 and not self._typing_time_data_loaded:
             self._typing_time_data_loaded = True
             # Trigger data load via callback
             if self._typing_time_data_callback is not None:
                 self._typing_time_data_callback(self.typing_time_graph.current_granularity.value)
 
-        # Tab 5 is Burst Speed Distribution (index 5)
-        if index == 5 and not self._histogram_data_loaded:
+        # Tab 6 is Burst Speed Distribution (index 6)
+        if index == 6 and not self._histogram_data_loaded:
             self._histogram_data_loaded = True
             if self._histogram_data_callback is not None:
                 self._histogram_data_callback(self.burst_histogram.bin_count)
@@ -907,6 +1034,58 @@ class StatsPanel(QWidget):
         """Slot called when clipboard words are ready."""
         if hasattr(self, "_clipboard_callback"):
             self._clipboard_callback(words)
+
+    def set_digraph_data_callback(self, callback) -> None:
+        """Set callback for requesting digraph data.
+
+        Args:
+            callback: Function to call when new data is needed
+        """
+        self._digraph_data_callback = callback
+
+    def update_digraph_stats(
+        self, fastest: list[DigraphPerformance], slowest: list[DigraphPerformance]
+    ) -> None:
+        """Update digraph statistics display.
+
+        Args:
+            fastest: List of fastest digraphs
+            slowest: List of slowest digraphs
+        """
+        if not self.isVisible():
+            return
+
+        # Update fastest digraphs table
+        for i, digraph in enumerate(fastest):
+            digraph_str = f"{digraph.first_key}{digraph.second_key}"
+            self.fastest_digraphs_table.setItem(i, 0, QTableWidgetItem(digraph_str))
+            self.fastest_digraphs_table.setItem(i, 1, QTableWidgetItem(f"{digraph.wpm:.1f}"))
+            self.fastest_digraphs_table.setItem(
+                i,
+                2,
+                QTableWidgetItem(str(digraph.rank) if digraph.rank > 0 else "--"),
+            )
+
+        for i in range(len(fastest), self.slowest_keys_count):
+            self.fastest_digraphs_table.setItem(i, 0, QTableWidgetItem("--"))
+            self.fastest_digraphs_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.fastest_digraphs_table.setItem(i, 2, QTableWidgetItem("--"))
+
+        # Update slowest digraphs table
+        for i, digraph in enumerate(slowest):
+            digraph_str = f"{digraph.first_key}{digraph.second_key}"
+            self.slowest_digraphs_table.setItem(i, 0, QTableWidgetItem(digraph_str))
+            self.slowest_digraphs_table.setItem(i, 1, QTableWidgetItem(f"{digraph.wpm:.1f}"))
+            self.slowest_digraphs_table.setItem(
+                i,
+                2,
+                QTableWidgetItem(str(digraph.rank) if digraph.rank > 0 else "--"),
+            )
+
+        for i in range(len(slowest), self.slowest_keys_count):
+            self.slowest_digraphs_table.setItem(i, 0, QTableWidgetItem("--"))
+            self.slowest_digraphs_table.setItem(i, 1, QTableWidgetItem("--"))
+            self.slowest_digraphs_table.setItem(i, 2, QTableWidgetItem("--"))
 
     def showEvent(self, event) -> None:
         """Override to emit visibility signal when shown."""

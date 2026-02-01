@@ -16,6 +16,7 @@ from core.database_adapter import AdapterError, ConnectionError, DatabaseAdapter
 from core.models import (
     BurstTimeSeries,
     DailySummaryDB,
+    DigraphPerformance,
     KeyPerformance,
     TypingTimeDataPoint,
     WordStatisticsLite,
@@ -226,6 +227,7 @@ class SQLiteAdapter(DatabaseAdapter):
         with self.get_connection() as conn:
             self._create_bursts_table(conn)
             self._create_statistics_table(conn)
+            self._create_digraph_statistics_table(conn)
             self._create_high_scores_table(conn)
             self._create_daily_summaries_table(conn)
             self._create_word_statistics_table(conn)
@@ -282,6 +284,24 @@ class SQLiteAdapter(DatabaseAdapter):
                 fastest_ms REAL,
                 last_updated INTEGER,
                 PRIMARY KEY (keycode, layout)
+            )
+        """)
+
+    def _create_digraph_statistics_table(self, conn: sqlite3.Connection) -> None:
+        """Create digraph_statistics table."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS digraph_statistics (
+                first_keycode INTEGER NOT NULL,
+                second_keycode INTEGER NOT NULL,
+                first_key TEXT NOT NULL,
+                second_key TEXT NOT NULL,
+                layout TEXT NOT NULL,
+                avg_interval_ms REAL NOT NULL,
+                total_sequences INTEGER NOT NULL DEFAULT 1,
+                slowest_ms REAL,
+                fastest_ms REAL,
+                last_updated INTEGER,
+                PRIMARY KEY (first_keycode, second_keycode, layout)
             )
         """)
 
@@ -1192,6 +1212,184 @@ class SQLiteAdapter(DatabaseAdapter):
                 for r in rows
             ]
 
+    # ========== Digraph Statistics Operations ==========
+
+    def update_digraph_statistics(
+        self,
+        first_keycode: int,
+        second_keycode: int,
+        first_key: str,
+        second_key: str,
+        layout: str,
+        interval_ms: float,
+    ) -> None:
+        """Update statistics for a digraph."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT avg_interval_ms, total_sequences, slowest_ms, fastest_ms
+                FROM digraph_statistics
+                WHERE first_keycode = ? AND second_keycode = ? AND layout = ?
+            """,
+                (first_keycode, second_keycode, layout),
+            )
+
+            result = cursor.fetchone()
+            now_ms = int(time.time() * 1000)
+
+            if result:
+                avg_interval, total_sequences, slowest_ms, fastest_ms = result
+                new_total = total_sequences + 1
+
+                # Calculate running average
+                new_avg = (avg_interval * total_sequences + interval_ms) / new_total
+                new_slowest = max(slowest_ms, interval_ms)
+                new_fastest = min(fastest_ms, interval_ms)
+
+                cursor.execute(
+                    """
+                    UPDATE digraph_statistics SET
+                        avg_interval_ms = ?, total_sequences = ?, slowest_ms = ?,
+                        fastest_ms = ?, last_updated = ?
+                    WHERE first_keycode = ? AND second_keycode = ? AND layout = ?
+                """,
+                    (
+                        new_avg,
+                        new_total,
+                        new_slowest,
+                        new_fastest,
+                        now_ms,
+                        first_keycode,
+                        second_keycode,
+                        layout,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO digraph_statistics
+                    (first_keycode, second_keycode, first_key, second_key, layout,
+                     avg_interval_ms, total_sequences, slowest_ms, fastest_ms, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                """,
+                    (
+                        first_keycode,
+                        second_keycode,
+                        first_key,
+                        second_key,
+                        layout,
+                        interval_ms,
+                        interval_ms,
+                        interval_ms,
+                        now_ms,
+                    ),
+                )
+
+            conn.commit()
+
+    def get_slowest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get slowest digraphs (highest average interval)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if layout:
+                cursor.execute(
+                    """
+                    SELECT ds.first_key, ds.second_key, ds.avg_interval_ms, freq_rank.rank
+                    FROM digraph_statistics ds
+                    INNER JOIN (
+                        SELECT first_key || second_key as digraph,
+                               ROW_NUMBER() OVER (ORDER BY total_sequences DESC) as rank
+                        FROM digraph_statistics
+                        WHERE layout = ?
+                    ) freq_rank ON ds.first_key || ds.second_key = freq_rank.digraph
+                    WHERE ds.layout = ? AND ds.total_sequences >= 2
+                    ORDER BY ds.avg_interval_ms DESC
+                    LIMIT ?
+                """,
+                    (layout, layout, limit),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT ds.first_key, ds.second_key, ds.avg_interval_ms, freq_rank.rank
+                    FROM digraph_statistics ds
+                    INNER JOIN (
+                        SELECT first_key || second_key as digraph,
+                               ROW_NUMBER() OVER (ORDER BY total_sequences DESC) as rank
+                        FROM digraph_statistics
+                    ) freq_rank ON ds.first_key || ds.second_key = freq_rank.digraph
+                    WHERE ds.total_sequences >= 2
+                    ORDER BY ds.avg_interval_ms DESC
+                    LIMIT ?
+                """,
+                    (limit,),
+                )
+            rows = cursor.fetchall()
+            return [
+                DigraphPerformance(
+                    first_key=r[0],
+                    second_key=r[1],
+                    avg_interval_ms=r[2],
+                    wpm=60000 / (r[2] * 5) if r[2] > 0 else 0,
+                    rank=r[3],
+                )
+                for r in rows
+            ]
+
+    def get_fastest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get fastest digraphs (lowest average interval)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if layout:
+                cursor.execute(
+                    """
+                    SELECT ds.first_key, ds.second_key, ds.avg_interval_ms, freq_rank.rank
+                    FROM digraph_statistics ds
+                    INNER JOIN (
+                        SELECT first_key || second_key as digraph,
+                               ROW_NUMBER() OVER (ORDER BY total_sequences DESC) as rank
+                        FROM digraph_statistics
+                        WHERE layout = ?
+                    ) freq_rank ON ds.first_key || ds.second_key = freq_rank.digraph
+                    WHERE ds.layout = ? AND ds.total_sequences >= 2
+                    ORDER BY ds.avg_interval_ms ASC
+                    LIMIT ?
+                """,
+                    (layout, layout, limit),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT ds.first_key, ds.second_key, ds.avg_interval_ms, freq_rank.rank
+                    FROM digraph_statistics ds
+                    INNER JOIN (
+                        SELECT first_key || second_key as digraph,
+                               ROW_NUMBER() OVER (ORDER BY total_sequences DESC) as rank
+                        FROM digraph_statistics
+                    ) freq_rank ON ds.first_key || ds.second_key = freq_rank.digraph
+                    WHERE ds.total_sequences >= 2
+                    ORDER BY ds.avg_interval_ms ASC
+                    LIMIT ?
+                """,
+                    (limit,),
+                )
+            rows = cursor.fetchall()
+            return [
+                DigraphPerformance(
+                    first_key=r[0],
+                    second_key=r[1],
+                    avg_interval_ms=r[2],
+                    wpm=60000 / (r[2] * 5) if r[2] > 0 else 0,
+                    rank=r[3],
+                )
+                for r in rows
+            ]
+
     # ========== Word Statistics Operations ==========
 
     def update_word_statistics(
@@ -1458,6 +1656,37 @@ class SQLiteAdapter(DatabaseAdapter):
             cursor.execute(f"DELETE FROM word_statistics WHERE word IN ({placeholders})", words)
             conn.commit()
             return cursor.rowcount
+
+    def clean_ignored_words_stats(self, is_ignored_callback: callable) -> int:
+        """Delete word statistics for ignored words using hash check.
+
+        Args:
+            is_ignored_callback: Function that takes a plaintext word and returns True if ignored
+
+        Returns:
+            Number of rows deleted
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get all words from word_statistics
+            cursor.execute("SELECT word FROM word_statistics")
+            words_to_check = [row[0] for row in cursor.fetchall()]
+
+            # Filter to find ignored words
+            ignored_words = [word for word in words_to_check if is_ignored_callback(word)]
+
+            if ignored_words:
+                # Build placeholders for IN clause
+                placeholders = ','.join('?' * len(ignored_words))
+                cursor.execute(
+                    f"DELETE FROM word_statistics WHERE word IN ({placeholders})",
+                    ignored_words
+                )
+                conn.commit()
+                return cursor.rowcount
+
+            return 0
 
     # ========== Ignored Words Operations ==========
 

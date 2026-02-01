@@ -83,6 +83,7 @@ class Application(QObject):
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
     signal_update_histogram_graph = Signal(list)  # For histogram data
     signal_update_recent_bursts = Signal(list)  # For recent bursts data
+    signal_update_digraph_stats = Signal(list, list)  # For digraph statistics (fastest, slowest)
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -330,6 +331,10 @@ class Application(QObject):
             self.stats_panel.update_recent_bursts,
             Qt.ConnectionType.QueuedConnection,
         )
+        self.signal_update_digraph_stats.connect(
+            self.stats_panel.update_digraph_stats,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
         self.notification_handler.signal_exceptional_burst.connect(
@@ -353,6 +358,7 @@ class Application(QObject):
         self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
         self.stats_panel.set_histogram_data_callback(self.provide_histogram_data)
         self.stats_panel.set_words_clipboard_callback(self.fetch_words_for_clipboard)
+        self.stats_panel.set_digraph_data_callback(self.provide_digraph_data)
 
         self.signal_clipboard_words_ready.connect(
             self.stats_panel._on_clipboard_words_ready,
@@ -661,6 +667,27 @@ class Application(QObject):
                 log.info("Histogram signal emitted successfully")
             except Exception as e:
                 log.error(f"Error fetching histogram data: {e}")
+
+        # Submit to thread pool to limit concurrent background threads
+        self._executor.submit(fetch_data)
+
+    def provide_digraph_data(self) -> None:
+        """Provide digraph data to stats panel."""
+
+        def fetch_data():
+            try:
+                log.info("Fetching digraph data")
+                fastest = self.analyzer.get_fastest_digraphs(
+                    limit=10, layout=self.get_current_layout()
+                )
+                slowest = self.analyzer.get_slowest_digraphs(
+                    limit=10, layout=self.get_current_layout()
+                )
+                log.info(f"Got {len(fastest)} fastest and {len(slowest)} slowest digraphs, emitting signal")
+                self.signal_update_digraph_stats.emit(fastest, slowest)
+                log.info("Digraph signal emitted successfully")
+            except Exception as e:
+                log.error(f"Error fetching digraph data: {e}")
 
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_data)

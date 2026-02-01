@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from core.models import (
     BurstTimeSeries,
     DailySummaryDB,
+    DigraphPerformance,
     KeyPerformance,
     WordStatisticsLite,
 )
@@ -222,6 +223,60 @@ class DatabaseAdapter(ABC):
 
         Returns:
             List of KeyPerformance models
+        """
+        pass
+
+    # ========== Digraph Statistics Operations ==========
+
+    @abstractmethod
+    def update_digraph_statistics(
+        self,
+        first_keycode: int,
+        second_keycode: int,
+        first_key: str,
+        second_key: str,
+        layout: str,
+        interval_ms: float,
+    ) -> None:
+        """Update statistics for a digraph (two-key combination).
+
+        Args:
+            first_keycode: Linux evdev keycode of first key
+            second_keycode: Linux evdev keycode of second key
+            first_key: First key character
+            second_key: Second key character
+            layout: Keyboard layout identifier
+            interval_ms: Time between the two keys
+        """
+        pass
+
+    @abstractmethod
+    def get_slowest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get slowest digraphs (highest average interval).
+
+        Args:
+            limit: Maximum number of digraphs to return
+            layout: Filter by layout (None for all layouts)
+
+        Returns:
+            List of DigraphPerformance models
+        """
+        pass
+
+    @abstractmethod
+    def get_fastest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get fastest digraphs (lowest average interval).
+
+        Args:
+            limit: Maximum number of digraphs to return
+            layout: Filter by layout (None for all layouts)
+
+        Returns:
+            List of DigraphPerformance models
         """
         pass
 

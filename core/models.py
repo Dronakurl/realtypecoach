@@ -156,3 +156,15 @@ class WorstLetterChange(BaseModel):
     )
 
     model_config = ConfigDict(extra="ignore")
+
+
+class DigraphPerformance(BaseModel):
+    """Digraph performance metric (for slowest/fastest digraphs lists)."""
+
+    first_key: str = Field(..., description="First key in the digraph")
+    second_key: str = Field(..., description="Second key in the digraph")
+    avg_interval_ms: float = Field(..., description="Average interval between keys in milliseconds")
+    wpm: float = Field(..., description="Words per minute equivalent")
+    rank: int = Field(default=0, description="Frequency rank (1=most frequent)")
+
+    model_config = ConfigDict(extra="ignore")

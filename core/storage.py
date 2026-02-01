@@ -16,6 +16,7 @@ from core.dictionary_config import DictionaryConfig
 from core.models import (
     BurstTimeSeries,
     DailySummaryDB,
+    DigraphPerformance,
     KeyPerformance,
     TypingTimeDataPoint,
     WordInfo,
@@ -308,6 +309,23 @@ class Storage:
                         time_between,
                     )
 
+        # Track digraphs (consecutive letter pairs)
+        for i in range(len(letter_keystrokes) - 1):
+            first = letter_keystrokes[i]
+            second = letter_keystrokes[i + 1]
+            time_between = second.time - first.time
+
+            # Only track if within burst timeout
+            if time_between <= BURST_TIMEOUT_MS:
+                self.adapter.update_digraph_statistics(
+                    first_keycode=int(first.keycode),
+                    second_keycode=int(second.keycode),
+                    first_key=first.key,
+                    second_key=second.key,
+                    layout=word_info.layout,
+                    interval_ms=time_between,
+                )
+
     def _update_key_statistics_inline(
         self,
         conn,
@@ -487,6 +505,59 @@ class Storage:
         """
         return self.adapter.get_fastest_keys(limit, layout)
 
+    # Digraph Statistics Operations
+
+    def update_digraph_statistics(
+        self,
+        first_keycode: int,
+        second_keycode: int,
+        first_key: str,
+        second_key: str,
+        layout: str,
+        interval_ms: float,
+    ) -> None:
+        """Update statistics for a digraph (two-key combination).
+
+        Args:
+            first_keycode: Linux evdev keycode of first key
+            second_keycode: Linux evdev keycode of second key
+            first_key: First key character
+            second_key: Second key character
+            layout: Keyboard layout identifier
+            interval_ms: Time between the two keys
+        """
+        self.adapter.update_digraph_statistics(
+            first_keycode, second_keycode, first_key, second_key, layout, interval_ms
+        )
+
+    def get_slowest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get slowest digraphs (highest average interval).
+
+        Args:
+            limit: Maximum number of digraphs to return
+            layout: Filter by layout (None for all layouts)
+
+        Returns:
+            List of DigraphPerformance models
+        """
+        return self.adapter.get_slowest_digraphs(limit, layout)
+
+    def get_fastest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get fastest digraphs (lowest average interval).
+
+        Args:
+            limit: Maximum number of digraphs to return
+            layout: Filter by layout (None for all layouts)
+
+        Returns:
+            List of DigraphPerformance models
+        """
+        return self.adapter.get_fastest_digraphs(limit, layout)
+
     # Word Statistics Operations
 
     def update_word_statistics(
@@ -524,7 +595,17 @@ class Storage:
         Returns:
             List of WordStatisticsLite models
         """
-        return self.adapter.get_slowest_words(limit, layout)
+        # Fetch extra candidates to account for filtered ignored words
+        fetch_limit = limit * 3
+        words = self.adapter.get_slowest_words(fetch_limit, layout)
+
+        # Filter out ignored words
+        if self.hash_manager:
+            filtered_words = [w for w in words if not self.is_word_ignored(w.word)]
+        else:
+            filtered_words = words
+
+        return filtered_words[:limit]
 
     def get_fastest_words(
         self, limit: int = 10, layout: str | None = None
@@ -538,7 +619,17 @@ class Storage:
         Returns:
             List of WordStatisticsLite models
         """
-        return self.adapter.get_fastest_words(limit, layout)
+        # Fetch extra candidates to account for filtered ignored words
+        fetch_limit = limit * 3
+        words = self.adapter.get_fastest_words(fetch_limit, layout)
+
+        # Filter out ignored words
+        if self.hash_manager:
+            filtered_words = [w for w in words if not self.is_word_ignored(w.word)]
+        else:
+            filtered_words = words
+
+        return filtered_words[:limit]
 
     # High Score Operations
 
@@ -707,8 +798,7 @@ class Storage:
         Returns:
             Number of rows deleted
         """
-        ignored_words = list(self.dictionary._ignored_words)
-        return self.adapter.delete_words_by_list(ignored_words)
+        return self.adapter.clean_ignored_words_stats(self.is_word_ignored)
 
     # ========== Ignored Words Operations ==========
 
@@ -909,10 +999,10 @@ class Storage:
             # Perform sync
             result = sync_mgr.bidirectional_merge()
 
-            # Clean up word statistics for newly synced ignored words on both sides
-            ignored_words = list(self.dictionary._ignored_words)
-            local_adapter.delete_words_by_list(ignored_words)
-            remote_adapter.delete_words_by_list(ignored_words)
+            # Clean up word statistics for all ignored words on both sides
+            # We need to iterate through word_statistics and check each word
+            local_adapter.clean_ignored_words_stats(self.is_word_ignored)
+            remote_adapter.clean_ignored_words_stats(self.is_word_ignored)
 
             # Update last sync timestamp
             user_manager.update_last_sync()

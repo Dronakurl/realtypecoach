@@ -9,6 +9,7 @@ from typing import Any
 from core.burst_detector import Burst
 from core.models import (
     DailySummaryDB,
+    DigraphPerformance,
     KeyPerformance,
     TypingTimeDataPoint,
     WordStatisticsLite,
@@ -394,6 +395,34 @@ class Analyzer:
             List of WordStatisticsLite models
         """
         return self.storage.get_fastest_words(limit, layout)
+
+    def get_slowest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get slowest digraphs from database.
+
+        Args:
+            limit: Maximum number to return
+            layout: Filter by layout
+
+        Returns:
+            List of DigraphPerformance models
+        """
+        return self.storage.get_slowest_digraphs(limit, layout)
+
+    def get_fastest_digraphs(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[DigraphPerformance]:
+        """Get fastest digraphs from database.
+
+        Args:
+            limit: Maximum number to return
+            layout: Filter by layout
+
+        Returns:
+            List of DigraphPerformance models
+        """
+        return self.storage.get_fastest_digraphs(limit, layout)
 
     def get_long_term_average_wpm(self) -> float | None:
         """Get long-term average WPM across all recorded bursts.
