@@ -650,6 +650,30 @@ class SettingsDialog(QDialog):
         ignored_group.setLayout(ignored_layout)
         layout.addWidget(ignored_group)
 
+        # Names Exclusion Group
+        names_group = QGroupBox("Names Exclusion")
+        names_layout = QVBoxLayout()
+
+        self.exclude_names_check = QCheckBox("Exclude common names from word statistics")
+        self.exclude_names_check.setToolTip(
+            "Automatically filter out common first names and surnames.\n"
+            "Uses embedded list of popular names for enabled languages.\n"
+            "Names not in the list can still be added manually to ignored words."
+        )
+        names_layout.addWidget(self.exclude_names_check)
+
+        info_label = QLabel(
+            "This prevents personal names from appearing in word statistics.\n"
+            "The names list is embedded in the application and covers the most\n"
+            "common first names and surnames for enabled languages."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; font-size: 11px;")
+        names_layout.addWidget(info_label)
+
+        names_group.setLayout(names_layout)
+        layout.addWidget(names_group)
+
         # Language Selection Group
         lang_group = QGroupBox("Active Languages")
         lang_layout = QVBoxLayout()
@@ -1344,6 +1368,11 @@ class SettingsDialog(QDialog):
         dict_mode = self.current_settings.get("dictionary_mode", "validate")
         self.validate_mode_radio.setChecked(dict_mode == "validate")
 
+        # Load exclude names setting
+        self.exclude_names_check.setChecked(
+            self.current_settings.get("exclude_names_enabled", False)
+        )
+
         # Load database settings
         postgres_sync_enabled = self.current_settings.get("postgres_sync_enabled", False)
         log.info(
@@ -1431,6 +1460,7 @@ class SettingsDialog(QDialog):
             "dictionary_mode": "validate" if self.validate_mode_radio.isChecked() else "accept_all",
             "enabled_languages": enabled_langs_str,
             "enabled_dictionaries": enabled_dicts_str,
+            "exclude_names_enabled": str(self.exclude_names_check.isChecked()),
             # Database settings
             "postgres_sync_enabled": str(postgres_sync_check_state),
             "postgres_host": self.postgres_host_input.text(),

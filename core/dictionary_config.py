@@ -22,6 +22,9 @@ class DictionaryConfig(BaseModel):
     auto_fallback: bool = Field(
         default=True, description="Auto-enable accept_all if no dictionaries found"
     )
+    exclude_names_enabled: bool = Field(
+        default=False, description="Enable automatic exclusion of common names from word statistics"
+    )
 
     model_config = ConfigDict(extra="ignore")
 

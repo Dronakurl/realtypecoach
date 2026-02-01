@@ -87,6 +87,9 @@ class AppSettings(BaseModel):
         description="Dictionary validation mode (validate or accept_all)",
     )
     enabled_languages: str = Field(default="en,de", description="Comma-separated language codes")
+    exclude_names_enabled: bool = Field(
+        default=False, description="Enable automatic exclusion of common names from word statistics"
+    )
 
     # UI settings
     stats_update_interval_sec: int = Field(

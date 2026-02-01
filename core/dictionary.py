@@ -28,9 +28,15 @@ class Dictionary:
         self._config: DictionaryConfig = config
         self._ignored_words: set[str] = set()
         self._storage = storage
+        self._exclude_names = config.exclude_names_enabled
+        self._names_set: set[str] = set()
 
         # Load ignore words from file
         self._load_ignore_words(ignore_file_path)
+
+        # Load names exclusion list
+        if self._exclude_names:
+            self._load_names_list()
 
         # Resolve which languages to load and get their paths
         resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
@@ -68,6 +74,19 @@ class Dictionary:
             log.info(f"Loaded {len(self._ignored_words)} ignored words from {ignore_file_path}")
         except (OSError, UnicodeDecodeError) as e:
             log.warning(f"Failed to load ignore words from {ignore_file_path}: {e}")
+
+    def _load_names_list(self) -> None:
+        """Load common names from embedded list."""
+        try:
+            from core.common_names import COMMON_NAMES
+
+            # Load names for all loaded languages
+            for lang_code in self.get_loaded_languages():
+                if lang_code in COMMON_NAMES:
+                    self._names_set.update(COMMON_NAMES[lang_code])
+            log.info(f"Loaded {len(self._names_set)} common names for exclusion")
+        except ImportError:
+            log.warning("Common names module not found")
 
     @classmethod
     def _detect_dictionaries(cls) -> dict[str, str]:
@@ -225,6 +244,17 @@ class Dictionary:
             log.error(f"Error loading {language_code} dictionary from {path}: {e}")
             return False
 
+    def _is_name(self, word: str) -> bool:
+        """Check if word is in the common names list.
+
+        Args:
+            word: Word to check
+
+        Returns:
+            True if word is a common name
+        """
+        return word.lower() in self._names_set
+
     def is_valid_word(self, word: str, language: str | None = None) -> bool:
         """Check if word exists in loaded dictionaries.
 
@@ -249,6 +279,10 @@ class Dictionary:
             and self._storage.is_word_ignored(word_lower)
             or word_lower in self._ignored_words
         ):
+            return False
+
+        # Check names list if enabled
+        if self._exclude_names and self._is_name(word_lower):
             return False
 
         # In accept-all mode, validate based on word length
@@ -298,6 +332,12 @@ class Dictionary:
         self.words.clear()
         self.loaded_paths.clear()
         self._config = config
+        self._exclude_names = config.exclude_names_enabled
+
+        # Reload names list if enabled
+        if self._exclude_names:
+            self._names_set.clear()
+            self._load_names_list()
 
         # Determine new state and get resolved paths
         resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)

@@ -194,11 +194,13 @@ class Application(QObject):
         enabled_dictionaries = self.config.get("enabled_dictionaries", "")
         enabled_dictionary_paths = enabled_dictionaries.split(",") if enabled_dictionaries else []
         accept_all_mode = self.config.get("dictionary_mode") == "accept_all"
+        exclude_names_enabled = self.config.get_bool("exclude_names_enabled", False)
 
         dictionary_config = DictionaryConfig(
             enabled_languages=enabled_languages,
             enabled_dictionary_paths=enabled_dictionary_paths,
             accept_all_mode=accept_all_mode,
+            exclude_names_enabled=exclude_names_enabled,
         )
 
         self.storage = Storage(
@@ -526,6 +528,7 @@ class Application(QObject):
             "dictionary_mode" in new_settings
             or "enabled_languages" in new_settings
             or "enabled_dictionaries" in new_settings
+            or "exclude_names_enabled" in new_settings
         ):
             log.info("Dictionary configuration changed, storage will reload on next restart")
 
@@ -909,6 +912,7 @@ class Application(QObject):
             "dictionary_mode": self.config.get("dictionary_mode", "validate"),
             "enabled_languages": self.config.get("enabled_languages", "en,de"),
             "enabled_dictionaries": enabled_dicts_value,
+            "exclude_names_enabled": self.config.get_bool("exclude_names_enabled", False),
             # Database settings
             "postgres_sync_enabled": self.config.get_bool("postgres_sync_enabled", False),
             "postgres_host": self.config.get("postgres_host", ""),
