@@ -791,13 +791,16 @@ class StatsPanel(QWidget):
                 f"{self._format_large_number(bursts)} bursts • today: {self._format_large_number(today_keystrokes)}"
             )
 
-    def update_avg_burst_duration(self, avg_ms: int, min_ms: int, max_ms: int) -> None:
+    def update_avg_burst_duration(
+        self, avg_ms: int, min_ms: int, max_ms: int, percentile_95_ms: int
+    ) -> None:
         """Update average burst duration display.
 
         Args:
             avg_ms: Average burst duration in milliseconds
             min_ms: Minimum burst duration in milliseconds
             max_ms: Maximum burst duration in milliseconds
+            percentile_95_ms: 95th percentile burst duration in milliseconds
         """
         if not self.isVisible():
             return
@@ -808,10 +811,13 @@ class StatsPanel(QWidget):
             else:
                 self.avg_burst_time_value_label.setText(f"{avg_ms}ms")
 
-            # Format min/max as subtitle
+            # Format min/max/95th percentile as subtitle
             min_display = f"{min_ms / 1000:.1f}s" if min_ms >= 1000 else f"{min_ms}ms"
             max_display = f"{max_ms / 1000:.1f}s" if max_ms >= 1000 else f"{max_ms}ms"
-            self.avg_burst_time_subtitle_label.setText(f"min: {min_display} • max: {max_display}")
+            p95_display = f"{percentile_95_ms / 1000:.1f}s" if percentile_95_ms >= 1000 else f"{percentile_95_ms}ms"
+            self.avg_burst_time_subtitle_label.setText(
+                f"95%: {p95_display} • min: {min_display} • max: {max_display}"
+            )
 
     @staticmethod
     def _format_large_number(count: int) -> str:

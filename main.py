@@ -28,8 +28,15 @@ file_handler = RotatingFileHandler(
     backupCount=5,
 )
 
+# Detect if running from installed location or development
+# Installed: ~/.local/share/realtypecoach/main.py → INFO
+# Development: running from source directory → DEBUG
+script_path = Path(__file__).resolve()
+is_installed = script_path == (DATA_DIR / "main.py")
+log_level = logging.INFO if is_installed else logging.DEBUG
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[file_handler, logging.StreamHandler()],
 )
@@ -78,7 +85,7 @@ class Application(QObject):
     signal_update_worst_word = Signal(object)
     signal_update_fastest_word = Signal(object)
     signal_update_keystrokes_bursts = Signal(int, int, int)
-    signal_update_avg_burst_duration = Signal(int, int, int)
+    signal_update_avg_burst_duration = Signal(int, int, int, int)
     signal_settings_changed = Signal(dict)
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
     signal_update_histogram_graph = Signal(list)  # For histogram data
@@ -733,7 +740,7 @@ class Application(QObject):
                         key_type = (
                             key_event.key_name
                         )  # Special keys like SPACE, ENTER are safe to log
-                    log.info(f"Processing key event: {key_type}")
+                    log.debug(f"Processing key event: {key_type}")
                     logged = True
 
                 # Detect if key is backspace
@@ -876,8 +883,8 @@ class Application(QObject):
         )
 
         # Update average burst duration stats
-        avg_ms, min_ms, max_ms = self.storage.get_burst_duration_stats_ms()
-        self.signal_update_avg_burst_duration.emit(avg_ms, min_ms, max_ms)
+        avg_ms, min_ms, max_ms, percentile_95_ms = self.storage.get_burst_duration_stats_ms()
+        self.signal_update_avg_burst_duration.emit(avg_ms, min_ms, max_ms, percentile_95_ms)
 
         total_time = (time.time() - start_time) * 1000
         log.info(f"update_statistics() completed in {total_time:.1f}ms")

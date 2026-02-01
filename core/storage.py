@@ -402,11 +402,11 @@ class Storage:
         """
         return self.adapter.get_recent_bursts(limit)
 
-    def get_burst_duration_stats_ms(self) -> tuple[int, int, int]:
+    def get_burst_duration_stats_ms(self) -> tuple[int, int, int, int]:
         """Get burst duration statistics across all bursts.
 
         Returns:
-            Tuple of (average_ms, min_ms, max_ms)
+            Tuple of (average_ms, min_ms, max_ms, percentile_95_ms)
         """
         return self.adapter.get_burst_duration_stats_ms()
 

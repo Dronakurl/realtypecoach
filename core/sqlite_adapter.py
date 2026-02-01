@@ -804,8 +804,12 @@ class SQLiteAdapter(DatabaseAdapter):
 
             return bursts
 
-    def get_burst_duration_stats_ms(self) -> tuple[int, int, int]:
-        """Get burst duration statistics across all bursts."""
+    def get_burst_duration_stats_ms(self) -> tuple[int, int, int, int]:
+        """Get burst duration statistics across all bursts.
+
+        Returns:
+            Tuple of (avg_ms, min_ms, max_ms, percentile_95_ms)
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -818,8 +822,23 @@ class SQLiteAdapter(DatabaseAdapter):
             )
             result = cursor.fetchone()
             if result and result[0]:
-                return (int(result[0]), int(result[1]), int(result[2]))
-            return (0, 0, 0)
+                avg_ms = int(result[0])
+                min_ms = int(result[1])
+                max_ms = int(result[2])
+
+                # Calculate 95th percentile using OFFSET
+                cursor.execute(
+                    """
+                    SELECT duration_ms FROM bursts
+                    ORDER BY duration_ms
+                    LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 95 / 100.0 AS INT) FROM bursts) - 1
+                """
+                )
+                percentile_result = cursor.fetchone()
+                percentile_95_ms = int(percentile_result[0]) if percentile_result else 0
+
+                return (avg_ms, min_ms, max_ms, percentile_95_ms)
+            return (0, 0, 0, 0)
 
     def get_burst_stats_for_date_range(self, start_ms: int, end_ms: int) -> tuple[int, int]:
         """Get burst statistics for a date range."""

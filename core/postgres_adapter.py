@@ -807,8 +807,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             return bursts
 
-    def get_burst_duration_stats_ms(self) -> tuple[int, int, int]:
-        """Get burst duration statistics across all bursts."""
+    def get_burst_duration_stats_ms(self) -> tuple[int, int, int, int]:
+        """Get burst duration statistics across all bursts.
+
+        Returns:
+            Tuple of (avg_ms, min_ms, max_ms, percentile_95_ms)
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -823,8 +827,27 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             result = cursor.fetchone()
             if result and result[0]:
-                return (int(result[0]), int(result[1]), int(result[2]))
-            return (0, 0, 0)
+                avg_ms = int(result[0])
+                min_ms = int(result[1])
+                max_ms = int(result[2])
+
+                # Calculate 95th percentile using PERCENTILE_CONT
+                cursor.execute(
+                    """
+                    SELECT COALESCE(
+                        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms),
+                        0
+                    )
+                    FROM bursts
+                    WHERE user_id = %s
+                """,
+                    (self.user_id,),
+                )
+                percentile_result = cursor.fetchone()
+                percentile_95_ms = int(percentile_result[0]) if percentile_result else 0
+
+                return (avg_ms, min_ms, max_ms, percentile_95_ms)
+            return (0, 0, 0, 0)
 
     def get_burst_stats_for_date_range(self, start_ms: int, end_ms: int) -> tuple[int, int]:
         """Get burst statistics for a date range."""
