@@ -2,6 +2,7 @@
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from queue import Full, Queue
@@ -21,6 +22,9 @@ except ImportError:
 from utils.keycodes import get_key_name
 
 log = logging.getLogger("realtypecoach.evdev")
+
+# How often to check for new keyboard devices (seconds)
+DEVICE_CHECK_INTERVAL = 60.0
 
 
 @dataclass
@@ -64,6 +68,7 @@ class EvdevHandler:
         self._event_count: int = 0
         self._drop_count: int = 0
         self._stop_event = threading.Event()
+        self._last_device_check_time: float = 0.0
 
     def _find_keyboard_devices(self) -> list["InputDevice"]:
         """Find all keyboard input devices."""
@@ -92,6 +97,31 @@ class EvdevHandler:
                 log.error(f"Error accessing {path}: {e}")
 
         return keyboards
+
+    def _check_for_new_devices(self, current_devices: list["InputDevice"]) -> list["InputDevice"]:
+        """Check for newly connected keyboard devices and add them.
+
+        Args:
+            current_devices: List of currently monitored devices
+
+        Returns:
+            Updated list of devices including any new ones
+        """
+        current_paths = {d.path for d in current_devices}
+        all_keyboards = self._find_keyboard_devices()
+
+        new_devices = []
+        for device in all_keyboards:
+            if device.path not in current_paths:
+                log.info(f"New keyboard detected: {device.name} at {device.path}")
+                new_devices.append(device)
+
+        if new_devices:
+            log.info(f"Added {len(new_devices)} new keyboard device(s)")
+            # Update self.device_paths for consistency
+            self.device_paths = [d.path for d in current_devices + new_devices]
+
+        return current_devices + new_devices
 
     def start(self) -> None:
         """Start listening for keyboard events in background thread."""
@@ -162,14 +192,14 @@ class EvdevHandler:
                     log.error("No valid devices remaining, exiting listener thread")
                     return
 
-                # Use adaptive timeout: block indefinitely when stats panel hidden,
+                # Use adaptive timeout: block up to DEVICE_CHECK_INTERVAL when stats panel hidden,
                 # use 1s timeout when visible for responsive updates
                 is_visible = (
                     self.stats_panel_visible_getter()
                     if self.stats_panel_visible_getter
                     else self._stats_panel_visible
                 )
-                timeout = 1.0 if is_visible else None
+                timeout = 1.0 if is_visible else DEVICE_CHECK_INTERVAL
 
                 try:
                     r, _, _ = select(devices, [], [], timeout)
@@ -186,13 +216,22 @@ class EvdevHandler:
                     # If select keeps returning empty, add exponential backoff
                     if consecutive_empty_selects > max_empty_selects:
                         backoff = min(5.0, 0.1 * (consecutive_empty_selects - max_empty_selects))
-                        log.warning(
+                        log.debug(
                             f"Select returned empty {consecutive_empty_selects} times, "
                             f"backing off {backoff:.1f}s"
                         )
                         self._stop_event.wait(backoff)
                 else:
                     consecutive_empty_selects = 0  # Reset on successful select
+
+                # Periodically check for new keyboard devices
+                current_time = time.time()
+                if current_time - self._last_device_check_time >= DEVICE_CHECK_INTERVAL:
+                    self._last_device_check_time = current_time
+                    try:
+                        devices = self._check_for_new_devices(devices)
+                    except Exception as e:
+                        log.error(f"Error checking for new devices: {e}")
 
                 for device in r:
                     if not self.running:
