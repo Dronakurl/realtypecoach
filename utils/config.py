@@ -1,6 +1,7 @@
 """Configuration management for RealTypeCoach."""
 
 import json
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,8 @@ import sqlcipher3 as sqlite3
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from utils.crypto import CryptoManager
+
+log = logging.getLogger("realtypecoach.config")
 
 
 class AppSettings(BaseModel):
@@ -219,29 +222,69 @@ class Config:
         return conn
 
     def _init_settings_table(self) -> None:
-        """Create settings table if not exists."""
+        """Create settings table if not exists and ensure updated_at column exists."""
+        import time
+
         with self._get_connection() as conn:
+            # Create table with updated_at column
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
+                    value TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL
                 )
             """)
             conn.commit()
 
+            # Migration: Add updated_at column if missing (for old databases)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(settings)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if "updated_at" not in columns:
+                log.info("Migrating settings table: adding updated_at column")
+                # For SQLite, we need to recreate the table to add a column with NOT NULL
+                # Get existing data
+                cursor.execute("SELECT key, value FROM settings")
+                existing_data = cursor.fetchall()
+
+                # Create new table with updated_at
+                conn.execute("""
+                    CREATE TABLE settings_new (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                """)
+
+                # Copy data with current timestamp
+                now_ms = int(time.time() * 1000)
+                for key, value in existing_data:
+                    cursor.execute(
+                        "INSERT INTO settings_new (key, value, updated_at) VALUES (?, ?, ?)",
+                        (key, value, now_ms),
+                    )
+
+                # Drop old table and rename new one
+                conn.execute("DROP TABLE settings")
+                conn.execute("ALTER TABLE settings_new RENAME TO settings")
+                conn.commit()
+
     def _ensure_defaults(self) -> None:
         """Ensure all default settings exist in database."""
+        import time
+
         defaults = AppSettings().model_dump()
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            now_ms = int(time.time() * 1000)
             for key, value in defaults.items():
                 cursor.execute(
                     """
-                    INSERT OR IGNORE INTO settings (key, value)
-                    VALUES (?, ?)
+                    INSERT OR IGNORE INTO settings (key, value, updated_at)
+                    VALUES (?, ?, ?)
                 """,
-                    (key, self._serialize_value(value)),
+                    (key, self._serialize_value(value), now_ms),
                 )
             conn.commit()
 
@@ -424,14 +467,20 @@ class Config:
             except Exception as e:
                 raise ValueError(f"Invalid value for {key}: {e}")
 
-        # Store value (validated or custom)
+        # Store value (validated or custom) with timestamp
+        import time
+
+        timestamp_ms = int(time.time() * 1000)
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO settings (key, value)
-                VALUES (?, ?)
+                INSERT INTO settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
             """,
-                (key, self._serialize_value(value)),
+                (key, self._serialize_value(value), timestamp_ms),
             )
             conn.commit()
 

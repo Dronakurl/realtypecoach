@@ -241,7 +241,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
         """)
 
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_digraph_statistics_user_id ON digraph_statistics(user_id)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_digraph_statistics_user_id ON digraph_statistics(user_id)"
+        )
 
     def _create_high_scores_table(self, conn: pg_connection) -> None:
         """Create high_scores table."""
@@ -352,9 +354,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 PRIMARY KEY (user_id, key)
             )
         """)
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id)"
-        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id)")
 
     def _create_users_table(self, conn: pg_connection) -> None:
         """Create users table."""
@@ -1778,10 +1778,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor = conn.cursor()
 
             # Get all words from word_statistics for this user
-            cursor.execute(
-                "SELECT word FROM word_statistics WHERE user_id = %s",
-                (self.user_id,)
-            )
+            cursor.execute("SELECT word FROM word_statistics WHERE user_id = %s", (self.user_id,))
             words_to_check = [row[0] for row in cursor.fetchall()]
 
             # Filter to find ignored words
@@ -1789,10 +1786,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             if ignored_words:
                 # Build placeholders for IN clause
-                placeholders = ','.join(['%s'] * len(ignored_words))
+                placeholders = ",".join(["%s"] * len(ignored_words))
                 cursor.execute(
                     f"DELETE FROM word_statistics WHERE word IN ({placeholders}) AND user_id = %s",
-                    ignored_words + [self.user_id]
+                    ignored_words + [self.user_id],
                 )
                 conn.commit()
                 return cursor.rowcount
@@ -1889,7 +1886,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 "SELECT key, value, updated_at FROM settings WHERE user_id = %s",
                 (self.user_id,),
             )
-            return [{"key": row[0], "value": row[1], "updated_at": row[2]} for row in cursor.fetchall()]
+            return [
+                {"key": row[0], "value": row[1], "updated_at": row[2]} for row in cursor.fetchall()
+            ]
 
     def batch_insert_settings(self, records: list[dict]) -> int:
         """Batch insert setting records.
@@ -2284,6 +2283,67 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     total_duration_ms = EXCLUDED.total_duration_ms,
                     observation_count = EXCLUDED.observation_count,
                     last_seen = EXCLUDED.last_seen,
+                    encrypted_data = EXCLUDED.encrypted_data
+            """,
+                data_tuples,
+            )
+
+            conn.commit()
+            return len(records)
+
+    def batch_update_digraph_statistics(
+        self, records: list[dict], encrypted_data_list: list[bytes | None]
+    ) -> int:
+        """Batch update digraph statistics records using INSERT...ON CONFLICT DO UPDATE.
+
+        Args:
+            records: List of digraph statistics dictionaries
+            encrypted_data_list: List of encrypted data (same length as records)
+
+        Returns:
+            Number of records updated
+        """
+        if not records:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Prepare data tuples
+            data_tuples = []
+            for i, r in enumerate(records):
+                data_tuples.append(
+                    (
+                        r.get("first_keycode"),
+                        r.get("second_keycode"),
+                        r.get("first_key"),
+                        r.get("second_key"),
+                        r.get("layout"),
+                        r.get("avg_interval_ms"),
+                        r.get("total_sequences"),
+                        r.get("slowest_ms"),
+                        r.get("fastest_ms"),
+                        r.get("last_updated"),
+                        self.user_id,
+                        encrypted_data_list[i] if i < len(encrypted_data_list) else None,
+                    )
+                )
+
+            # Use execute_batch with upsert for efficient bulk update
+            execute_batch(
+                cursor,
+                """
+                INSERT INTO digraph_statistics
+                (first_keycode, second_keycode, first_key, second_key, layout,
+                 avg_interval_ms, total_sequences, slowest_ms, fastest_ms, last_updated, user_id, encrypted_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, first_keycode, second_keycode, layout)
+                DO UPDATE SET
+                    avg_interval_ms = EXCLUDED.avg_interval_ms,
+                    total_sequences = EXCLUDED.total_sequences,
+                    slowest_ms = EXCLUDED.slowest_ms,
+                    fastest_ms = EXCLUDED.fastest_ms,
+                    last_updated = EXCLUDED.last_updated,
                     encrypted_data = EXCLUDED.encrypted_data
             """,
                 data_tuples,

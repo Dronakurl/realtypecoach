@@ -47,6 +47,7 @@ class SyncManager:
     SYNC_TABLES = [
         "bursts",
         "statistics",
+        "digraph_statistics",
         "word_statistics",
         "high_scores",
         "daily_summaries",
@@ -200,6 +201,8 @@ class SyncManager:
             return record.get("start_time")
         elif table == "statistics":
             return (record.get("keycode"), record.get("layout"))
+        elif table == "digraph_statistics":
+            return (record.get("first_keycode"), record.get("second_keycode"), record.get("layout"))
         elif table == "word_statistics":
             return (record.get("word"), record.get("layout"))
         elif table == "high_scores":
@@ -243,6 +246,12 @@ class SyncManager:
                 and local.get("slowest_ms") == remote.get("slowest_ms")
                 and local.get("fastest_ms") == remote.get("fastest_ms")
             )
+
+        elif table == "digraph_statistics":
+            # Compare all numeric fields with tolerance for floats
+            return self._float_equal(
+                local.get("avg_interval_ms"), remote.get("avg_interval_ms")
+            ) and local.get("total_sequences") == remote.get("total_sequences")
 
         elif table == "word_statistics":
             # Compare all numeric fields
@@ -445,6 +454,37 @@ class SyncManager:
                                 f"Statistics update affected 0 rows: keycode={record.get('keycode')}, layout={record.get('layout')}"
                             )
 
+                elif table == "digraph_statistics":
+                    for record in records:
+                        cursor.execute(
+                            """
+                            UPDATE digraph_statistics
+                            SET avg_interval_ms = ?,
+                                total_sequences = ?,
+                                slowest_ms = ?,
+                                fastest_ms = ?,
+                                last_updated = ?
+                            WHERE first_keycode = ? AND second_keycode = ? AND layout = ?
+                        """,
+                            (
+                                record.get("avg_interval_ms"),
+                                record.get("total_sequences"),
+                                record.get("slowest_ms"),
+                                record.get("fastest_ms"),
+                                record.get("last_updated"),
+                                record.get("first_keycode"),
+                                record.get("second_keycode"),
+                                record.get("layout"),
+                            ),
+                        )
+                        if cursor.rowcount > 0:
+                            updated_count += 1
+                        else:
+                            log.warning(
+                                f"Digraph statistics update affected 0 rows: "
+                                f"{record.get('first_key')}{record.get('second_key')} layout={record.get('layout')}"
+                            )
+
                 elif table == "word_statistics":
                     for record in records:
                         cursor.execute(
@@ -570,6 +610,8 @@ class SyncManager:
         # Delegate to adapter's batch_update method
         if table == "statistics":
             return self.remote.batch_update_statistics(records, encrypted_data_list)
+        elif table == "digraph_statistics":
+            return self.remote.batch_update_digraph_statistics(records, encrypted_data_list)
         elif table == "word_statistics":
             return self.remote.batch_update_word_statistics(records, encrypted_data_list)
         elif table == "high_scores":
@@ -645,6 +687,35 @@ class SyncManager:
                         )
             except Exception as e:
                 error_msg = f"Failed to get local statistics: {e}"
+                log.error(error_msg)
+                raise RuntimeError(error_msg) from e
+
+        elif table == "digraph_statistics":
+            try:
+                with self.local.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT first_keycode, second_keycode, first_key, second_key, layout,
+                               avg_interval_ms, total_sequences, slowest_ms, fastest_ms, last_updated
+                        FROM digraph_statistics
+                    """)
+                    for row in cursor.fetchall():
+                        data.append(
+                            {
+                                "first_keycode": row[0],
+                                "second_keycode": row[1],
+                                "first_key": row[2],
+                                "second_key": row[3],
+                                "layout": row[4],
+                                "avg_interval_ms": row[5],
+                                "total_sequences": row[6],
+                                "slowest_ms": row[7],
+                                "fastest_ms": row[8],
+                                "last_updated": row[9],
+                            }
+                        )
+            except Exception as e:
+                error_msg = f"Failed to get local digraph statistics: {e}"
                 log.error(error_msg)
                 raise RuntimeError(error_msg) from e
 
@@ -827,6 +898,42 @@ class SyncManager:
                                 raise RuntimeError(error_msg) from e
                         data.append(record)
 
+            elif table == "digraph_statistics":
+                with self.remote.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """
+                        SELECT first_keycode, second_keycode, first_key, second_key, layout,
+                               avg_interval_ms, total_sequences, slowest_ms, fastest_ms, last_updated, encrypted_data
+                        FROM digraph_statistics
+                        WHERE user_id = %s
+                    """,
+                        (self.user_id,),
+                    )
+                    for row in cursor.fetchall():
+                        record = {
+                            "first_keycode": row[0],
+                            "second_keycode": row[1],
+                            "first_key": row[2],
+                            "second_key": row[3],
+                            "layout": row[4],
+                            "avg_interval_ms": row[5],
+                            "total_sequences": row[6],
+                            "slowest_ms": row[7],
+                            "fastest_ms": row[8],
+                            "last_updated": row[9],
+                        }
+                        # Decrypt if encrypted
+                        if row[10] and self.encryption:
+                            try:
+                                decrypted = self.encryption.decrypt_digraph_statistics(row[10])
+                                record = {**record, **decrypted}
+                            except Exception as e:
+                                error_msg = f"Failed to decrypt digraph statistics for {row[2]}{row[3]} layout={row[4]}: {e}"
+                                log.error(error_msg)
+                                raise RuntimeError(error_msg) from e
+                        data.append(record)
+
             elif table == "word_statistics":
                 with self.remote.get_connection() as conn:
                     cursor = conn.cursor()
@@ -1005,6 +1112,31 @@ class SyncManager:
                         ),
                     )
 
+                elif table == "digraph_statistics":
+                    cursor.execute(
+                        """
+                        INSERT INTO digraph_statistics
+                        (first_keycode, second_keycode, first_key, second_key, layout,
+                         avg_interval_ms, total_sequences, slowest_ms, fastest_ms, last_updated, user_id, encrypted_data)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, first_keycode, second_keycode, layout) DO NOTHING
+                    """,
+                        (
+                            record.get("first_keycode"),
+                            record.get("second_keycode"),
+                            record.get("first_key"),
+                            record.get("second_key"),
+                            record.get("layout"),
+                            record.get("avg_interval_ms"),
+                            record.get("total_sequences"),
+                            record.get("slowest_ms"),
+                            record.get("fastest_ms"),
+                            record.get("last_updated"),
+                            self.user_id,
+                            encrypted_data,
+                        ),
+                    )
+
                 elif table == "word_statistics":
                     cursor.execute(
                         """
@@ -1084,9 +1216,7 @@ class SyncManager:
 
                 elif table == "settings":
                     # Use adapter's upsert_setting method
-                    self.remote.upsert_setting(
-                        key=record.get("key"), value=record.get("value")
-                    )
+                    self.remote.upsert_setting(key=record.get("key"), value=record.get("value"))
 
                 conn.commit()
             return True
@@ -1138,6 +1268,28 @@ class SyncManager:
                             record.get("layout"),
                             record.get("avg_press_time"),
                             record.get("total_presses"),
+                            record.get("slowest_ms"),
+                            record.get("fastest_ms"),
+                            record.get("last_updated"),
+                        ),
+                    )
+
+                elif table == "digraph_statistics":
+                    cursor.execute(
+                        """
+                        INSERT OR IGNORE INTO digraph_statistics
+                        (first_keycode, second_keycode, first_key, second_key, layout,
+                         avg_interval_ms, total_sequences, slowest_ms, fastest_ms, last_updated)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            record.get("first_keycode"),
+                            record.get("second_keycode"),
+                            record.get("first_key"),
+                            record.get("second_key"),
+                            record.get("layout"),
+                            record.get("avg_interval_ms"),
+                            record.get("total_sequences"),
                             record.get("slowest_ms"),
                             record.get("fastest_ms"),
                             record.get("last_updated"),
@@ -1213,9 +1365,7 @@ class SyncManager:
 
                 elif table == "settings":
                     # Use adapter's upsert_setting method
-                    self.local.upsert_setting(
-                        key=record.get("key"), value=record.get("value")
-                    )
+                    self.local.upsert_setting(key=record.get("key"), value=record.get("value"))
 
                 conn.commit()
             return True
@@ -1246,6 +1396,17 @@ class SyncManager:
             remote_presses = remote.get("total_presses", 0)
 
             if local_presses >= remote_presses:
+                return local
+            else:
+                return remote
+
+        elif table == "digraph_statistics":
+            # Take the record with more sequences (more complete data)
+            # Both sides track the same digraphs, so don't sum them
+            local_sequences = local.get("total_sequences", 0)
+            remote_sequences = remote.get("total_sequences", 0)
+
+            if local_sequences >= remote_sequences:
                 return local
             else:
                 return remote
@@ -1324,6 +1485,20 @@ class SyncManager:
                 layout=record.get("layout", ""),
                 avg_press_time=record.get("avg_press_time", 0),
                 total_presses=record.get("total_presses", 0),
+                slowest_ms=record.get("slowest_ms", 0),
+                fastest_ms=record.get("fastest_ms", 0),
+                last_updated=record.get("last_updated", 0),
+            )
+
+        elif table == "digraph_statistics":
+            return self.encryption.encrypt_digraph_statistics(
+                first_keycode=record.get("first_keycode", 0),
+                second_keycode=record.get("second_keycode", 0),
+                first_key=record.get("first_key", ""),
+                second_key=record.get("second_key", ""),
+                layout=record.get("layout", ""),
+                avg_interval_ms=record.get("avg_interval_ms", 0),
+                total_sequences=record.get("total_sequences", 0),
                 slowest_ms=record.get("slowest_ms", 0),
                 fastest_ms=record.get("fastest_ms", 0),
                 last_updated=record.get("last_updated", 0),

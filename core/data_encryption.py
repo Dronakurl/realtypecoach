@@ -257,6 +257,61 @@ class DataEncryption:
         """
         return self.decrypt_record(encrypted_b64)
 
+    def encrypt_digraph_statistics(
+        self,
+        first_keycode: int,
+        second_keycode: int,
+        first_key: str,
+        second_key: str,
+        layout: str,
+        avg_interval_ms: float,
+        total_sequences: int,
+        slowest_ms: float,
+        fastest_ms: float,
+        last_updated: int,
+    ) -> str:
+        """Encrypt digraph statistics data.
+
+        Args:
+            first_keycode: First key keycode
+            second_keycode: Second key keycode
+            first_key: First key name
+            second_key: Second key name
+            layout: Keyboard layout
+            avg_interval_ms: Average interval between keys
+            total_sequences: Total number of sequences observed
+            slowest_ms: Slowest interval
+            fastest_ms: Fastest interval
+            last_updated: Last updated timestamp
+
+        Returns:
+            Base64 encoded encrypted data
+        """
+        record = {
+            "first_keycode": first_keycode,
+            "second_keycode": second_keycode,
+            "first_key": first_key,
+            "second_key": second_key,
+            "layout": layout,
+            "avg_interval_ms": avg_interval_ms,
+            "total_sequences": total_sequences,
+            "slowest_ms": slowest_ms,
+            "fastest_ms": fastest_ms,
+            "last_updated": last_updated,
+        }
+        return self.encrypt_record(record)
+
+    def decrypt_digraph_statistics(self, encrypted_b64: str) -> dict[str, Any]:
+        """Decrypt digraph statistics data.
+
+        Args:
+            encrypted_b64: Base64 encoded encrypted data
+
+        Returns:
+            Dictionary with digraph statistics fields
+        """
+        return self.decrypt_record(encrypted_b64)
+
     def encrypt_high_score(
         self,
         date: str,
