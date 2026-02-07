@@ -19,7 +19,6 @@ Usage:
 
 import argparse
 import hashlib
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -27,6 +26,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+import sqlcipher3 as sqlite3  # noqa: E402
+
+from utils.crypto import CryptoManager  # noqa: E402
 
 # The hardcoded pepper from hash_manager.py
 PEPPER = bytes.fromhex("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b")
@@ -54,55 +56,39 @@ def hash_word(word: str, encryption_key: bytes) -> str:
 
 def get_db_path() -> Path:
     """Get the database path."""
-    config_dir = (
-        Path(__import__("os").environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
-        / "realtypecoach"
-    )
-
-    db_path = config_dir / "realtypecoach.db"
-    if not db_path.exists():
-        # Try project directory
-        db_path = project_root / "realtypecoach.db"
-
-    return db_path
+    return Path.home() / ".local" / "share" / "realtypecoach" / "typing_data.db"
 
 
-def get_ignored_hashes(db_path: Path) -> list[tuple[str, int]]:
+def get_db_connection(db_path: Path):
+    """Get encrypted database connection."""
+    crypto = CryptoManager(db_path)
+    key = crypto.get_key()
+
+    if not key:
+        print("Error: No encryption key found in keyring")
+        sys.exit(1)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(f"PRAGMA key = \"x'{key.hex()}'\"")
+    return conn
+
+
+def get_ignored_hashes(conn) -> list[tuple[str, int]]:
     """Retrieve all ignored word hashes from the database."""
-    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     try:
         cursor.execute("SELECT word_hash, added_at FROM ignored_words ORDER BY added_at DESC")
         return cursor.fetchall()
     except sqlite3.OperationalError:
-        print(f"Note: ignored_words table doesn't exist in {db_path}")
+        print("Note: ignored_words table doesn't exist in the database")
         return []
-    finally:
-        conn.close()
 
 
 def get_encryption_key(db_path: Path) -> bytes | None:
-    """Get the encryption key from keyring."""
-    try:
-        import keyring
-
-        # Try to get the password from keyring
-        password = keyring.get_password("realtypecoach", "encryption_key")
-        if password:
-            # The password is stored as hex
-            return bytes.fromhex(password)
-    except ImportError:
-        pass
-    except Exception:
-        pass
-
-    # Try environment variable
-    env_key = __import__("os").environ.get("REALTYPECOACH_ENCRYPTION_KEY")
-    if env_key:
-        return bytes.fromhex(env_key)
-
-    return None
+    """Get the encryption key from CryptoManager."""
+    crypto = CryptoManager(db_path)
+    return crypto.get_key()
 
 
 def check_wordlist(hashes: list[str], wordlist_path: Path, encryption_key: bytes) -> dict:
@@ -132,7 +118,6 @@ def main():
     )
     parser.add_argument("--wordlist", "-w", type=Path, help="Check hashes against a wordlist file")
     parser.add_argument("--db", type=Path, help="Path to database file")
-    parser.add_argument("--key", "-k", type=str, help="Encryption key (hex string)")
     args = parser.parse_args()
 
     # Get database path
@@ -144,33 +129,29 @@ def main():
 
     print(f"Using database: {db_path}\n")
 
-    # Get encryption key
-    encryption_key = None
-    if args.key:
-        try:
-            encryption_key = bytes.fromhex(args.key)
-        except ValueError:
-            print("Error: Invalid hex string for encryption key")
-            sys.exit(1)
-    else:
-        encryption_key = get_encryption_key(db_path)
+    # Get encryption key and connection
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
+    except Exception as e:
+        print(f"Error: Could not open encrypted database: {e}")
+        sys.exit(1)
+
+    # Get encryption key for hashing
+    crypto = CryptoManager(db_path)
+    encryption_key = crypto.get_key()
 
     if encryption_key is None:
-        print("Warning: Could not get encryption key from keyring or environment.")
-        print(
-            "Without the encryption key, we cannot hash words to match against the stored hashes."
-        )
-        print("We can only display the raw hashes.\n")
-        print("To provide the key manually:")
-        print("  --key <hex_key>    Provide encryption key as hex string\n")
-    else:
-        print(f"Encryption key: {'✓ Found (' + len(encryption_key) * '•' + ')'}")
-        user_salt = derive_user_salt(encryption_key)
-        print(f"User salt derived: {user_salt.hex()[:32]}...")
-        print()
+        print("Error: No encryption key found in keyring")
+        sys.exit(1)
+
+    print(f"Encryption key: {'✓ Found (' + len(encryption_key) * '•' + ')'}")
+    user_salt = derive_user_salt(encryption_key)
+    print(f"User salt derived: {user_salt.hex()[:32]}...")
+    print()
 
     # Get ignored hashes
-    ignored_data = get_ignored_hashes(db_path)
+    ignored_data = get_ignored_hashes(conn)
 
     if not ignored_data:
         print("No ignored words found in database.")
@@ -187,8 +168,8 @@ def main():
         print(f"    Added: {added_dt.strftime('%Y-%m-%d %H:%M:%S')}")
         print()
 
-    # If we have encryption key and wordlist, try to find matches
-    if encryption_key and args.wordlist:
+    # If wordlist provided, try to find matches
+    if args.wordlist:
         if not args.wordlist.exists():
             print(f"Error: Wordlist not found at {args.wordlist}")
             sys.exit(1)
@@ -207,12 +188,13 @@ def main():
             print("Matched words:")
             for word, word_hash in matches.items():
                 print(f"  - {word}")
-
-    elif encryption_key and not args.wordlist:
+    else:
         print("\nTip: Use --wordlist to check these hashes against a dictionary.")
         print("  Example: python scripts/retrieve_ignored_words.py -w /usr/share/dict/words")
         print("\nOr if you have a guess at what words might be ignored,")
         print("create a text file with one word per line and check it.")
+
+    conn.close()
 
 
 if __name__ == "__main__":
