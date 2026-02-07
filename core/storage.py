@@ -878,7 +878,11 @@ class Storage:
         # Get enabled languages from config
         enabled_langs = set()
         if hasattr(self, "config") and hasattr(self.config, "enabled_dictionaries"):
-            dict_paths = self.config.enabled_dictionaries.split(",") if self.config.enabled_dictionaries else []
+            dict_paths = (
+                self.config.enabled_dictionaries.split(",")
+                if self.config.enabled_dictionaries
+                else []
+            )
             from utils.dict_detector import DictionaryDetector
 
             for path in dict_paths:

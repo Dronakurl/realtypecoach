@@ -1719,10 +1719,9 @@ class SQLiteAdapter(DatabaseAdapter):
 
             if ignored_words:
                 # Build placeholders for IN clause
-                placeholders = ','.join('?' * len(ignored_words))
+                placeholders = ",".join("?" * len(ignored_words))
                 cursor.execute(
-                    f"DELETE FROM word_statistics WHERE word IN ({placeholders})",
-                    ignored_words
+                    f"DELETE FROM word_statistics WHERE word IN ({placeholders})", ignored_words
                 )
                 conn.commit()
                 return cursor.rowcount
@@ -1806,7 +1805,9 @@ class SQLiteAdapter(DatabaseAdapter):
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value, updated_at FROM settings")
-            return [{"key": row[0], "value": row[1], "updated_at": row[2]} for row in cursor.fetchall()]
+            return [
+                {"key": row[0], "value": row[1], "updated_at": row[2]} for row in cursor.fetchall()
+            ]
 
     def batch_insert_settings(self, records: list[dict]) -> int:
         """Batch insert setting records.

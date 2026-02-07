@@ -77,8 +77,12 @@ class CryptoManager:
         try:
             if keyring.get_password(service, username) is not None:
                 return  # Already have a path-specific key
-        except KeyringError:
-            pass
+        except (KeyringError, UnicodeDecodeError):
+            # Corrupted key in keyring - clean it up
+            try:
+                keyring.delete_password(service, username)
+            except Exception:
+                pass
 
         # Try to get legacy key - only migrate if it exists
         legacy_key = self._get_legacy_key()
@@ -100,8 +104,13 @@ class CryptoManager:
         try:
             key = keyring.get_password(service, username)
             return key is not None
-        except KeyringError as e:
+        except (KeyringError, UnicodeDecodeError) as e:
             log.error(f"Error accessing keyring: {e}")
+            # Clean up corrupted key
+            try:
+                keyring.delete_password(service, username)
+            except Exception:
+                pass
             return False
 
     def generate_key(self) -> bytes:
@@ -150,8 +159,13 @@ class CryptoManager:
             if key_hex:
                 self._cached_key = bytes.fromhex(key_hex)
                 return self._cached_key
-        except KeyringError as e:
+        except (KeyringError, UnicodeDecodeError) as e:
             log.error(f"Error retrieving key from keyring: {e}")
+            # Clean up corrupted key
+            try:
+                keyring.delete_password(service, username)
+            except Exception:
+                pass
 
         return None
 

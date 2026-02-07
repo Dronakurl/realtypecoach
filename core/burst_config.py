@@ -1,11 +1,11 @@
 """Burst detector configuration with Pydantic validation."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class DurationCalculationMethod(str, Enum):
+class DurationCalculationMethod(StrEnum):
     """Method for calculating burst duration."""
 
     TOTAL_TIME = "total_time"

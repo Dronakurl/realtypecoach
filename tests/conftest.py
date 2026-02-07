@@ -2,10 +2,35 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from utils.crypto import CryptoManager
+
+
+class InMemoryKeyring:
+    """Simple in-memory keyring for tests to avoid DBus issues."""
+
+    def __init__(self):
+        self._passwords: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self._passwords.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self._passwords[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        self._passwords.pop((service, username), None)
+
+
+@pytest.fixture(autouse=True)
+def mock_keyring():
+    """Use in-memory keyring for all tests to avoid DBus race conditions."""
+    mock = InMemoryKeyring()
+    with patch("utils.crypto.keyring", mock):
+        yield mock
 
 
 @pytest.fixture

@@ -316,7 +316,7 @@ def test_delete_key_only_affects_specific_database():
                 pass
 
 
-def test_legacy_key_migration():
+def test_legacy_key_migration(mock_keyring):
     """Test that legacy keys are automatically migrated."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
@@ -325,11 +325,9 @@ def test_legacy_key_migration():
         # Create a legacy-style key using the old hardcoded identifiers
         try:
             legacy_key = secrets.token_bytes(32)
-            import keyring
-
             from utils.crypto import KEY_SERVICE, KEY_USERNAME
 
-            keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())
+            mock_keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())
 
             # Create a new CryptoManager - it should auto-migrate the legacy key
             crypto_new = CryptoManager(db_path)
@@ -343,7 +341,9 @@ def test_legacy_key_migration():
             assert not crypto_new.key_exists()
 
             # The legacy key should still exist (not deleted by delete_key())
-            legacy_key_still_exists = keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
+            legacy_key_still_exists = (
+                mock_keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
+            )
             assert legacy_key_still_exists
         finally:
             # Clean up both the path-based key and the legacy key
@@ -354,12 +354,12 @@ def test_legacy_key_migration():
             try:
                 from utils.crypto import KEY_SERVICE, KEY_USERNAME
 
-                keyring.delete_password(KEY_SERVICE, KEY_USERNAME)
+                mock_keyring.delete_password(KEY_SERVICE, KEY_USERNAME)
             except Exception:
                 pass
 
 
-def test_delete_legacy_key_method():
+def test_delete_legacy_key_method(mock_keyring):
     """Test the delete_legacy_key() cleanup method."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
@@ -367,20 +367,18 @@ def test_delete_legacy_key_method():
 
         # Create a legacy-style key
         try:
-            import keyring
-
             from utils.crypto import KEY_SERVICE, KEY_USERNAME
 
             legacy_key = secrets.token_bytes(32)
-            keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())
+            mock_keyring.set_password(KEY_SERVICE, KEY_USERNAME, legacy_key.hex())
 
             # Verify legacy key exists
-            assert keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
+            assert mock_keyring.get_password(KEY_SERVICE, KEY_USERNAME) is not None
 
             # Delete legacy key using the utility method
             crypto.delete_legacy_key()
 
             # Legacy key should now be gone
-            assert keyring.get_password(KEY_SERVICE, KEY_USERNAME) is None
+            assert mock_keyring.get_password(KEY_SERVICE, KEY_USERNAME) is None
         except Exception:
             pass

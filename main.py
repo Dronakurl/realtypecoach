@@ -701,7 +701,9 @@ class Application(QObject):
                 slowest = self.analyzer.get_slowest_digraphs(
                     limit=10, layout=self.get_current_layout()
                 )
-                log.info(f"Got {len(fastest)} fastest and {len(slowest)} slowest digraphs, emitting signal")
+                log.info(
+                    f"Got {len(fastest)} fastest and {len(slowest)} slowest digraphs, emitting signal"
+                )
                 self.signal_update_digraph_stats.emit(fastest, slowest)
                 log.info("Digraph signal emitted successfully")
             except Exception as e:

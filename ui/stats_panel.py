@@ -119,7 +119,7 @@ class StatsPanel(QWidget):
             pixmap = QPixmap(size, size)
             pixmap.fill(Qt.transparent)
 
-            from PySide6.QtGui import QPainter, QPen, QFontMetricsF
+            from PySide6.QtGui import QFontMetricsF, QPainter, QPen
 
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.Antialiasing)
@@ -137,6 +137,7 @@ class StatsPanel(QWidget):
 
             # Draw rounded rectangle for key cap
             from PySide6.QtCore import QRectF
+
             key_rect = QRectF(margin, margin, key_width, key_height)
             painter.drawRoundedRect(key_rect, corner_radius, corner_radius)
 
@@ -513,7 +514,9 @@ class StatsPanel(QWidget):
 
         digraphs_layout.addWidget(slowest_digraphs_widget)
 
-        tab_widget.addTab(digraphs_tab, self._create_palette_aware_icon("format-text-underline"), "Digraphs")
+        tab_widget.addTab(
+            digraphs_tab, self._create_palette_aware_icon("format-text-underline"), "Digraphs"
+        )
 
         # Tab 5: Trends (NEW)
         trends_tab = QWidget()
@@ -814,7 +817,11 @@ class StatsPanel(QWidget):
             # Format min/max/95th percentile as subtitle
             min_display = f"{min_ms / 1000:.1f}s" if min_ms >= 1000 else f"{min_ms}ms"
             max_display = f"{max_ms / 1000:.1f}s" if max_ms >= 1000 else f"{max_ms}ms"
-            p95_display = f"{percentile_95_ms / 1000:.1f}s" if percentile_95_ms >= 1000 else f"{percentile_95_ms}ms"
+            p95_display = (
+                f"{percentile_95_ms / 1000:.1f}s"
+                if percentile_95_ms >= 1000
+                else f"{percentile_95_ms}ms"
+            )
             self.avg_burst_time_subtitle_label.setText(
                 f"95%: {p95_display} • min: {min_display} • max: {max_display}"
             )

@@ -126,7 +126,9 @@ class SyncHandler(QObject):
 
                 # If remote has exclude_names_enabled=True and local was False, update config and delete names
                 if remote_exclude_names and not local_exclude_names:
-                    log.info("Remote exclude_names_enabled is True, deleting names from local database")
+                    log.info(
+                        "Remote exclude_names_enabled is True, deleting names from local database"
+                    )
                     try:
                         deleted_count = self.storage.delete_all_names_from_database()
                         log.info(f"Deleted {deleted_count} name statistics after sync")
