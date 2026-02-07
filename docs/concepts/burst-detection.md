@@ -1,171 +1,55 @@
 # Burst Detection
 
-## Overview
+Burst detection identifies continuous typing periods, separating them from rest periods to measure **sustained typing speed**.
 
-Burst detection identifies continuous periods of typing activity, separating them from rest periods. This allows RealTypeCoach to measure your **sustained typing speed** rather than just individual keystrokes.
+## What is a Burst?
 
-## What is a "Burst"?
+A **burst** is a sequence of keystrokes without a long pause. A pause longer than `burst_timeout_ms` ends the burst and a new one begins on the next keystroke.
 
-A **burst** is a continuous sequence of keystrokes without a long pause.
-
-**Example:**
-```
-User types: "hello world"
-Time: 0s    0.1s  0.2s  0.3s  0.5s  0.6s  ...  2.0s  2.1s  2.2s
-Keys:  h      e     l     l     o     w     ...  pause  o     r     l     d
-
-Burst: From 'h' to first 'd' (2.2 seconds)
-Then pause before next typing...
-```
-
-## Burst Timeout
-
-RealTypeCoach uses a **burst timeout** to determine when typing has stopped:
-
-- **Default timeout: 3 seconds** (3000ms)
-- If no key press for 3+ seconds → **Burst ends**
-- New key press after timeout → **New burst begins**
-
-**Configurable** in settings (`burst_timeout_ms`)
-
-## Why Burst Detection Matters
-
-### 1. Measures Real Typing Speed
-
-Individual keystrokes don't tell the whole story:
-
-```
-Without burst detection:
-- 60 keystrokes per minute = 60 WPM ( misleading! )
-
-With burst detection:
-- Typed 100 chars in 30 seconds of actual typing
-- Rest of time: thinking, reading, coffee
-- Real burst WPM = 200 WPM (more accurate!)
-```
-
-### 2. Identifies Flow State
-
-Bursts represent periods of **focused typing** where you:
-- Know what you want to type
-- Don't need to think about spelling
-- Are "in the zone"
-
-### 3. Distinguishes Typing vs. Other Activities
-
-Separates:
-- **Active typing**: Writing code, composing emails
-- **Not typing**: Reading, thinking, away from keyboard
-
-## Burst Detection Algorithm
-
-```
-1. User presses a key
-   ↓
-2. If previous burst exists and within timeout:
-   → Add to current burst
-   ↓
-3. Else (timeout exceeded or no burst):
-   → Finalize previous burst
-   → Start new burst
-   ↓
-4. Repeat for each key press
-```
-
-## Burst Statistics
-
-For each burst, RealTypeCoach tracks:
-
-1. **Start time**: When the first key was pressed
-2. **End time**: When the burst ended (timeout)
-3. **Duration**: `end_time - start_time` (in milliseconds)
-4. **Key count**: Number of keystrokes in the burst
-5. **WPM**: Calculated from key count and duration
-
-## High Score Qualification
-
-Not all bursts qualify as "high scores":
-
-**Minimum duration: 10 seconds** (default)
-
-**Rationale:**
-- Short bursts (1-2 keystrokes) are unrealistic
-- Typing a single word quickly ≠ sustainable speed
-- 10+ seconds indicates real typing endurance
-
-**Configurable** in settings (`high_score_min_duration_ms`)
-
-## Example Scenarios
-
-### Scenario 1: Continuous Typing
-```
-Type a paragraph at 80 WPM for 30 seconds
-→ 1 burst, 30 seconds duration, 80 WPM
-→ ✓ Qualifies for high score (10s+ duration)
-```
-
-### Scenario 2: With Pauses
-```
-Type sentence, pause to think (2s), continue
-→ Still 1 burst (2s < 3s timeout)
-→ No split unless pause exceeds 3 seconds
-```
-
-### Scenario 3: Short Bursts
-```
-Type "hello" (0.5s), pause 5s, type "world" (0.5s)
-→ 2 separate bursts
-→ Neither qualifies for high score (both < 10s)
-→ Still tracked for overall statistics
-```
-
-## WPM Calculation in Bursts
-
-```
-WPM = (keystrokes / 5) / (duration_minutes)
-
-Example:
-- Keystrokes: 250
-- Duration: 30 seconds = 0.5 minutes
-- Words: 250 / 5 = 50 words
-- WPM: 50 / 0.5 = 100 WPM
-```
-
-**Standard**: 5 characters = 1 word (industry standard)
-
-## Data Storage
-
-Bursts are stored in the `bursts` table:
-
-```sql
-CREATE TABLE bursts (
-    id INTEGER PRIMARY KEY,
-    start_time INTEGER NOT NULL,        -- When burst started (ms since epoch)
-    end_time INTEGER NOT NULL,          -- When burst ended (ms since epoch)
-    key_count INTEGER NOT NULL,         -- Number of keystrokes
-    duration_ms INTEGER NOT NULL,       -- Duration in milliseconds
-    avg_wpm REAL,                       -- Words per minute during burst
-    qualifies_for_high_score INTEGER    -- 1 if meets minimum duration, else 0
-)
-```
-
-## Configurable Settings
+## Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `burst_timeout_ms` | 3000ms | Max pause before burst ends |
-| `high_score_min_duration_ms` | 10000ms | Min duration for high score |
+| `burst_timeout_ms` | 1000ms (1s) | Max pause before burst ends |
+| `high_score_min_duration_ms` | 10000ms (10s) | Min duration for high score |
+| `duration_calculation_method` | `total_time` | How burst duration is calculated |
+| `active_time_threshold_ms` | 500ms | For `active_time` method, max gap to count |
+| `min_key_count` | 10 | Min keystrokes to record a burst |
+| `min_duration_ms` | 5000ms | Min duration to record a burst |
 
-## Common Questions
+## Duration Calculation Methods
 
-**Q: Why is my burst WPM higher than daily average?**
-A: Bursts measure active typing only. Daily average includes all pauses.
+**`total_time`** (default): Time from first to last keystroke in the burst.
 
-**Q: What if I type very slowly?**
-A: You'll have longer bursts (fewer keystrokes per minute) but still accurate WPM.
+**`active_time`**: Sum of intervals between consecutive keystrokes that are shorter than `active_time_threshold_ms`. Longer gaps within a burst are excluded from duration.
 
-**Q: Can I change the timeout?**
-A: Yes, in settings. Lower = more bursts, higher = fewer bursts.
+Example with `active_time`: Keys typed at t=0, 200, 500, 1500, 1700ms with threshold=500ms:
+- Intervals: 200, 300, **1000** (exceeds threshold), 200
+- Active duration: 200 + 300 + 200 = **700ms** (not 1700ms)
 
-**Q: Do short bursts matter?**
-A: They contribute to overall statistics but not "personal best" high scores.
+## Why Bursts Matter
+
+- **Real typing speed**: Measures active typing, not thinking time
+- **Flow state indicator**: Continuous typing vs. fragmented activity
+- **Fair comparison**: Like typing tests (active typing only)
+
+## WPM Calculation
+
+```
+WPM = (net_keystrokes / 5) / (duration_minutes)
+
+where net_keystrokes = keystrokes - (backspaces × 2)
+```
+
+Standard: 5 characters = 1 word.
+
+## Qualification
+
+Not all bursts are equal:
+
+| Criterion | Threshold |
+|-----------|-----------|
+| **Recorded** | ≥10 keystrokes AND ≥5 seconds |
+| **High score** | ≥10 seconds duration |
+
+Short bursts are excluded from "personal best" to prevent inflated scores from typing a single word quickly.
