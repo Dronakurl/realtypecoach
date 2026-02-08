@@ -224,6 +224,12 @@ class Application(QObject):
         if deleted_count > 0:
             log.info(f"Cleaned {deleted_count} ignored word entries from database")
 
+        # Clean common names from database (if exclude_names is enabled)
+        if exclude_names_enabled:
+            deleted_names = self.storage.delete_all_names_from_database()
+            if deleted_names > 0:
+                log.info(f"Cleaned {deleted_names} common name entries from database")
+
         current_layout = get_current_layout()
         print(f"Detected keyboard layout: {current_layout}")
 
