@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Test</title></head>
+<body style="background: #1a1a1a; color: #e0e0e0; font-family: monospace; font-size: 24px; padding: 40px;">
+<div id="text"></div>
+<script>
+const params = new URLSearchParams(window.location.search);
+const text = params.get('text') || 'DEFAULT TEXT';
+document.getElementById('text').textContent = text;
+console.log('URL param text:', text);
+</script>
+</body>
+</html>

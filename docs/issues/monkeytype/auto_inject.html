@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Auto Inject to Monkeytype</title>
+</head>
+<body>
+    <h2>Opening Monkeytype with custom text...</h2>
+    <p id="status">Preparing...</p>
+
+    <script>
+        const text = "Das Nilpferd in der Achterbahn";
+        const words = text.split(/\s+/);
+        const textName = "rtc_" + Date.now();
+
+        // Set localStorage for monkeytype.com
+        // Note: This only works if we're on the same origin
+        // So we'll open monkeytype.com and inject there
+
+        document.getElementById('status').textContent = "Opening Monkeytype in new tab...";
+
+        // Open monkeytype.com
+        const monkeytype = window.open("https://monkeytype.com", "_blank");
+
+        // Try to inject after a delay (won't work due to cross-origin)
+        setTimeout(() => {
+            alert("Switch to the Monkeytype tab and press Ctrl+Shift+J to open console, then paste the code from bookmarklet.html");
+        }, 1000);
+    </script>
+</body>
+</html>
