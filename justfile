@@ -283,3 +283,31 @@ test-evdev:
         traceback.print_exc()
         sys.exit(1)
     '
+
+# Ollama Text Generation
+# Test Ollama text generation with a prompt
+ollama-test prompt:
+    .venv/bin/python3 scripts/ollama_test.py "{{prompt}}"
+
+# Start Ollama service
+start-ollama:
+    bash ./scripts/start_ollama.sh
+
+# Database Migrations
+# Create a new migration with descriptive name
+migrate-create name:
+    @.venv/bin/alembic revision -m "{{name}}"
+
+# Run database migrations to latest version
+migrate-upgrade:
+    @echo "Running database migrations..."
+    @.venv/bin/python3 -c "from pathlib import Path; from utils.crypto import CryptoManager; from core.sqlite_migration_runner import SQLiteMigrationRunner; db = Path.home() / '.local/share/realtypecoach/typing_data.db'; crypto = CryptoManager(db); migration_dir = Path.cwd() / 'migrations'; runner = SQLiteMigrationRunner(db, migration_dir); print(f'Current version: {runner.get_current_version() or \"none\"}'); runner.upgrade(); print(f'New version: {runner.get_current_version()}')"
+
+# Show current database migration version
+migrate-status:
+    @echo "Current database migration version:"
+    @.venv/bin/alembic current 2>/dev/null || echo "Alembic not initialized or database not found"
+
+# Show migration history
+migrate-history:
+    @.venv/bin/alembic history

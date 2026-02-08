@@ -164,6 +164,17 @@ class AppSettings(BaseModel):
         description="Automatic sync interval in seconds (60-86400)",
     )
 
+    # LLM Settings
+    llm_model: str = Field(
+        default="gemma2:2b",
+        description="Ollama model to use for text generation",
+    )
+    llm_active_prompt_id: int = Field(
+        default=-1,
+        ge=-1,
+        description="Active prompt ID (-1 = use first prompt)",
+    )
+
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
     @field_validator("active_time_threshold_ms")

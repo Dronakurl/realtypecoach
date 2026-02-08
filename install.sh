@@ -127,7 +127,21 @@ cp -r "$SCRIPT_DIR"/core "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR"/ui "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR"/utils "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR"/tests "$INSTALL_DIR/"
+# Copy migrations directory for Alembic
+cp -r "$SCRIPT_DIR"/migrations "$INSTALL_DIR/"
+# Copy alembic.ini for migration configuration
+cp "$SCRIPT_DIR"/alembic.ini "$INSTALL_DIR/"
 print_status "OK" "Application files copied to: $INSTALL_DIR"
+
+# Copy prompt template if it doesn't exist (don't overwrite user customization)
+if [ ! -f "$INSTALL_DIR/prompt.txt" ]; then
+    if [ -f "$SCRIPT_DIR/prompt.txt" ]; then
+        cp "$SCRIPT_DIR/prompt.txt" "$INSTALL_DIR/"
+        print_status "OK" "Default prompt template installed"
+    fi
+else
+    print_status "OK" "Keeping existing prompt.txt (user customization preserved)"
+fi
 
 echo ""
 echo "Step 7: Generating icons..."

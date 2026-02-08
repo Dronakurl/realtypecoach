@@ -223,6 +223,9 @@ class Application(QObject):
             ignore_file_path=CONFIG_DIR / "ignorewords.txt",
         )
 
+        # Initialize default LLM prompts if needed
+        self.storage.initialize_default_prompts()
+
         # Clean ignored words from database
         deleted_count = self.storage.clean_ignored_words()
         if deleted_count > 0:
@@ -281,8 +284,9 @@ class Application(QObject):
 
         self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
 
-        # Initialize Ollama client
-        self.ollama_client = OllamaClient()
+        # Initialize Ollama client with model from config
+        model = self.config.get("llm_model", "gemma2:2b")
+        self.ollama_client = OllamaClient(model=model)
 
         self.tray_icon = TrayIcon(
             self.stats_panel,
@@ -376,6 +380,7 @@ class Application(QObject):
         self.tray_icon.settings_requested.connect(self.show_settings_dialog)
         self.tray_icon.stats_requested.connect(self.update_statistics)
         self.tray_icon.about_requested.connect(self.show_about_dialog)
+        self.tray_icon.monkeytype_practice_requested.connect(self.practice_hardest_words_monkeytype)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
@@ -833,19 +838,22 @@ class Application(QObject):
                     )
                     return
 
-                # Load prompt template
-                from pathlib import Path
-
-                prompt_path = Path(__file__).parent / "ollama_prompt.txt"
+                # Load prompt template from database
                 try:
-                    with open(prompt_path, "r", encoding="utf-8") as f:
-                        prompt_template = f.read()
-                except FileNotFoundError:
-                    log.error(f"Prompt file not found: {prompt_path}")
-                    self.signal_text_generation_failed.emit(
-                        "Prompt template file not found"
-                    )
-                    return
+                    prompt_data = self.storage.get_active_prompt()
+
+                    if prompt_data:
+                        prompt_template = prompt_data['content']
+                        log.debug(f"Using active prompt: {prompt_data['name']}")
+                    else:
+                        # Fallback to built-in minimal prompt
+                        prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
+                        log.warning("No prompts found, using fallback")
+
+                except Exception as e:
+                    log.error(f"Failed to load prompt from database: {e}")
+                    # Use fallback prompt
+                    prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
 
                 # Format prompt
                 hardest_words = [w.word for w in words[:min(count, 50)]]
@@ -884,6 +892,155 @@ class Application(QObject):
 
         # Initial check
         self.check_ollama_availability()
+
+    def practice_hardest_words_monkeytype(self) -> None:
+        """Practice hardest words in Monkeytype.
+
+        Generates text using Ollama, then injects into Firefox and opens Monkeytype.
+        Uses configured word count from settings.
+        """
+        import subprocess
+        from pathlib import Path
+
+        def generate_and_practice():
+            try:
+                # Get word count from settings
+                word_count = self.config.get_int("llm_word_count", 50)
+
+                # Show initial notification with word count
+                self.tray_icon.show_notification(
+                    "Monkeytype",
+                    f"Generating {word_count} words of practice text with Ollama...",
+                    "info"
+                )
+                log.info(f"Starting Monkeytype practice: generating {word_count} words")
+
+                # Fetch hardest words (up to word count)
+                words = self.analyzer.get_slowest_words(
+                    limit=min(word_count, 100),  # Cap at 100 words
+                    layout=self.get_current_layout()
+                )
+
+                if not words:
+                    log.warning("No words available for Monkeytype practice")
+                    self.tray_icon.show_notification(
+                        "Monkeytype",
+                        "No typing data available yet. Type more first!",
+                        "warning"
+                    )
+                    return
+
+                # Load prompt template from database
+                try:
+                    prompt_data = self.storage.get_active_prompt()
+
+                    if prompt_data:
+                        prompt_template = prompt_data['content']
+                        log.debug(f"Using active prompt: {prompt_data['name']}")
+                    else:
+                        # Fallback to built-in minimal prompt
+                        prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
+                        log.warning("No prompts found, using fallback")
+
+                except Exception as e:
+                    log.error(f"Failed to load prompt from database: {e}")
+                    # Use fallback prompt
+                    prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
+
+                # Format prompt
+                hardest_words = [w.word for w in words[:min(word_count, 50)]]  # Use up to 50 words in prompt
+                hardest_words_str = ", ".join(hardest_words)
+                prompt = prompt_template.format(
+                    word_count=word_count,
+                    hardest_words=hardest_words_str
+                )
+
+                log.info(f"Sending prompt to Ollama (target: {word_count} words)")
+
+                # Generate text synchronously (OllamaClient runs in thread)
+                generated_text = self.ollama_client.generate_text_sync(prompt, hardest_words)
+
+                if not generated_text:
+                    log.error("Ollama text generation failed or returned empty")
+                    self.tray_icon.show_notification(
+                        "Monkeytype Error",
+                        "Failed to generate text. Is Ollama running?",
+                        "error"
+                    )
+                    return
+
+                actual_word_count = len(generated_text.split())
+                log.info(f"Ollama generated {actual_word_count} words")
+
+                # Get the script path
+                script_path = Path(__file__).parent / "scripts" / "firefox_inject.py"
+
+                if not script_path.exists():
+                    log.error(f"firefox_inject.py not found at {script_path}")
+                    self.tray_icon.show_notification(
+                        "Monkeytype Error",
+                        "firefox_inject.py script not found",
+                        "error"
+                    )
+                    return
+
+                # Truncate text if too long (for command line)
+                words_list = generated_text.split()[:100]  # Limit to 100 words
+                text_to_inject = " ".join(words_list)
+
+                log.info(f"Injecting generated text to Monkeytype: {len(words_list)} words")
+
+                # Show progress notification
+                self.tray_icon.show_notification(
+                    "Monkeytype",
+                    f"Text generated! Opening Firefox with {len(words_list)} words...",
+                    "info"
+                )
+
+                # Close all Firefox windows first
+                subprocess.run(["killall", "firefox"], stderr=subprocess.DEVNULL, timeout=5)
+                import time
+                time.sleep(1)  # Wait for Firefox to close
+
+                # Run the injection script
+                result = subprocess.run(
+                    ["python3", str(script_path), text_to_inject],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if result.returncode == 0:
+                    log.info("Successfully opened Monkeytype with generated text")
+                    self.tray_icon.show_notification(
+                        "Monkeytype",
+                        f"Practice session ready! {len(words_list)} words loaded."
+                    )
+                else:
+                    log.error(f"Failed to inject: {result.stderr}")
+                    self.tray_icon.show_notification(
+                        "Monkeytype Error",
+                        "Failed to inject text. See logs.",
+                        "error"
+                    )
+
+            except subprocess.TimeoutExpired:
+                log.error("Firefox operation timed out")
+                self.tray_icon.show_notification(
+                    "Monkeytype Error",
+                    "Operation timed out",
+                    "error"
+                )
+            except Exception as e:
+                log.error(f"Error in practice_hardest_words_monkeytype: {e}")
+                self.tray_icon.show_notification(
+                    "Monkeytype Error",
+                    f"Error: {str(e)}",
+                    "error"
+                )
+
+        # Run in background thread
+        self._executor.submit(generate_and_practice)
 
     def process_event_queue(self) -> None:
         """Process events from queue."""
@@ -1126,10 +1283,20 @@ class Application(QObject):
             # Auto-sync settings
             "auto_sync_enabled": self.config.get_bool("auto_sync_enabled", False),
             "auto_sync_interval_sec": self.config.get_int("auto_sync_interval_sec", 300),
+            # LLM settings
+            "llm_model": self.config.get("llm_model", "gemma2:2b"),
+            "llm_active_prompt_id": self.config.get_int("llm_active_prompt_id", -1),
         }
         dialog = SettingsDialog(
             current_settings, storage=self.storage, sync_handler=self.sync_handler
         )
+
+        # Set Ollama availability and fetch available models
+        dialog.set_ollama_available(self.ollama_client.check_server_available())
+        if self.ollama_client.check_server_available():
+            models = self.ollama_client.list_models()
+            dialog._available_models = models
+
         if dialog.exec() == QDialog.Accepted:
             # Use dialog.settings if it was set by clear_data/export_csv, otherwise get fresh settings
             if dialog.settings:
@@ -1137,6 +1304,13 @@ class Application(QObject):
             else:
                 new_settings = dialog.get_settings()
             self.apply_settings(new_settings)
+
+            # Refresh model if it changed
+            if "llm_model" in new_settings:
+                new_model = new_settings["llm_model"]
+                if new_model != self.ollama_client.model:
+                    self.ollama_client.model = new_model
+                    log.info(f"LLM model changed to: {new_model}")
 
     def show_about_dialog(self) -> None:
         """Show about dialog."""
