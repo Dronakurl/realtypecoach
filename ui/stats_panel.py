@@ -1,5 +1,7 @@
 """Statistics panel for RealTypeCoach."""
 
+import logging
+
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import (
@@ -18,6 +20,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.models import DigraphPerformance, KeyPerformance, TypingTimeDataPoint, WordStatisticsLite
+
+log = logging.getLogger("realtypecoach.stats_panel")
 
 
 class StatsPanel(QWidget):
@@ -435,12 +439,16 @@ class StatsPanel(QWidget):
             self.hardest_words_table.setItem(i, 2, QTableWidgetItem("--"))
         hardest_words_layout.addWidget(self.hardest_words_table)
 
-        # Controls row for clipboard functionality
-        controls_layout = QHBoxLayout()
+        # Controls area for clipboard functionality (2 rows)
+        controls_layout = QVBoxLayout()
+        controls_layout.setSpacing(8)  # Space between rows
+
+        # Row 1: Copy controls
+        copy_row = QHBoxLayout()
 
         count_label = QLabel("Copy:")
         count_label.setStyleSheet("font-size: 12px; color: #666;")
-        controls_layout.addWidget(count_label)
+        copy_row.addWidget(count_label)
 
         self.hardest_words_count_combo = QComboBox()
         self.hardest_words_count_combo.addItem("10", 10)
@@ -452,14 +460,36 @@ class StatsPanel(QWidget):
         self.hardest_words_count_combo.addItem("1000", 1000)
         self.hardest_words_count_combo.setCurrentIndex(0)  # Default to 10
         self.hardest_words_count_combo.setMaximumWidth(80)
-        controls_layout.addWidget(self.hardest_words_count_combo)
+        copy_row.addWidget(self.hardest_words_count_combo)
 
         self.copy_hardest_words_btn = QPushButton("📋 Copy Words")
         self.copy_hardest_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.copy_hardest_words_btn.clicked.connect(self.copy_hardest_words_to_clipboard)
-        controls_layout.addWidget(self.copy_hardest_words_btn)
+        copy_row.addWidget(self.copy_hardest_words_btn)
 
-        controls_layout.addStretch()
+        copy_row.addStretch()
+        controls_layout.addLayout(copy_row)
+
+        # Row 2: Monkeytype and Generate Text buttons
+        action_row = QHBoxLayout()
+
+        self.monkeytype_btn = QPushButton("🐵 Monkeytype")
+        self.monkeytype_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.monkeytype_btn.clicked.connect(self.practice_in_monkeytype)
+        self.monkeytype_btn.setToolTip("Open clipboard text in Monkeytype for practice")
+        action_row.addWidget(self.monkeytype_btn)
+
+        self.generate_text_btn = QPushButton("✨ Generate Text")
+        self.generate_text_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.generate_text_btn.setVisible(False)  # Hidden until Ollama detected
+        self.generate_text_btn.setToolTip("Generate practice text using Ollama (uses word count from LLM settings)")
+        self.generate_text_btn.clicked.connect(self.generate_text_with_ollama)
+        self._original_button_text = "✨ Generate Text"  # Store original text for restoration
+        action_row.addWidget(self.generate_text_btn)
+
+        action_row.addStretch()
+        controls_layout.addLayout(action_row)
+
         hardest_words_layout.addLayout(controls_layout)
 
         words_layout.addWidget(hardest_words_widget)
@@ -582,9 +612,6 @@ class StatsPanel(QWidget):
             long_term_avg: Long-term average WPM
             all_time_best: All-time best WPM
         """
-        import logging
-
-        log = logging.getLogger("realtypecoach.stats_panel")
         log.info(f"update_wpm() called: burst_wpm={burst_wpm:.1f}, visible={self.isVisible()}")
 
         if not self.isVisible():
@@ -1035,6 +1062,73 @@ class StatsPanel(QWidget):
         if app and hasattr(app, "tray_icon"):
             app.tray_icon.show_notification("Copy Words", message)
 
+    def practice_in_monkeytype(self) -> None:
+        """Open clipboard text in Monkeytype for practice."""
+        import subprocess
+        from PySide6.QtGui import QClipboard
+
+        # Get text from clipboard
+        clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
+
+        if not clipboard_text or not clipboard_text.strip():
+            # Show error if clipboard is empty
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification(
+                    "Monkeytype Error",
+                    "Clipboard is empty. Copy some text first."
+                )
+            return
+
+        # Get the script path
+        from pathlib import Path
+        script_path = Path(__file__).parent.parent / "scripts" / "firefox_inject.py"
+
+        if not script_path.exists():
+            log.error(f"firefox_inject.py not found at {script_path}")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification(
+                    "Monkeytype Error",
+                    "firefox_inject.py script not found"
+                )
+            return
+
+        # Run the injection script
+        try:
+            # Truncate text if too long (for command line)
+            words = clipboard_text.split()[:100]  # Limit to 100 words
+            text_to_inject = " ".join(words)
+
+            log.info(f"Injecting text to Monkeytype: {len(words)} words")
+            result = subprocess.run(
+                ["python3", str(script_path), text_to_inject],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if result.returncode == 0:
+                log.info("Successfully injected text to Monkeytype")
+                app = QApplication.instance()
+                if app and hasattr(app, "tray_icon"):
+                    app.tray_icon.show_notification(
+                        "Monkeytype",
+                        f"Opened with {len(words)} words from clipboard"
+                    )
+            else:
+                log.error(f"Failed to inject: {result.stderr}")
+                app = QApplication.instance()
+                if app and hasattr(app, "tray_icon"):
+                    app.tray_icon.show_notification(
+                        "Monkeytype Error",
+                        "Failed to inject text. See logs."
+                    )
+        except subprocess.TimeoutExpired:
+            log.error("firefox_inject.py timed out")
+        except Exception as e:
+            log.error(f"Error running firefox_inject.py: {e}")
+
     def set_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words for clipboard.
 
@@ -1055,6 +1149,156 @@ class StatsPanel(QWidget):
             callback: Function to call when new data is needed
         """
         self._digraph_data_callback = callback
+
+    def set_text_generation_callback(self, callback) -> None:
+        """Set callback for Ollama text generation.
+
+        Args:
+            callback: Function to call with (count) parameter
+        """
+        self._request_text_generation_callback = callback
+
+    def set_ollama_available(self, available: bool) -> None:
+        """Show/hide generate button based on Ollama availability.
+
+        Args:
+            available: True if Ollama server is running
+        """
+        self.generate_text_btn.setVisible(available)
+
+    def generate_text_with_ollama(self) -> None:
+        """Generate text using Ollama with configured word count from settings."""
+        log.info("Generate text button clicked")
+
+        # Get word count from application config (LLM settings), not from combo box
+        # Combo box is for "Copy Words" feature, generation uses configured word count
+        app = QApplication.instance()
+        if app and hasattr(app, "config"):
+            count = app.config.get_int("llm_word_count", 50)
+        else:
+            count = 50  # Fallback default
+
+        log.info(f"Requesting {count} words for generation (from LLM settings)")
+
+        if hasattr(self, "_request_text_generation_callback"):
+            # Update button to show generation in progress
+            self.generate_text_btn.setEnabled(False)
+            self.generate_text_btn.setText("⏳ Generating...")
+            log.info(f"Calling text generation callback with count={count}")
+            self._request_text_generation_callback(count)
+        else:
+            log.error("_request_text_generation_callback not set - cannot generate text")
+            # Show error immediately
+            self.on_text_generation_failed("Text generation callback not initialized. Please restart the application.")
+
+    def on_text_generated(self, text: str) -> None:
+        """Handle generated text - copy to clipboard.
+
+        Args:
+            text: Generated text from Ollama
+        """
+        from PySide6.QtCore import QTimer
+        from PySide6.QtGui import QClipboard
+
+        # Copy to clipboard (both selection and clipboard)
+        self._clipboard.setText(text, QClipboard.Mode.Selection)
+        self._clipboard.setText(text, QClipboard.Mode.Clipboard)
+
+        # Restore button state
+        self.generate_text_btn.setEnabled(True)
+        word_count = len(text.split())
+        self.generate_text_btn.setText(f"✓ {word_count} words copied!")
+
+        # Reset button text after 2 seconds
+        QTimer.singleShot(2000, lambda: self.generate_text_btn.setText(self._original_button_text))
+
+        # Show notification
+        app = QApplication.instance()
+        if app and hasattr(app, "tray_icon"):
+            app.tray_icon.show_notification(
+                "Text Generated",
+                f"Copied {word_count} words to clipboard"
+            )
+
+    def on_text_generation_failed(self, error: str) -> None:
+        """Handle generation failure.
+
+        Args:
+            error: Error message
+        """
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QLabel, QPushButton, QTextEdit
+        from PySide6.QtGui import QClipboard
+
+        # Log the error
+        log.error(f"Text generation failed: {error}")
+
+        # Restore button state
+        self.generate_text_btn.setEnabled(True)
+        self.generate_text_btn.setText(f"✗ Failed")
+
+        # Reset button text after 3 seconds
+        QTimer.singleShot(3000, lambda: self.generate_text_btn.setText(self._original_button_text))
+
+        # Show error dialog with copy button
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Text Generation Failed")
+        dialog.setMinimumWidth(500)
+
+        layout = QVBoxLayout()
+        dialog.setLayout(layout)
+
+        # Error message
+        error_label = QLabel("<b>Failed to generate practice text</b>")
+        error_label.setWordWrap(True)
+        layout.addWidget(error_label)
+
+        # Error details (in a text box for copying)
+        error_text = QTextEdit()
+        error_text.setPlainText(str(error))
+        error_text.setReadOnly(True)
+        error_text.setMaximumHeight(150)
+        layout.addWidget(error_text)
+
+        # Copy button
+        copy_btn = QPushButton("📋 Copy Error to Clipboard")
+        copy_btn.clicked.connect(lambda: self._copy_error_to_clipboard(str(error), dialog))
+        layout.addWidget(copy_btn)
+
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec()
+
+        # Also show tray notification if available
+        app = QApplication.instance()
+        if app and hasattr(app, "tray_icon"):
+            app.tray_icon.show_notification(
+                "Generation Failed",
+                f"Error: {error}"
+            )
+
+    def _copy_error_to_clipboard(self, error_text: str, dialog: QDialog) -> None:
+        """Copy error text to clipboard.
+
+        Args:
+            error_text: Error message to copy
+            dialog: Dialog to close after copying
+        """
+        from PySide6.QtGui import QClipboard
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(error_text)
+
+        # Show brief confirmation
+        close_btn = dialog.findChild(QPushButton, "Close")
+        if close_btn:
+            original_text = close_btn.text()
+            close_btn.setText("✓ Copied!")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1000, lambda: close_btn.setText(original_text))
 
     def update_digraph_stats(
         self, fastest: list[DigraphPerformance], slowest: list[DigraphPerformance]

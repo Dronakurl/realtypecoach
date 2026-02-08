@@ -79,12 +79,33 @@ class SettingsDialog(QDialog):
         self.storage = storage
         self.sync_handler = sync_handler
         self.settings: dict = {}
+        # Track Ollama availability
+        self.ollama_available = False
+        # Internal storage for available models (property setter refreshes the dropdown)
+        self._available_models_internal: list[str] = []
         # Set window flags for Wayland compatibility
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.init_ui()
         self.load_current_settings()
         # Connect sync signals after UI is initialized
         self._connect_sync_signals()
+
+    @property
+    def _available_models(self) -> list[str]:
+        """Get available Ollama models."""
+        return self._available_models_internal
+
+    @_available_models.setter
+    def _available_models(self, models: list[str]) -> None:
+        """Set available Ollama models and refresh dropdown.
+
+        Args:
+            models: List of available model names
+        """
+        self._available_models_internal = models
+        # Refresh the dropdown after a delay to ensure UI is fully initialized
+        if hasattr(self, 'llm_model_combo') and self.ollama_available:
+            QTimer.singleShot(0, self._refresh_llm_models)
 
     @staticmethod
     def _create_palette_aware_icon(theme_name: str) -> QIcon:
@@ -261,17 +282,17 @@ class SettingsDialog(QDialog):
         tabs.addTab(notification_tab, "Notifications")
         tabs.setTabIcon(1, self._create_palette_aware_icon("preferences-desktop-notification"))
 
-        data_tab = self.create_data_tab()
-        tabs.addTab(data_tab, "Data")
-        tabs.setTabIcon(2, self._create_palette_aware_icon("database"))
-
         language_tab = self.create_language_tab()
         tabs.addTab(language_tab, "Language")
-        tabs.setTabIcon(3, self._create_palette_aware_icon("accessories-dictionary"))
+        tabs.setTabIcon(2, self._create_palette_aware_icon("accessories-dictionary"))
 
         database_tab = self.create_database_tab()
         tabs.addTab(database_tab, "Database")
-        tabs.setTabIcon(4, self._create_palette_aware_icon("network-server"))
+        tabs.setTabIcon(3, self._create_palette_aware_icon("network-server"))
+
+        llm_tab = self.create_llm_tab()
+        tabs.addTab(llm_tab, "LLM")
+        tabs.setTabIcon(4, self._create_palette_aware_icon("text-x-script"))
 
         dialog_buttons = QHBoxLayout()
         ok_btn = QPushButton("OK")
@@ -444,6 +465,39 @@ class SettingsDialog(QDialog):
         display_group.setLayout(display_layout)
         layout.addWidget(display_group)
 
+        # Data Management Group (moved from Data tab)
+        data_group = QGroupBox("Data Management")
+        data_layout = QFormLayout()
+
+        self.retention_combo = QComboBox()
+        self.retention_combo.addItem("Keep forever", -1)
+        self.retention_combo.addItem("30 days", 30)
+        self.retention_combo.addItem("60 days", 60)
+        self.retention_combo.addItem("90 days", 90)
+        self.retention_combo.addItem("180 days", 180)
+        self.retention_combo.addItem("365 days", 365)
+        data_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Keep data for:",
+                "How long to keep typing history. 'Keep forever' never deletes data.",
+            ),
+            self.retention_combo,
+        )
+
+        data_actions_layout = QHBoxLayout()
+        export_btn = QPushButton("Export to CSV")
+        export_btn.clicked.connect(self.export_csv)
+        data_actions_layout.addWidget(export_btn)
+
+        clear_btn = QPushButton("Clear All Data")
+        clear_btn.clicked.connect(self.clear_data)
+        clear_btn.setStyleSheet("QPushButton { background-color: #d32f2f; color: white; }")
+        data_actions_layout.addWidget(clear_btn)
+
+        data_layout.addRow(data_actions_layout)
+        data_group.setLayout(data_layout)
+        layout.addWidget(data_group)
+
         layout.addStretch()
         widget.setLayout(layout)
         return widget
@@ -573,52 +627,6 @@ class SettingsDialog(QDialog):
 
         speed_group.setLayout(speed_layout)
         layout.addWidget(speed_group)
-
-        layout.addStretch()
-        widget.setLayout(layout)
-        return widget
-
-    def create_data_tab(self) -> QWidget:
-        """Create data management tab."""
-        widget = QWidget()
-        layout = QVBoxLayout()
-
-        retention_group = QGroupBox("Data Retention")
-        retention_layout = QFormLayout()
-
-        self.retention_combo = QComboBox()
-        self.retention_combo.addItem("Keep forever", -1)
-        self.retention_combo.addItem("30 days", 30)
-        self.retention_combo.addItem("60 days", 60)
-        self.retention_combo.addItem("90 days", 90)
-        self.retention_combo.addItem("180 days", 180)
-        self.retention_combo.addItem("365 days", 365)
-        retention_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Keep data for:",
-                "How long to keep typing history. 'Keep forever' never deletes data.",
-            ),
-            self.retention_combo,
-        )
-
-        retention_group.setLayout(retention_layout)
-        layout.addWidget(retention_group)
-
-        # Data Actions Group
-        actions_group = QGroupBox("Data Actions")
-        actions_layout = QHBoxLayout()
-
-        export_btn = QPushButton("Export to CSV")
-        export_btn.clicked.connect(self.export_csv)
-        actions_layout.addWidget(export_btn)
-
-        clear_btn = QPushButton("Clear All Data")
-        clear_btn.clicked.connect(self.clear_data)
-        actions_layout.addWidget(clear_btn)
-
-        actions_layout.addStretch()
-        actions_group.setLayout(actions_layout)
-        layout.addWidget(actions_group)
 
         layout.addStretch()
         widget.setLayout(layout)
@@ -907,6 +915,168 @@ class SettingsDialog(QDialog):
         self.postgres_sync_enabled_check.stateChanged.connect(self.on_postgres_sync_changed)
 
         return widget
+
+    def create_llm_tab(self) -> QWidget:
+        """Create LLM settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        # Status Group
+        status_group = QGroupBox("Connection Status")
+        status_layout = QVBoxLayout()
+
+        self.llm_status_label = QLabel("Checking connection...")
+        self.llm_status_label.setStyleSheet("font-weight: bold;")
+        status_layout.addWidget(self.llm_status_label)
+
+        info_label = QLabel("Ollama must be running to use LLM features. Start with: just start-ollama")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: gray; font-size: 11px;")
+        status_layout.addWidget(info_label)
+
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
+
+        # Model Selection Group
+        model_group = QGroupBox("Model Selection")
+        model_layout = QFormLayout()
+
+        self.llm_model_combo = QComboBox()
+        self.llm_model_combo.setMinimumWidth(300)
+        model_layout.addRow("Model:", self.llm_model_combo)
+
+        refresh_models_btn = QPushButton("Refresh Models")
+        refresh_models_btn.clicked.connect(self._refresh_llm_models)
+        model_layout.addRow("", refresh_models_btn)
+
+        # Add test button row with button and result label
+        test_layout = QHBoxLayout()
+        test_llm_btn = QPushButton("🧪 Test Connection")
+        test_llm_btn.clicked.connect(self._test_llm_connection)
+        test_layout.addWidget(test_llm_btn)
+
+        self.llm_test_result = QLabel()
+        self.llm_test_result.setWordWrap(True)
+        self.llm_test_result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        test_layout.addWidget(self.llm_test_result, stretch=1)
+
+        model_layout.addRow("", test_layout)
+
+        model_group.setLayout(model_layout)
+        layout.addWidget(model_group)
+
+        # Text Generation Settings Group
+        text_group = QGroupBox("Text Generation")
+        text_layout = QFormLayout()
+
+        self.llm_word_count_spin = QSpinBox()
+        self.llm_word_count_spin.setMinimum(10)
+        self.llm_word_count_spin.setMaximum(500)
+        self.llm_word_count_spin.setValue(50)
+        self.llm_word_count_spin.setSingleStep(10)
+        self.llm_word_count_spin.setToolTip("Number of words to generate in practice text")
+        text_layout.addRow("Target Word Count:", self.llm_word_count_spin)
+
+        word_count_info = QLabel(
+            "This controls the approximate length of generated practice text. "
+            "The actual length may vary based on the LLM's response."
+        )
+        word_count_info.setWordWrap(True)
+        word_count_info.setStyleSheet("color: gray; font-size: 10px;")
+        text_layout.addRow("", word_count_info)
+
+        text_group.setLayout(text_layout)
+        layout.addWidget(text_group)
+
+        # Prompt Management Group
+        prompt_group = QGroupBox("Prompt Templates")
+        prompt_layout = QVBoxLayout()
+
+        # Prompt selector
+        selector_layout = QHBoxLayout()
+        selector_layout.addWidget(QLabel("Active Prompt:"))
+
+        self.llm_prompt_combo = QComboBox()
+        self.llm_prompt_combo.setMinimumWidth(250)
+        selector_layout.addWidget(self.llm_prompt_combo)
+
+        prompt_layout.addLayout(selector_layout)
+
+        # Prompt editor
+        editor_layout = QVBoxLayout()
+        editor_layout.addWidget(QLabel("Prompt Template:"))
+
+        self.llm_prompt_editor = QTextEdit()
+        self.llm_prompt_editor.setPlaceholderText(
+            "Use {word_count} and {hardest_words} placeholders..."
+        )
+        self.llm_prompt_editor.setMinimumHeight(150)
+        editor_layout.addWidget(self.llm_prompt_editor)
+
+        # Buttons
+        buttons_layout = QHBoxLayout()
+
+        save_prompt_btn = QPushButton("Save Prompt")
+        save_prompt_btn.clicked.connect(self._save_llm_prompt)
+        buttons_layout.addWidget(save_prompt_btn)
+
+        delete_prompt_btn = QPushButton("Delete")
+        delete_prompt_btn.clicked.connect(self._delete_llm_prompt)
+        delete_prompt_btn.setStyleSheet("QPushButton { background-color: #d32f2f; color: white; }")
+        buttons_layout.addWidget(delete_prompt_btn)
+
+
+        reset_defaults_btn = QPushButton("Reset All to Defaults")
+        reset_defaults_btn.clicked.connect(self._reset_llm_prompts)
+        reset_defaults_btn.setStyleSheet("QPushButton { background-color: #f57c00; color: white; }")
+        buttons_layout.addWidget(reset_defaults_btn)
+
+        editor_layout.addLayout(buttons_layout)
+        prompt_layout.insertLayout(1, editor_layout)
+
+        # Placeholders info
+        placeholders_label = QLabel(
+            "Available placeholders:\n"
+            "• {word_count} - Target length for generated text (uses setting above)\n"
+            "• {hardest_words} - Comma-separated list of your hardest words\n\n"
+            "Example: 'Generate a {word_count} word practice text using these words: {hardest_words}'"
+        )
+        placeholders_label.setStyleSheet("color: gray; font-size: 10px; padding: 5px;")
+        placeholders_label.setWordWrap(True)
+        prompt_layout.addWidget(placeholders_label)
+
+        prompt_group.setLayout(prompt_layout)
+        layout.addWidget(prompt_group)
+
+        # Add stretch to push everything to top
+        layout.addStretch()
+
+        widget.setLayout(layout)
+        return widget
+
+    def set_ollama_available(self, available: bool) -> None:
+        """Set Ollama availability and update LLM tab.
+
+        Args:
+            available: True if Ollama is available
+        """
+        self.ollama_available = available
+
+        # Find LLM tab and enable/disable
+        tabs = self.findChild(QTabWidget)
+        if tabs:
+            llm_tab_index = tabs.count() - 1  # LLM is last tab
+            tabs.setTabEnabled(llm_tab_index, available)
+
+            # Update status label
+            if hasattr(self, "llm_status_label"):
+                if available:
+                    model = self.current_settings.get("llm_model", "Unknown")
+                    self.llm_status_label.setText(f"✓ Connected: {model}")
+                    self.llm_status_label.setStyleSheet("color: green;")
+                else:
+                    self.llm_status_label.setText("✗ Not connected")
+                    self.llm_status_label.setStyleSheet("color: red;")
 
     def on_postgres_sync_changed(self) -> None:
         """Handle PostgreSQL sync checkbox change."""
@@ -1392,6 +1562,242 @@ class SettingsDialog(QDialog):
             self.ignore_status_label.setText(f"Word '{word}' is already in the ignored list.")
             self.ignore_status_label.setStyleSheet("color: orange; font-style: italic;")
 
+    # ========== LLM Tab Handlers ==========
+
+    def _refresh_llm_models(self) -> None:
+        """Refresh available Ollama models."""
+        from PySide6.QtWidgets import QMessageBox
+
+        if not self.ollama_available:
+            QMessageBox.warning(self, "Ollama Not Available", "Ollama server is not running.")
+            return
+
+        try:
+            # Get models from Ollama (cached from main application)
+            models = self._available_models
+
+            # Update combo box
+            self.llm_model_combo.clear()
+            for model in models:
+                self.llm_model_combo.addItem(model, model)
+
+            # Select current model, with fallback to available model
+            current_model = self.current_settings.get("llm_model", "gemma2:2b")
+            index = self.llm_model_combo.findData(current_model)
+            if index < 0 and models:
+                # Current model not available, use first available model
+                index = 0
+                log.warning(f"Configured model '{current_model}' not available, using '{models[0]}' instead")
+            if index >= 0:
+                self.llm_model_combo.setCurrentIndex(index)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to fetch models: {e}")
+
+    def _on_llm_model_changed(self) -> None:
+        """Handle model selection change."""
+        pass  # Model will be saved in get_settings()
+
+    def _test_llm_connection(self) -> None:
+        """Test Ollama connection by generating a haiku."""
+        from PySide6.QtCore import QThread, Signal
+
+        class TestWorker(QThread):
+            """Worker thread for testing Ollama connection."""
+
+            finished = Signal(str, bool)  # (result_text, success)
+
+            def __init__(self, model: str):
+                super().__init__()
+                self.model = model
+
+            def run(self) -> None:
+                """Test connection by generating a haiku."""
+                try:
+                    import ollama
+
+                    client = ollama.Client(host="localhost:11434")
+                    response = client.generate(
+                        model=self.model,
+                        prompt="Write a short haiku about programming.",
+                        stream=False,
+                        options={"temperature": 0.7},
+                    )
+
+                    result = response.get("response", "").strip()
+                    if result:
+                        self.finished.emit(result, True)
+                    else:
+                        self.finished.emit("✗ Empty response from Ollama", False)
+
+                except Exception as e:
+                    error_msg = f"✗ Error: {str(e)}"
+                    self.finished.emit(error_msg, False)
+
+        # Update UI to show testing
+        self.llm_test_result.setText("⏳ Testing...")
+        self.llm_test_result.setStyleSheet("QLabel { color: orange; }")
+        current_model = self.llm_model_combo.currentData()
+
+        if not current_model:
+            self.llm_test_result.setText("✗ No model selected")
+            self.llm_test_result.setStyleSheet("QLabel { color: red; }")
+            return
+
+        # Start worker thread
+        self._test_worker = TestWorker(current_model)
+        self._test_worker.finished.connect(self._on_llm_test_complete)
+        self._test_worker.start()
+
+    def _on_llm_test_complete(self, result: str, success: bool) -> None:
+        """Handle LLM test completion.
+
+        Args:
+            result: Generated text or error message
+            success: True if test succeeded
+        """
+        if success:
+            # Display the haiku with success styling
+            self.llm_test_result.setText(f"✓ Success!\n\n{result}")
+            self.llm_test_result.setStyleSheet("QLabel { color: green; }")
+        else:
+            # Display error with error styling
+            self.llm_test_result.setText(result)
+            self.llm_test_result.setStyleSheet("QLabel { color: red; }")
+
+    def _load_llm_prompts(self) -> None:
+        """Load prompts from database into combo box."""
+        if not self.storage:
+            return
+
+        try:
+            prompts = self.storage.get_all_prompts()
+
+            self.llm_prompt_combo.clear()
+            for prompt in prompts:
+                display_name = f"{'★ ' if prompt['is_default'] else ''}{prompt['name']}"
+                self.llm_prompt_combo.addItem(display_name, prompt['id'])
+
+            # Select active prompt
+            active_id = self.current_settings.get("llm_active_prompt_id", -1)
+            if active_id >= 0:
+                index = self.llm_prompt_combo.findData(active_id)
+                if index >= 0:
+                    self.llm_prompt_combo.setCurrentIndex(index)
+            elif prompts:
+                self.llm_prompt_combo.setCurrentIndex(0)
+
+            # Load prompt content
+            self._load_prompt_content()
+
+        except Exception as e:
+            log.error(f"Failed to load prompts: {e}")
+
+    def _on_llm_prompt_changed(self) -> None:
+        """Handle prompt selection change."""
+        self._load_prompt_content()
+
+    def _load_prompt_content(self) -> None:
+        """Load selected prompt content into editor."""
+        prompt_id = self.llm_prompt_combo.currentData()
+        if prompt_id is None:
+            return
+
+        try:
+            prompt = self.storage.get_prompt(prompt_id)
+            if prompt:
+                self.llm_prompt_editor.setPlainText(prompt['content'])
+        except Exception as e:
+            log.error(f"Failed to load prompt: {e}")
+
+    def _save_llm_prompt(self) -> None:
+        """Save or update prompt."""
+        from PySide6.QtWidgets import QMessageBox
+
+        if not self.storage:
+            return
+
+        prompt_id = self.llm_prompt_combo.currentData()
+        name, ok = QInputDialog.getText(
+            self, "Prompt Name", "Enter a name for this prompt:", text="My Custom Prompt"
+        )
+
+        if not ok or not name:
+            return
+
+        try:
+            content = self.llm_prompt_editor.toPlainText()
+
+            if prompt_id is None or not name:
+                # Create new prompt
+                self.storage.create_prompt(name, content)
+            else:
+                # Update existing prompt
+                self.storage.update_prompt(prompt_id, name, content)
+
+            # Reload prompts
+            self._load_llm_prompts()
+
+            QMessageBox.information(self, "Success", "Prompt saved successfully.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save prompt: {e}")
+
+    def _delete_llm_prompt(self) -> None:
+        """Delete selected prompt."""
+        from PySide6.QtWidgets import QMessageBox
+
+        if not self.storage:
+            return
+
+        prompt_id = self.llm_prompt_combo.currentData()
+        if prompt_id is None:
+            QMessageBox.warning(self, "No Selection", "No prompt selected.")
+            return
+
+        # Check if default prompt
+        prompt = self.storage.get_prompt(prompt_id)
+        if prompt and prompt.get('is_default'):
+            QMessageBox.warning(
+                self, "Cannot Delete", "Default prompts cannot be deleted."
+            )
+            return
+
+        # Confirm
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete prompt '{prompt['name']}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                self.storage.delete_prompt(prompt_id)
+                self._load_llm_prompts()
+                QMessageBox.information(self, "Success", "Prompt deleted.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to delete: {e}")
+
+    def _reset_llm_prompts(self) -> None:
+        """Reset all prompts to defaults."""
+        from PySide6.QtWidgets import QMessageBox
+
+        reply = QMessageBox.warning(
+            self,
+            "Confirm Reset",
+            "This will delete all custom prompts and reset to the 3 default prompts.\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                self.storage.reset_default_prompts()
+                self._load_llm_prompts()
+                QMessageBox.information(self, "Success", "Prompts reset to defaults.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to reset: {e}")
+
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
         self.burst_timeout_spin.setValue(self.current_settings.get("burst_timeout_ms", 1000))
@@ -1495,6 +1901,20 @@ class SettingsDialog(QDialog):
         # Trigger postgres sync changed to enable/disable postgres settings
         self.on_postgres_sync_changed()
 
+        # LLM settings
+        self.llm_model_combo.setCurrentIndex(
+            self.llm_model_combo.findData(self.current_settings.get("llm_model", "gemma2:2b"))
+        )
+
+        self.llm_word_count_spin.setValue(self.current_settings.get("llm_word_count", 50))
+
+        active_prompt_id = self.current_settings.get("llm_active_prompt_id", -1)
+        if active_prompt_id >= 0:
+            self.llm_prompt_combo.setCurrentIndex(self.llm_prompt_combo.findData(active_prompt_id))
+
+        # Load prompts from database
+        self._load_llm_prompts()
+
     def get_settings(self) -> dict[str, Any]:
         """Get settings from UI.
 
@@ -1564,6 +1984,10 @@ class SettingsDialog(QDialog):
             # Auto-sync settings
             "auto_sync_enabled": str(auto_sync_check_state),
             "auto_sync_interval_sec": str(self.sync_interval_spin.value()),
+            # LLM settings
+            "llm_model": self.llm_model_combo.currentData() or "gemma2:2b",
+            "llm_active_prompt_id": self.llm_prompt_combo.currentData() or -1,
+            "llm_word_count": self.llm_word_count_spin.value(),
         }
 
     def accept(self) -> None:
