@@ -974,16 +974,7 @@ class SettingsDialog(QDialog):
         self.llm_word_count_spin.setMaximum(500)
         self.llm_word_count_spin.setValue(50)
         self.llm_word_count_spin.setSingleStep(10)
-        self.llm_word_count_spin.setToolTip("Number of words to generate in practice text")
         text_layout.addRow("Target Word Count:", self.llm_word_count_spin)
-
-        word_count_info = QLabel(
-            "This controls the approximate length of generated practice text. "
-            "The actual length may vary based on the LLM's response."
-        )
-        word_count_info.setWordWrap(True)
-        word_count_info.setStyleSheet("color: gray; font-size: 10px;")
-        text_layout.addRow("", word_count_info)
 
         text_group.setLayout(text_layout)
         layout.addWidget(text_group)
@@ -1036,10 +1027,7 @@ class SettingsDialog(QDialog):
 
         # Placeholders info
         placeholders_label = QLabel(
-            "Available placeholders:\n"
-            "• {word_count} - Target length for generated text (uses setting above)\n"
-            "• {hardest_words} - Comma-separated list of your hardest words\n\n"
-            "Example: 'Generate a {word_count} word practice text using these words: {hardest_words}'"
+            "Available placeholders: {word_count}, {hardest_words}"
         )
         placeholders_label.setStyleSheet("color: gray; font-size: 10px; padding: 5px;")
         placeholders_label.setWordWrap(True)

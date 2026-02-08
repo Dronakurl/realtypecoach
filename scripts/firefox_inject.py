@@ -120,12 +120,37 @@ def inject_text_to_firefox(text: str, mode: str = "repeat", profile_name=None):
 
             if existing:
                 print(f"\n📝 Found existing custom text, replacing with new text...")
-                cursor.execute('UPDATE data SET value = ? WHERE key = ?', (json_value, 'customTextSettings'))
+                cursor.execute('UPDATE data SET value = ?, utf16_length = ? WHERE key = ?',
+                              (json_value, len(json_value) * 2, 'customTextSettings'))
             else:
                 cursor.execute(
                     'INSERT INTO data (key, utf16_length, conversion_type, compression_type, last_access_time, value) VALUES (?, ?, ?, ?, ?, ?)',
                     ('customTextSettings', len(json_value) * 2, 0, 0, 0, json_value)
                 )
+
+            # Set customTextName and customTextLong (required by Monkeytype)
+            import time
+            text_name = f"rtc_{int(time.time() * 1000)}"
+            cursor.execute('DELETE FROM data WHERE key = ?', ('customTextName',))
+            cursor.execute(
+                'INSERT INTO data (key, utf16_length, conversion_type, compression_type, last_access_time, value) VALUES (?, ?, ?, ?, ?, ?)',
+                ('customTextName', len(text_name) * 2, 0, 0, 0, text_name)
+            )
+
+            cursor.execute('DELETE FROM data WHERE key = ?', ('customTextLong',))
+            cursor.execute(
+                'INSERT INTO data (key, utf16_length, conversion_type, compression_type, last_access_time, value) VALUES (?, ?, ?, ?, ?, ?)',
+                ('customTextLong', 10, 0, 0, 0, 'false')
+            )
+
+            # Also save to customText (saved texts collection)
+            custom_text = {text_name: text}
+            custom_text_json = json.dumps(custom_text)
+            cursor.execute('DELETE FROM data WHERE key = ?', ('customText',))
+            cursor.execute(
+                'INSERT INTO data (key, utf16_length, conversion_type, compression_type, last_access_time, value) VALUES (?, ?, ?, ?, ?, ?)',
+                ('customText', len(custom_text_json) * 2, 0, 0, 0, custom_text_json)
+            )
         else:
             # Old Firefox localStorage format (webappsstore.sqlite)
             cursor.execute(
@@ -175,10 +200,10 @@ def inject_text_to_firefox(text: str, mode: str = "repeat", profile_name=None):
     import time
     time.sleep(2)  # Wait for Firefox to fully close
 
-    # Open Firefox to monkeytype.com in a new window (only one tab)
+    # Open Firefox to monkeytype.com in a private window (single tab, no session restore)
     print(f"✨ Opening Firefox to monkeytype.com...")
     print("="*60)
-    subprocess.Popen(["firefox", "--new-window", "https://monkeytype.com"])
+    subprocess.Popen(["firefox", "--private-window", "https://monkeytype.com"])
 
 
 def get_text_from_file(filepath: str) -> str:
