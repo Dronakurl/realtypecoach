@@ -212,9 +212,6 @@ class StatsPanel(QWidget):
         elif "Long-term Average" in label_text:
             self.avg_wpm_value_label = value
             self.avg_wpm_subtitle_label = subtitle
-        elif "95% Quantile" in label_text:
-            self.wpm_95th_value_label = value
-            self.wpm_95th_subtitle_label = subtitle
         elif "Hardest Letter" in label_text:
             self.worst_letter_value_label = value
             self.worst_letter_subtitle_label = subtitle
@@ -296,10 +293,6 @@ class StatsPanel(QWidget):
         # Long-term Average WPM Card
         avg_wpm_card = self._create_metric_card("Long-term Average WPM", "#4caf50")
         first_row.addWidget(avg_wpm_card)
-
-        # 95% Quantile WPM Card
-        wpm_95th_card = self._create_metric_card("95% Quantile WPM", "#ff9800")
-        first_row.addWidget(wpm_95th_card)
 
         dashboard_layout.addLayout(first_row)
 
@@ -647,19 +640,6 @@ class StatsPanel(QWidget):
             else:
                 self.avg_wpm_subtitle_label.setText("all-time best: --")
 
-        # Update 95% Quantile WPM card
-        if hasattr(self, "wpm_95th_value_label"):
-            if wpm_95th_percentile is not None and wpm_95th_percentile > 0:
-                self.wpm_95th_value_label.setText(f"{wpm_95th_percentile:.1f}")
-                # Show exceptional indicator if current burst exceeds 95th percentile
-                if burst_wpm > wpm_95th_percentile:
-                    self.wpm_95th_subtitle_label.setText("Exceptional burst!")
-                else:
-                    self.wpm_95th_subtitle_label.setText("")
-            else:
-                self.wpm_95th_value_label.setText("--")
-                self.wpm_95th_subtitle_label.setText("")
-
     def update_slowest_keys(self, slowest_keys: list[KeyPerformance]) -> None:
         """Update slowest keys display.
 
@@ -844,7 +824,7 @@ class StatsPanel(QWidget):
             )
 
     def update_avg_burst_duration(
-        self, avg_ms: int, min_ms: int, max_ms: int, percentile_95_ms: int
+        self, avg_ms: int, min_ms: int, max_ms: int, percentile_95_ms: int, wpm_95th_percentile: float = 0
     ) -> None:
         """Update average burst duration display.
 
@@ -853,6 +833,7 @@ class StatsPanel(QWidget):
             min_ms: Minimum burst duration in milliseconds
             max_ms: Maximum burst duration in milliseconds
             percentile_95_ms: 95th percentile burst duration in milliseconds
+            wpm_95th_percentile: 95th percentile burst WPM
         """
         if not self.isVisible():
             return
@@ -863,7 +844,7 @@ class StatsPanel(QWidget):
             else:
                 self.avg_burst_time_value_label.setText(f"{avg_ms}ms")
 
-            # Format min/max/95th percentile as subtitle
+            # Format min/max/95th percentile as subtitle, including 95th percentile WPM
             min_display = f"{min_ms / 1000:.1f}s" if min_ms >= 1000 else f"{min_ms}ms"
             max_display = f"{max_ms / 1000:.1f}s" if max_ms >= 1000 else f"{max_ms}ms"
             p95_display = (
@@ -871,8 +852,9 @@ class StatsPanel(QWidget):
                 if percentile_95_ms >= 1000
                 else f"{percentile_95_ms}ms"
             )
+            wpm_95_display = f"{wpm_95th_percentile:.1f} WPM" if wpm_95th_percentile > 0 else "--"
             self.avg_burst_time_subtitle_label.setText(
-                f"95%: {p95_display} • min: {min_display} • max: {max_display}"
+                f"95% WPM: {wpm_95_display} • 95% time: {p95_display} • min: {min_display} • max: {max_display}"
             )
 
     @staticmethod

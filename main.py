@@ -86,7 +86,7 @@ class Application(QObject):
     signal_update_worst_word = Signal(object)
     signal_update_fastest_word = Signal(object)
     signal_update_keystrokes_bursts = Signal(int, int, int)
-    signal_update_avg_burst_duration = Signal(int, int, int, int)
+    signal_update_avg_burst_duration = Signal(int, int, int, int, float)
     signal_settings_changed = Signal(dict)
     signal_clipboard_words_ready = Signal(list)  # For clipboard copy operation
     signal_update_histogram_graph = Signal(list)  # For histogram data
@@ -400,17 +400,9 @@ class Application(QObject):
             self.stats_panel.on_text_generated,
             Qt.ConnectionType.QueuedConnection,
         )
-        self.ollama_client.signal_generation_complete.connect(
-            self.tray_icon.restore_tooltip,
-            Qt.ConnectionType.QueuedConnection,
-        )
 
         self.ollama_client.signal_generation_failed.connect(
             self.stats_panel.on_text_generation_failed,
-            Qt.ConnectionType.QueuedConnection,
-        )
-        self.ollama_client.signal_generation_failed.connect(
-            self.tray_icon.restore_tooltip,
             Qt.ConnectionType.QueuedConnection,
         )
 
@@ -915,10 +907,10 @@ class Application(QObject):
                 # Get word count from settings
                 word_count = self.config.get_int("llm_word_count", 50)
 
-                # Show initial notification with word count
+                # Show initial notification
                 self.tray_icon.show_notification(
                     "Typing Practice",
-                    f"Generating {word_count} words of practice text with Ollama...",
+                    "Generating practice text with Ollama...",
                     "info"
                 )
                 log.info(f"Starting typing practice: generating {word_count} words")
@@ -992,19 +984,30 @@ class Application(QObject):
                     )
                     return
 
-                # Truncate text if too long (for command line)
-                words_list = generated_text.split()[:100]  # Limit to 100 words
-                text_to_practice = " ".join(words_list)
+                # Write text to temp file for practice script
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                    f.write(generated_text)
+                    temp_file = f.name
 
-                log.info(f"Opening typing practice with: {len(words_list)} words")
+                hardest_words_list = [w.word for w in words[:min(word_count, 50)]]
+                hardest_words_str = ",".join(hardest_words_list)
 
-                # Run the practice script
+                log.info(f"Opening typing practice with: {actual_word_count} words, {len(hardest_words_list)} highlighted")
+
+                # Run the practice script with hardest words
                 result = subprocess.run(
-                    ["python3", str(script_path), text_to_practice],
+                    ["python3", str(script_path), "--hardest", temp_file, hardest_words_str],
                     capture_output=True,
                     text=True,
                     timeout=30
                 )
+
+                # Clean up temp file
+                try:
+                    Path(temp_file).unlink()
+                except:
+                    pass
 
                 if result.returncode == 0:
                     log.info("Successfully opened typing practice with generated text")
@@ -1200,7 +1203,7 @@ class Application(QObject):
 
         # Update average burst duration stats
         avg_ms, min_ms, max_ms, percentile_95_ms = self.storage.get_burst_duration_stats_ms()
-        self.signal_update_avg_burst_duration.emit(avg_ms, min_ms, max_ms, percentile_95_ms)
+        self.signal_update_avg_burst_duration.emit(avg_ms, min_ms, max_ms, percentile_95_ms, wpm_95th_percentile)
 
         total_time = (time.time() - start_time) * 1000
         log.info(f"update_statistics() completed in {total_time:.1f}ms")

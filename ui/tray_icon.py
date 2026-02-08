@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Q_ARG, QMetaObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -90,10 +90,14 @@ class TrayIcon(QSystemTrayIcon):
 
     def practice_hardest_words(self) -> None:
         """Practice hardest words with generated text."""
-        # Show indication that text generation has started
-        self.setToolTip("RealTypeCoach - Generating practice text...")
-        QApplication.processEvents()
         self.practice_requested.emit()
+
+    def restore_tooltip(self) -> None:
+        """Restore tooltip to its normal state."""
+        if self.monitoring_active:
+            self.setToolTip("RealTypeCoach - Monitoring Active")
+        else:
+            self.setToolTip("RealTypeCoach - Monitoring Paused")
 
     def toggle_monitoring(self) -> None:
         """Toggle monitoring on/off."""
@@ -138,20 +142,52 @@ class TrayIcon(QSystemTrayIcon):
         self.about_requested.emit()
 
     def show_notification(self, title: str, message: str, message_type: str = "info") -> None:
-        """Show desktop notification (disabled to prevent icon change).
+        """Show desktop notification.
+
+        Thread-safe method that can be called from any thread.
 
         Args:
             title: Notification title
             message: Notification message
             message_type: Type of notification (info/warning/error)
         """
-        # Disabled - Qt's showMessage() changes the tray icon to an info icon
-        # and doesn't reliably restore it. Notifications are handled by
-        # NotificationHandler instead.
-        pass
+        # Use invokeMethod to ensure this runs on the GUI thread
+        QMetaObject.invokeMethod(
+            self,
+            "_do_show_notification",
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(str, title),
+            Q_ARG(str, message),
+        )
 
-    def restore_tooltip(self) -> None:
-        """Restore tooltip to its normal state."""
+    @Slot(str, str)
+    def _do_show_notification(self, title: str, message: str) -> None:
+        """Internal method to show notification on GUI thread.
+
+        Args:
+            title: Notification title
+            message: Notification message
+        """
+        # Save current icon
+        current_icon = self.icon()
+        is_monitoring_active = self.monitoring_active
+
+        # Show notification
+        self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
+
+        # Restore icon after a short delay (Qt changes it temporarily)
+        QTimer.singleShot(100, lambda: self._restore_icon_after_notification(current_icon, is_monitoring_active))
+
+    def _restore_icon_after_notification(self, saved_icon, was_monitoring_active: bool) -> None:
+        """Restore the icon after showing a notification.
+
+        Args:
+            saved_icon: The icon to restore
+            was_monitoring_active: Whether monitoring was active before notification
+        """
+        self.setIcon(saved_icon)
+
+        # Update tooltip based on current monitoring state
         if self.monitoring_active:
             self.setToolTip("RealTypeCoach - Monitoring Active")
         else:

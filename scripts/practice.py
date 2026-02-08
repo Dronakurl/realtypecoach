@@ -26,16 +26,15 @@ def get_text_from_file(filepath: str) -> str:
     return path.read_text()
 
 
-def launch_practice(text: str):
+def launch_practice(text: str, hardest_words: list[str] | None = None):
     """Launch typing practice in default browser."""
-    # Truncate text if too long (URL limits)
-    if len(text) > 5000:
-        print(f"Warning: Text is {len(text)} chars, truncating to 5000")
-        text = text[:5000]
-
     # Create file URL with encoded text parameter
     file_url = HTML_FILE.as_uri()
-    full_url = f"{file_url}?text={urllib.parse.quote(text)}"
+    params = {"text": text}
+    if hardest_words:
+        params["hardest"] = ",".join(hardest_words)
+    query_string = urllib.parse.urlencode(params, safe='')
+    full_url = f"{file_url}?{query_string}"
 
     word_count = len(text.split())
     print(f"Opening typing practice with {word_count} words...")
@@ -50,16 +49,24 @@ def main():
         print(__doc__)
         sys.exit(1)
 
+    hardest_words: list[str] | None = None
+
     if sys.argv[1] == '--file':
         if len(sys.argv) < 3:
             print("Error: --file requires a filepath argument")
             sys.exit(1)
         text = get_text_from_file(sys.argv[2])
+    elif sys.argv[1] == '--hardest':
+        if len(sys.argv) < 4:
+            print("Error: --hardest requires a filepath and comma-separated words")
+            sys.exit(1)
+        text = get_text_from_file(sys.argv[2])
+        hardest_words = sys.argv[3].split(',')
     else:
         # Treat all arguments as the practice text
         text = ' '.join(sys.argv[1:])
 
-    launch_practice(text)
+    launch_practice(text, hardest_words)
 
 
 if __name__ == '__main__':
