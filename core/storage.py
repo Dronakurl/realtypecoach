@@ -921,6 +921,16 @@ class Storage:
         log.info(f"Deleted {deleted_count} name statistics from database")
         return deleted_count
 
+    def update_exclude_names_setting(self, exclude_names: bool) -> None:
+        """Update the exclude_names setting in the running dictionary.
+
+        Args:
+            exclude_names: New value for exclude_names_enabled
+
+        This makes the setting take effect immediately without requiring restart.
+        """
+        self.dictionary.update_exclude_names_setting(exclude_names)
+
     def _migrate_ignorewords_file(self) -> None:
         """Migrate legacy ignorewords.txt to new system and remove file.
 

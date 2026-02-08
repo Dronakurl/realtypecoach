@@ -532,13 +532,15 @@ class Application(QObject):
                 f"(type: {type(new_settings['postgres_sync_enabled']).__name__})"
             )
 
+        # Track old exclude_names_enabled value before applying changes
+        old_exclude_names = self.config.get_bool("exclude_names_enabled", False)
+
         for key, value in new_settings.items():
             if key not in special_keys:
                 self.config.set(key, value)
 
         # Save exclude_names_enabled to database settings table for sync
         if "exclude_names_enabled" in new_settings:
-            old_value = self.config.get_bool("exclude_names_enabled", False)
             new_value = self.config.get_bool("exclude_names_enabled", False)
             # Save to database for sync
             try:
@@ -546,6 +548,11 @@ class Application(QObject):
                 log.info(f"Saved exclude_names_enabled={new_value} to database settings")
             except Exception as e:
                 log.warning(f"Failed to save exclude_names_enabled to database: {e}")
+
+            # Update the running dictionary so the setting takes effect immediately
+            if old_exclude_names != new_value:
+                self.storage.update_exclude_names_setting(new_value)
+                log.info(f"Updated dictionary exclude_names setting to {new_value}")
 
         # Reload dictionary configuration if language settings changed
         if (

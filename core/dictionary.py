@@ -88,6 +88,26 @@ class Dictionary:
         except ImportError:
             log.warning("Common names module not found")
 
+    def update_exclude_names_setting(self, exclude_names: bool) -> None:
+        """Update the exclude_names setting dynamically.
+
+        Args:
+            exclude_names: New value for exclude_names_enabled
+
+        This allows the setting to take effect without requiring a full dictionary reload.
+        """
+        self._exclude_names = exclude_names
+
+        if self._exclude_names:
+            # Load names list if enabling
+            if not self._names_set:
+                self._load_names_list()
+            log.info("Exclude names enabled: common names will be filtered from statistics")
+        else:
+            # Clear names list if disabling
+            self._names_set.clear()
+            log.info("Exclude names disabled: common names will not be filtered")
+
     @classmethod
     def _detect_dictionaries(cls) -> dict[str, str]:
         """Detect available dictionaries on the system.

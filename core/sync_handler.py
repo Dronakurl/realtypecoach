@@ -134,8 +134,24 @@ class SyncHandler(QObject):
                         log.info(f"Deleted {deleted_count} name statistics after sync")
                         # Update local config
                         self.config.set("exclude_names_enabled", True)
+                        # Update the running dictionary so the setting takes effect immediately
+                        self.storage.update_exclude_names_setting(True)
+                        log.info("Updated dictionary exclude_names setting to True after sync")
                     except Exception as e:
                         log.error(f"Failed to delete names after sync: {e}")
+                # If remote has exclude_names_enabled=False and local was True, update config
+                elif not remote_exclude_names and local_exclude_names:
+                    log.info(
+                        "Remote exclude_names_enabled is False, disabling exclude names locally"
+                    )
+                    try:
+                        # Update local config
+                        self.config.set("exclude_names_enabled", False)
+                        # Update the running dictionary so the setting takes effect immediately
+                        self.storage.update_exclude_names_setting(False)
+                        log.info("Updated dictionary exclude_names setting to False after sync")
+                    except Exception as e:
+                        log.error(f"Failed to disable exclude names after sync: {e}")
 
                 self._last_sync_time = time.time()
                 log.info(

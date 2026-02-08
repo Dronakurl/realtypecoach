@@ -952,6 +952,9 @@ class SettingsDialog(QDialog):
                 if self.storage:
                     try:
                         deleted_count = self.storage.delete_all_names_from_database()
+                        # Update the running dictionary's flag so NEW names are also filtered
+                        self.storage.update_exclude_names_setting(True)
+                        log.info("Updated dictionary exclude_names setting to True")
                         QMessageBox.information(
                             self,
                             "Names Deleted",
