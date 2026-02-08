@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import os
 import queue
 import re
 import threading
@@ -202,6 +203,8 @@ class SQLiteAdapter(DatabaseAdapter):
 
     def initialize(self) -> None:
         """Initialize database schema and perform migrations."""
+        import os
+
         # Check if this is a fresh database
         is_fresh_install = not self.db_path.exists()
 
@@ -224,24 +227,150 @@ class SQLiteAdapter(DatabaseAdapter):
                 if "already exists" not in str(e):
                     raise
 
+        # Detect and handle legacy database
         with self.get_connection() as conn:
-            self._create_bursts_table(conn)
-            self._create_statistics_table(conn)
-            self._create_digraph_statistics_table(conn)
-            self._create_high_scores_table(conn)
-            self._create_daily_summaries_table(conn)
-            self._create_word_statistics_table(conn)
-            self._create_ignored_words_table(conn)
-            self._create_settings_table(conn)
-            self._migrate_high_scores_duration_ms(conn)
-            self._add_word_statistics_columns()
-            self._add_backspace_tracking_to_bursts(conn)
-            self._migrate_bursts_unique_start_time(conn)
-            self._migrate_high_scores_unique_timestamp(conn)
-            conn.commit()
+            is_legacy_db = self._detect_legacy_database(conn)
+
+            if is_legacy_db:
+                log.info("Legacy database detected, running legacy migrations first")
+                self._run_legacy_migrations(conn)
+                self._initialize_alembic_for_legacy_db(conn)
+                conn.commit()
+
+        # Get migration directory
+        if hasattr(self, "_migration_dir"):
+            migration_dir = self._migration_dir
+        else:
+            # Try to find migrations directory in multiple locations
+            # 1. Installed location: same directory as main.py
+            # 2. Source location: relative to this file
+            import core
+
+            core_dir = Path(os.path.dirname(core.__file__))
+            # Check if migrations is in the parent directory (installed location)
+            migration_dir = core_dir.parent / "migrations"
+            if not migration_dir.exists():
+                # Fall back to source location
+                migration_dir = core_dir / "migrations"
+
+            self._migration_dir = migration_dir
+
+        log.debug(f"Using migration directory: {self._migration_dir}")
+
+        # Run Alembic migrations
+        try:
+            from core.sqlite_migration_runner import SQLiteMigrationRunner
+
+            runner = SQLiteMigrationRunner(self.db_path, migration_dir)
+            if runner.check_needs_upgrade():
+                log.info("Running Alembic database migrations")
+                runner.upgrade()
+                log.info("Database migrations completed successfully")
+        except Exception as e:
+            log.error(f"Migration failed: {e}")
+            # Fallback to legacy schema creation if migrations fail
+            log.warning("Falling back to legacy schema creation")
+            with self.get_connection() as conn:
+                self._create_bursts_table(conn)
+                self._create_statistics_table(conn)
+                self._create_digraph_statistics_table(conn)
+                self._create_high_scores_table(conn)
+                self._create_daily_summaries_table(conn)
+                self._create_word_statistics_table(conn)
+                self._create_ignored_words_table(conn)
+                self._create_settings_table(conn)
+                self._create_llm_prompts_table(conn)
+                conn.commit()
 
         # Initialize cache
         self._refresh_all_time_cache()
+
+    def _detect_legacy_database(self, conn: sqlite3.Connection) -> bool:
+        """Detect if this is a legacy database (pre-Alembic).
+
+        Args:
+            conn: Database connection
+
+        Returns:
+            True if legacy database detected, False otherwise
+        """
+        cursor = conn.cursor()
+
+        # Check if alembic_version table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='alembic_version'
+        """)
+        has_alembic_version = cursor.fetchone() is not None
+
+        if has_alembic_version:
+            return False
+
+        # Check if any of our tables exist (indicates legacy database)
+        cursor.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name IN ('bursts', 'statistics', 'word_statistics')
+        """)
+        has_legacy_tables = cursor.fetchone() is not None
+
+        return has_legacy_tables
+
+    def _run_legacy_migrations(self, conn: sqlite3.Connection) -> None:
+        """Run legacy migrations to ensure schema is current.
+
+        Args:
+            conn: Database connection
+        """
+        # Run all legacy migrations in order
+        self._create_bursts_table(conn)
+        self._create_statistics_table(conn)
+        self._create_digraph_statistics_table(conn)
+        self._create_high_scores_table(conn)
+        self._create_daily_summaries_table(conn)
+        self._create_word_statistics_table(conn)
+        self._create_ignored_words_table(conn)
+        self._create_settings_table(conn)
+        self._create_llm_prompts_table(conn)
+        self._migrate_high_scores_duration_ms(conn)
+        self._add_word_statistics_columns()
+        self._add_backspace_tracking_to_bursts(conn)
+        self._migrate_bursts_unique_start_time(conn)
+        self._migrate_high_scores_unique_timestamp(conn)
+
+        log.info("Legacy migrations completed")
+
+    def _initialize_alembic_for_legacy_db(self, conn: sqlite3.Connection) -> None:
+        """Stamp legacy database with initial Alembic revision.
+
+        Args:
+            conn: Database connection
+        """
+        try:
+            from alembic import command
+            from alembic.config import Config
+
+            # Get migration directory (use the same logic as in initialize)
+            import core
+
+            core_dir = Path(os.path.dirname(core.__file__))
+            migration_dir = core_dir.parent / "migrations"
+            if not migration_dir.exists():
+                migration_dir = core_dir / "migrations"
+
+            # Create Alembic config
+            config = Config()
+            config.set_main_option("script_location", str(migration_dir))
+            config.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
+
+            # Stamp database with initial revision
+            # We use revision '001' which is our baseline migration
+            # Use the connection directly from get_connection()
+            config.attributes["connection"] = conn
+            command.stamp(config, "001")
+            log.info("Stamped legacy database as revision 001")
+
+        except Exception as e:
+            log.warning(f"Failed to stamp database with Alembic version: {e}")
 
     @contextmanager
     def get_connection(self):
@@ -368,6 +497,19 @@ class SQLiteAdapter(DatabaseAdapter):
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
+            )
+        """)
+
+    def _create_llm_prompts_table(self, conn: sqlite3.Connection) -> None:
+        """Create LLM prompts table for storing customizable prompt templates."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS llm_prompts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                content TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                is_default BOOLEAN DEFAULT 0
             )
         """)
 
@@ -1835,6 +1977,286 @@ class SQLiteAdapter(DatabaseAdapter):
                             updated_at = excluded.updated_at
                     """,
                         (record["key"], record["value"], record["updated_at"]),
+                    )
+                    if cursor.rowcount > 0:
+                        inserted += 1
+                except sqlite3.IntegrityError:
+                    pass
+            conn.commit()
+        return inserted
+
+    # ========== LLM Prompt Operations ==========
+
+    def create_prompt(self, name: str, content: str, is_default: bool = False) -> int:
+        """Create a new LLM prompt.
+
+        Args:
+            name: Prompt name (must be unique)
+            content: Prompt template
+            is_default: Whether this is a default prompt
+
+        Returns:
+            Created prompt ID
+        """
+        now = int(time.time() * 1000)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO llm_prompts (name, content, created_at, updated_at, is_default)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (name, content, now, now, 1 if is_default else 0),
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_prompt(self, prompt_id: int) -> dict | None:
+        """Get prompt by ID.
+
+        Args:
+            prompt_id: Prompt ID
+
+        Returns:
+            Prompt dict or None
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, name, content, created_at, updated_at, is_default
+                FROM llm_prompts WHERE id = ?
+                """,
+                (prompt_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "name": row[1],
+                    "content": row[2],
+                    "created_at": row[3],
+                    "updated_at": row[4],
+                    "is_default": row[5],
+                }
+            return None
+
+    def get_all_prompts(self) -> list[dict]:
+        """Get all prompts sorted by name.
+
+        Returns:
+            List of prompt dicts
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, name, content, created_at, updated_at, is_default
+                FROM llm_prompts ORDER BY name
+                """
+            )
+            return [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "content": row[2],
+                    "created_at": row[3],
+                    "updated_at": row[4],
+                    "is_default": row[5],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def get_active_prompt(self) -> dict | None:
+        """Get the currently active prompt (first one, or by settings).
+
+        Returns:
+            Active prompt dict or None
+        """
+        # For now, return first prompt (will be enhanced with settings)
+        prompts = self.get_all_prompts()
+        return prompts[0] if prompts else None
+
+    def update_prompt(self, prompt_id: int, name: str, content: str) -> bool:
+        """Update prompt.
+
+        Args:
+            prompt_id: Prompt ID
+            name: New name
+            content: New content
+
+        Returns:
+            True if updated
+        """
+        now = int(time.time() * 1000)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE llm_prompts
+                SET name = ?, content = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (name, content, now, prompt_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_prompt(self, prompt_id: int) -> bool:
+        """Delete prompt (only non-default prompts).
+
+        Args:
+            prompt_id: Prompt ID
+
+        Returns:
+            True if deleted
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # First check if it's a default prompt
+            cursor.execute("SELECT is_default FROM llm_prompts WHERE id = ?", (prompt_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                return False  # Cannot delete default prompts
+
+            cursor.execute("DELETE FROM llm_prompts WHERE id = ?", (prompt_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def reset_default_prompts(self) -> bool:
+        """Delete all non-default prompts and reset defaults.
+
+        Returns:
+            True if successful
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Delete all prompts
+            cursor.execute("DELETE FROM llm_prompts")
+            # Insert 3 default prompts
+            now = int(time.time() * 1000)
+
+            default_prompts = self._get_default_prompts()
+            for name, content in default_prompts:
+                cursor.execute(
+                    """
+                    INSERT INTO llm_prompts (name, content, created_at, updated_at, is_default)
+                    VALUES (?, ?, ?, ?, 1)
+                    """,
+                    (name, content, now, now),
+                )
+
+            conn.commit()
+            return True
+
+    def _get_default_prompts(self) -> list[tuple[str, str]]:
+        """Get default prompt templates.
+
+        Returns:
+            List of (name, content) tuples
+        """
+        return [
+            (
+                "Professional Technical",
+                """Generate a technical or business typing practice text of approximately {word_count} words that naturally incorporates these challenging words:
+
+{hardest_words}
+
+Requirements:
+- Create a coherent, professional narrative or informative text
+- Use business, technical, or scientific context
+- Use as many of the challenging words as possible in their natural context
+- Maintain proper grammar and professional tone
+- Target audience: professional or technical readers
+- Length: approximately {word_count} words
+- Style: formal, precise, well-structured
+
+The text should feel like realistic documentation, reports, or communication while providing practice with difficult words.""",
+            ),
+            (
+                "Casual Narrative",
+                """Generate an engaging, story-like typing practice text of approximately {word_count} words that naturally incorporates these challenging words:
+
+{hardest_words}
+
+Requirements:
+- Create an engaging narrative or personal story
+- Use conversational, accessible language
+- Use as many of the challenging words as possible in natural flow
+- Maintain proper grammar but casual tone is acceptable
+- Target audience: general readers
+- Length: approximately {word_count} words
+- Style: engaging, creative, story-driven
+
+The text should be enjoyable to read while naturally incorporating challenging words for practice.""",
+            ),
+            (
+                "Minimal Simple",
+                """Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}
+
+Create a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct.""",
+            ),
+        ]
+
+    def get_all_llm_prompts_for_sync(self) -> list[dict]:
+        """Get all LLM prompts for sync.
+
+        Returns:
+            List of prompt dictionaries with sync fields
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, content, created_at, updated_at, is_default
+                FROM llm_prompts ORDER BY name
+            """)
+            return [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "content": row[2],
+                    "created_at": row[3],
+                    "updated_at": row[4],
+                    "is_default": row[5],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def batch_insert_llm_prompts(self, records: list[dict]) -> int:
+        """Batch insert LLM prompt records for sync.
+
+        Args:
+            records: List of prompt dictionaries
+
+        Returns:
+            Number of records actually inserted/updated
+        """
+        if not records:
+            return 0
+
+        inserted = 0
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for record in records:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO llm_prompts (id, name, content, created_at, updated_at, is_default)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            name = excluded.name,
+                            content = excluded.content,
+                            updated_at = excluded.updated_at,
+                            is_default = excluded.is_default
+                    """,
+                        (
+                            record.get("id"),
+                            record.get("name"),
+                            record.get("content"),
+                            record.get("created_at"),
+                            record.get("updated_at"),
+                            record.get("is_default", 0),
+                        ),
                     )
                     if cursor.rowcount > 0:
                         inserted += 1

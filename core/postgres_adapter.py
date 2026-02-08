@@ -2,9 +2,11 @@
 
 import csv
 import logging
+import os
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 try:
@@ -107,6 +109,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
     def initialize(self) -> None:
         """Initialize database schema and perform migrations."""
+        import os
+
         # Create connection pool
         try:
             self._connection_pool = pool.SimpleConnectionPool(
@@ -134,20 +138,159 @@ class PostgreSQLAdapter(DatabaseAdapter):
         except Exception as e:
             raise ConnectionError(f"Failed to connect to database: {e}")
 
-        # Create tables
+        # Detect and handle legacy database
         with self.get_connection() as conn:
-            self._create_bursts_table(conn)
-            self._create_statistics_table(conn)
-            self._create_digraph_statistics_table(conn)
-            self._create_high_scores_table(conn)
-            self._create_daily_summaries_table(conn)
-            self._create_word_statistics_table(conn)
-            self._create_ignored_words_table(conn)
-            self._create_settings_table(conn)
-            conn.commit()
+            is_legacy_db = self._detect_legacy_database(conn)
+
+            if is_legacy_db:
+                log.info("Legacy database detected, running legacy migrations first")
+                self._run_legacy_migrations(conn)
+                self._initialize_alembic_for_legacy_db(conn)
+                conn.commit()
+
+        # Get migration directory
+        if hasattr(self, "_migration_dir"):
+            migration_dir = self._migration_dir
+        else:
+            # Try to find migrations directory in multiple locations
+            # 1. Installed location: same directory as main.py
+            # 2. Source location: relative to this file
+            import core
+
+            core_dir = Path(os.path.dirname(core.__file__))
+            # Check if migrations is in the parent directory (installed location)
+            migration_dir = core_dir.parent / "migrations"
+            if not migration_dir.exists():
+                # Fall back to source location
+                migration_dir = core_dir / "migrations"
+
+            self._migration_dir = migration_dir
+
+        log.debug(f"Using migration directory: {self._migration_dir}")
+
+        # Run Alembic migrations
+        try:
+            from core.postgres_migration_runner import PostgreSQLMigrationRunner
+
+            runner = PostgreSQLMigrationRunner(
+                host=self.host,
+                port=self.port,
+                database=self.database,
+                user=self.user,
+                password=self.password,
+                sslmode=self.sslmode,
+                migration_dir=migration_dir,
+            )
+            if runner.check_needs_upgrade():
+                log.info("Running Alembic database migrations")
+                runner.upgrade()
+                log.info("Database migrations completed successfully")
+        except Exception as e:
+            log.error(f"Migration failed: {e}")
+            # Fallback to legacy schema creation if migrations fail
+            log.warning("Falling back to legacy schema creation")
+            with self.get_connection() as conn:
+                self._create_bursts_table(conn)
+                self._create_statistics_table(conn)
+                self._create_digraph_statistics_table(conn)
+                self._create_high_scores_table(conn)
+                self._create_daily_summaries_table(conn)
+                self._create_word_statistics_table(conn)
+                self._create_ignored_words_table(conn)
+                self._create_settings_table(conn)
+                self._create_llm_prompts_table(conn)
+                conn.commit()
 
         # Initialize cache
         self._refresh_all_time_cache()
+
+    def _detect_legacy_database(self, conn: pg_connection) -> bool:
+        """Detect if this is a legacy database (pre-Alembic).
+
+        Args:
+            conn: Database connection
+
+        Returns:
+            True if legacy database detected, False otherwise
+        """
+        cursor = conn.cursor()
+
+        # Check if alembic_version table exists
+        cursor.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'alembic_version'
+        """)
+        has_alembic_version = cursor.fetchone() is not None
+
+        if has_alembic_version:
+            return False
+
+        # Check if any of our tables exist (indicates legacy database)
+        cursor.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
+            AND table_name IN ('bursts', 'statistics', 'word_statistics')
+        """)
+        has_legacy_tables = cursor.fetchone() is not None
+
+        return has_legacy_tables
+
+    def _run_legacy_migrations(self, conn: pg_connection) -> None:
+        """Run legacy migrations to ensure schema is current.
+
+        Args:
+            conn: Database connection
+        """
+        # Run all legacy migrations in order
+        self._create_bursts_table(conn)
+        self._create_statistics_table(conn)
+        self._create_digraph_statistics_table(conn)
+        self._create_high_scores_table(conn)
+        self._create_daily_summaries_table(conn)
+        self._create_word_statistics_table(conn)
+        self._create_ignored_words_table(conn)
+        self._create_settings_table(conn)
+        self._create_llm_prompts_table(conn)
+
+        log.info("Legacy migrations completed")
+
+    def _initialize_alembic_for_legacy_db(self, conn: pg_connection) -> None:
+        """Stamp legacy database with initial Alembic revision.
+
+        Args:
+            conn: Database connection
+        """
+        try:
+            from alembic import command
+            from alembic.config import Config
+
+            # Get migration directory (use the same logic as in initialize)
+            import core
+
+            core_dir = Path(os.path.dirname(core.__file__))
+            migration_dir = core_dir.parent / "migrations"
+            if not migration_dir.exists():
+                migration_dir = core_dir / "migrations"
+
+            # Create Alembic config
+            config = Config()
+            config.set_main_option("script_location", str(migration_dir))
+
+            # Build PostgreSQL connection URL
+            url = (
+                f"postgresql://{self.user}:{self.password}@"
+                f"{self.host}:{self.port}/{self.database}"
+                f"?sslmode={self.sslmode}"
+            )
+            config.set_main_option("sqlalchemy.url", url)
+
+            # Stamp database with initial revision
+            config.attributes["connection"] = conn
+            command.stamp(config, "001")
+            log.info("Stamped legacy PostgreSQL database as revision 001")
+
+        except Exception as e:
+            log.warning(f"Failed to stamp database with Alembic version: {e}")
 
     @contextmanager
     def get_connection(self):
@@ -355,6 +498,24 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id)")
+
+    def _create_llm_prompts_table(self, conn: pg_connection) -> None:
+        """Create LLM prompts table for storing customizable prompt templates."""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS llm_prompts (
+                id UUID NOT NULL DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+                name TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT NOT NULL,
+                is_default INTEGER DEFAULT 0,
+                PRIMARY KEY (id, user_id),
+                UNIQUE (user_id, name)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_llm_prompts_user_id ON llm_prompts(user_id)")
 
     def _create_users_table(self, conn: pg_connection) -> None:
         """Create users table."""
@@ -1916,6 +2077,76 @@ class PostgreSQLAdapter(DatabaseAdapter):
                             updated_at = EXCLUDED.updated_at
                     """,
                         (self.user_id, record["key"], record["value"], record["updated_at"]),
+                    )
+                    if cursor.rowcount > 0:
+                        inserted += 1
+                except Exception:
+                    pass
+            conn.commit()
+        return inserted
+
+    # ========== LLM Prompt Operations ==========
+
+    def get_all_llm_prompts_for_sync(self) -> list[dict]:
+        """Get all LLM prompts for sync.
+
+        Returns:
+            List of prompt dictionaries with sync fields
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, content, created_at, updated_at, is_default
+                FROM llm_prompts WHERE user_id = %s ORDER BY name
+            """, (self.user_id,))
+            return [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "content": row[2],
+                    "created_at": row[3],
+                    "updated_at": row[4],
+                    "is_default": row[5],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def batch_insert_llm_prompts(self, records: list[dict]) -> int:
+        """Batch insert LLM prompt records for sync.
+
+        Args:
+            records: List of prompt dictionaries
+
+        Returns:
+            Number of records actually inserted/updated
+        """
+        if not records:
+            return 0
+
+        inserted = 0
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for record in records:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO llm_prompts (user_id, id, name, content, created_at, updated_at, is_default)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, id) DO UPDATE SET
+                            name = EXCLUDED.name,
+                            content = EXCLUDED.content,
+                            updated_at = EXCLUDED.updated_at,
+                            is_default = EXCLUDED.is_default
+                    """,
+                        (
+                            self.user_id,
+                            record.get("id"),
+                            record.get("name"),
+                            record.get("content"),
+                            record.get("created_at"),
+                            record.get("updated_at"),
+                            record.get("is_default", 0),
+                        ),
                     )
                     if cursor.rowcount > 0:
                         inserted += 1

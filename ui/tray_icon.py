@@ -16,6 +16,7 @@ class TrayIcon(QSystemTrayIcon):
     settings_requested = Signal()  # Emitted when settings dialog is requested
     stats_requested = Signal()  # Emitted when stats panel is requested
     about_requested = Signal()  # Emitted when about dialog is requested
+    monkeytype_practice_requested = Signal()  # Emitted when Monkeytype practice is requested
 
     def __init__(
         self,
@@ -60,6 +61,10 @@ class TrayIcon(QSystemTrayIcon):
         show_stats_action.triggered.connect(self.show_stats)
         menu.addAction(show_stats_action)
 
+        monkeytype_action = QAction("🐵 Practice Hardest Words in Monkeytype", self)
+        monkeytype_action.triggered.connect(self.practice_hardest_words_monkeytype)
+        menu.addAction(monkeytype_action)
+
         settings_action = QAction("⚙️ Settings", self)
         settings_action.triggered.connect(self.show_settings_dialog)
         menu.addAction(settings_action)
@@ -88,6 +93,10 @@ class TrayIcon(QSystemTrayIcon):
         self.stats_panel.show()
         self.stats_panel.raise_()
         self.stats_panel.activateWindow()
+
+    def practice_hardest_words_monkeytype(self) -> None:
+        """Practice hardest 10 words in Monkeytype."""
+        self.monkeytype_practice_requested.emit()
 
     def toggle_monitoring(self) -> None:
         """Toggle monitoring on/off."""
