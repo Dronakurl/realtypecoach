@@ -53,6 +53,18 @@ class AppSettings(BaseModel):
         description="Minimum duration required for burst to be recorded (ms)",
     )
 
+    # Speed validation settings
+    max_realistic_wpm: int = Field(
+        default=300,
+        gt=100,
+        le=500,
+        description="Maximum WPM to consider realistic (bursts above this are ignored)",
+    )
+    unrealistic_speed_warning_enabled: bool = Field(
+        default=True,
+        description="Show warnings when unrealistic typing speeds are detected",
+    )
+
     # Data management
     data_retention_days: int = Field(
         default=-1, ge=-1, description="Days to keep data (-1 = keep forever)"

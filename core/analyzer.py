@@ -152,16 +152,25 @@ class Analyzer:
         with self._lock:
             self.today_stats["total_keystrokes"] += 1
 
-    def process_burst(self, burst: Burst) -> None:
+    def process_burst(self, burst: Burst, max_wpm_threshold: int = 300) -> None:
         """Process a completed burst.
 
         Args:
             burst: Completed Burst object
+            max_wpm_threshold: Maximum WPM to consider realistic (default: 300)
         """
         if burst.key_count == 0:
             return
 
         burst_wpm = self._calculate_wpm(burst.key_count, burst.duration_ms, burst.backspace_count)
+
+        # Validate WPM is within realistic range
+        if burst_wpm > max_wpm_threshold:
+            log.warning(
+                f"Ignored unrealistic burst: {burst_wpm:.1f} WPM > {max_wpm_threshold} WPM threshold, "
+                f"{burst.key_count} keys, {burst.duration_ms/1000:.1f}s"
+            )
+            return  # Early return - no storage, no stats update
 
         with self._lock:
             self.today_stats["total_bursts"] += 1

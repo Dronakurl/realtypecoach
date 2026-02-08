@@ -18,6 +18,7 @@ class NotificationHandler(QObject):
 
     signal_daily_summary = Signal(object)  # DailySummary object
     signal_exceptional_burst = Signal(float)
+    signal_unrealistic_burst = Signal(float, int)  # (wpm, key_count)
     signal_worst_letter_changed = Signal(object)  # WorstLetterChange object
 
     def __init__(

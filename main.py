@@ -58,6 +58,7 @@ from core.burst_detector import BurstDetector  # noqa: E402
 from core.dictionary_config import DictionaryConfig  # noqa: E402
 from core.evdev_handler import EvdevHandler  # noqa: E402
 from core.notification_handler import NotificationHandler  # noqa: E402
+from core.ollama_client import OllamaClient  # noqa: E402
 from core.storage import Storage  # noqa: E402
 from core.sync_handler import SyncHandler  # noqa: E402
 from ui.about_dialog import AboutDialog  # noqa: E402
@@ -91,6 +92,9 @@ class Application(QObject):
     signal_update_histogram_graph = Signal(list)  # For histogram data
     signal_update_recent_bursts = Signal(list)  # For recent bursts data
     signal_update_digraph_stats = Signal(list, list)  # For digraph statistics (fastest, slowest)
+    signal_text_generated = Signal(str)  # For Ollama text generation
+    signal_text_generation_failed = Signal(str)  # For Ollama errors
+    signal_ollama_available = Signal(bool)  # Ollama availability status
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -276,6 +280,10 @@ class Application(QObject):
         )
 
         self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
+
+        # Initialize Ollama client
+        self.ollama_client = OllamaClient()
+
         self.tray_icon = TrayIcon(
             self.stats_panel,
             self.icon_path,
@@ -356,6 +364,9 @@ class Application(QObject):
         self.notification_handler.signal_worst_letter_changed.connect(
             self.show_worst_letter_notification
         )
+        self.notification_handler.signal_unrealistic_burst.connect(
+            self.show_unrealistic_speed_notification
+        )
         self.signal_update_worst_letter.connect(
             self.stats_panel.update_worst_letter,
             Qt.ConnectionType.QueuedConnection,
@@ -372,9 +383,26 @@ class Application(QObject):
         self.stats_panel.set_histogram_data_callback(self.provide_histogram_data)
         self.stats_panel.set_words_clipboard_callback(self.fetch_words_for_clipboard)
         self.stats_panel.set_digraph_data_callback(self.provide_digraph_data)
+        self.stats_panel.set_text_generation_callback(self.generate_text_with_ollama)
 
         self.signal_clipboard_words_ready.connect(
             self.stats_panel._on_clipboard_words_ready,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+        # Connect Ollama text generation signals
+        self.ollama_client.signal_generation_complete.connect(
+            self.stats_panel.on_text_generated,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+        self.ollama_client.signal_generation_failed.connect(
+            self.stats_panel.on_text_generation_failed,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+        self.signal_ollama_available.connect(
+            self.stats_panel.set_ollama_available,
             Qt.ConnectionType.QueuedConnection,
         )
 
@@ -404,7 +432,25 @@ class Application(QObject):
 
     def on_burst_complete(self, burst) -> None:
         """Handle burst completion."""
-        self.analyzer.process_burst(burst)
+        # Pre-check for unrealistic WPM before processing
+        max_wpm_threshold = self.config.get_int("max_realistic_wpm", 300)
+        if burst.key_count > 0:
+            # Calculate WPM for validation
+            # Net keystrokes = total - 2*backspaces
+            net_keystrokes = max(0, burst.key_count - (burst.backspace_count * 2))
+            burst_wpm = self._calculate_wpm(net_keystrokes, burst.duration_ms)
+
+            if burst_wpm > max_wpm_threshold:
+                log.warning(
+                    f"Unrealistic burst detected: {burst_wpm:.1f} WPM > {max_wpm_threshold} WPM threshold, "
+                    f"{burst.key_count} keys, {burst.duration_ms/1000:.1f}s"
+                )
+                # Emit signal for notification
+                self.notification_handler.signal_unrealistic_burst.emit(burst_wpm, burst.key_count)
+                # Return early - no processing, no storage
+                return
+
+        self.analyzer.process_burst(burst, max_wpm_threshold=max_wpm_threshold)
 
         # Update statistics with debouncing when a burst completes, but only if panel is visible
         log.info(
@@ -510,6 +556,26 @@ class Application(QObject):
             icon_type = "warning"
 
         self.tray_icon.show_notification("🔤 Hardest Letter Changed", message, icon_type)
+
+    def show_unrealistic_speed_notification(self, wpm: float, key_count: int) -> None:
+        """Show notification for unrealistic typing speed.
+
+        Args:
+            wpm: Words per minute detected
+            key_count: Number of keystrokes in the burst
+        """
+        if not self.config.get_bool("unrealistic_speed_warning_enabled", True):
+            return
+
+        threshold = self.config.get_int("max_realistic_wpm", 300)
+
+        self.tray_icon.show_notification(
+            "⚠️ Unrealistic Typing Speed Detected",
+            f"{wpm:.1f} WPM detected (threshold: {threshold} WPM).\n"
+            f"This burst was not recorded to prevent data corruption.\n"
+            f"Burst: {key_count} keystrokes",
+            "warning",
+        )
 
     def _on_sync_failed(self, error: str) -> None:
         """Handle sync failure.
@@ -746,6 +812,79 @@ class Application(QObject):
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_in_thread)
 
+    def generate_text_with_ollama(self, count: int) -> None:
+        """Generate text using Ollama in background thread.
+
+        Args:
+            count: Number of words to generate
+        """
+        def generate_in_thread():
+            try:
+                # Fetch hardest words
+                words = self.analyzer.get_slowest_words(
+                    limit=min(count, 100),  # Cap at 100 words
+                    layout=self.get_current_layout()
+                )
+
+                if not words:
+                    log.warning("No words available for generation")
+                    self.signal_text_generation_failed.emit(
+                        "No typing data available yet. Type more first!"
+                    )
+                    return
+
+                # Load prompt template
+                from pathlib import Path
+
+                prompt_path = Path(__file__).parent / "ollama_prompt.txt"
+                try:
+                    with open(prompt_path, "r", encoding="utf-8") as f:
+                        prompt_template = f.read()
+                except FileNotFoundError:
+                    log.error(f"Prompt file not found: {prompt_path}")
+                    self.signal_text_generation_failed.emit(
+                        "Prompt template file not found"
+                    )
+                    return
+
+                # Format prompt
+                hardest_words = [w.word for w in words[:min(count, 50)]]
+                hardest_words_str = ", ".join(hardest_words)
+                prompt = prompt_template.format(
+                    word_count=count,
+                    hardest_words=hardest_words_str
+                )
+
+                # Generate text (OllamaClient handles threading)
+                self.ollama_client.generate_text(prompt, hardest_words)
+
+            except Exception as e:
+                log.error(f"Error in text generation: {e}")
+                self.signal_text_generation_failed.emit(str(e))
+
+        # Submit to thread pool
+        self._executor.submit(generate_in_thread)
+
+    def check_ollama_availability(self) -> None:
+        """Check Ollama availability and update UI (called periodically)."""
+        def check_in_thread():
+            available = self.ollama_client.check_server_available()
+            # Thread-safe UI update via signal
+            self.signal_ollama_available.emit(available)
+
+        self._executor.submit(check_in_thread)
+
+    def start_ollama_monitoring(self) -> None:
+        """Start periodic Ollama availability checks."""
+        from PySide6.QtCore import QTimer
+
+        self._ollama_check_timer = QTimer()
+        self._ollama_check_timer.timeout.connect(self.check_ollama_availability)
+        self._ollama_check_timer.start(60000)  # Check every 60 seconds
+
+        # Initial check
+        self.check_ollama_availability()
+
     def process_event_queue(self) -> None:
         """Process events from queue."""
         # Process all available events at once (non-blocking)
@@ -968,6 +1107,10 @@ class Application(QObject):
             "worst_letter_notification_debounce_min": self.config.get_int(
                 "worst_letter_notification_debounce_min", 5
             ),
+            "max_realistic_wpm": self.config.get_int("max_realistic_wpm", 300),
+            "unrealistic_speed_warning_enabled": self.config.get_bool(
+                "unrealistic_speed_warning_enabled", True
+            ),
             "data_retention_days": self.config.get_int("data_retention_days", -1),
             "dictionary_mode": self.config.get("dictionary_mode", "validate"),
             "enabled_languages": self.config.get("enabled_languages", "en,de"),
@@ -1042,6 +1185,10 @@ class Application(QObject):
         if self.sync_handler.enabled:
             log.info("Starting sync handler...")
             self.sync_handler.start()
+
+        # Start Ollama availability monitoring
+        log.info("Starting Ollama availability monitoring...")
+        self.start_ollama_monitoring()
 
         self.process_queue_timer = QTimer()
         self.process_queue_timer.timeout.connect(self.process_event_queue)

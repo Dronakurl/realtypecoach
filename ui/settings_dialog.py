@@ -546,6 +546,34 @@ class SettingsDialog(QDialog):
         worst_letter_group.setLayout(worst_letter_layout)
         layout.addWidget(worst_letter_group)
 
+        # Speed validation settings
+        speed_group = QGroupBox("Speed Validation")
+        speed_layout = QFormLayout()
+
+        self.max_realistic_wpm_spin = QSpinBox()
+        self.max_realistic_wpm_spin.setRange(101, 500)
+        self.max_realistic_wpm_spin.setSuffix(" WPM")
+        self.max_realistic_wpm_spin.setValue(300)
+        speed_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Maximum realistic WPM:",
+                "Bursts exceeding this WPM are considered unrealistic.\n"
+                "They will be ignored and not stored to prevent data corruption.\n"
+                "Default: 300 WPM (typical human maximum is ~200 WPM).",
+            ),
+            self.max_realistic_wpm_spin,
+        )
+
+        self.unrealistic_speed_warning_check = QCheckBox("Enable warnings")
+        self.unrealistic_speed_warning_check.setChecked(True)
+        self.unrealistic_speed_warning_check.setToolTip(
+            "Show desktop notification when unrealistic typing speed is detected."
+        )
+        speed_layout.addRow("", self.unrealistic_speed_warning_check)
+
+        speed_group.setLayout(speed_layout)
+        layout.addWidget(speed_group)
+
         layout.addStretch()
         widget.setLayout(layout)
         return widget
@@ -1415,6 +1443,13 @@ class SettingsDialog(QDialog):
         self.worst_letter_debounce_spin.setValue(
             self.current_settings.get("worst_letter_notification_debounce_min", 5)
         )
+        # Load speed validation settings
+        self.max_realistic_wpm_spin.setValue(
+            self.current_settings.get("max_realistic_wpm", 300)
+        )
+        self.unrealistic_speed_warning_check.setChecked(
+            self.current_settings.get("unrealistic_speed_warning_enabled", True)
+        )
         retention_days = self.current_settings.get("data_retention_days", -1)
         index = self.retention_combo.findData(retention_days)
         if index >= 0:
@@ -1512,6 +1547,8 @@ class SettingsDialog(QDialog):
                 self.worst_letter_notification_check.isChecked()
             ),
             "worst_letter_notification_debounce_min": str(self.worst_letter_debounce_spin.value()),
+            "max_realistic_wpm": str(self.max_realistic_wpm_spin.value()),
+            "unrealistic_speed_warning_enabled": str(self.unrealistic_speed_warning_check.isChecked()),
             "data_retention_days": str(self.retention_combo.currentData()),
             "dictionary_mode": "validate" if self.validate_mode_radio.isChecked() else "accept_all",
             "enabled_languages": enabled_langs_str,
