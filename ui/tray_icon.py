@@ -17,6 +17,7 @@ class TrayIcon(QSystemTrayIcon):
     stats_requested = Signal()  # Emitted when stats panel is requested
     about_requested = Signal()  # Emitted when about dialog is requested
     practice_requested = Signal()  # Emitted when typing practice is requested
+    dismiss_notification_requested = Signal()  # Emitted to dismiss current notification
 
     def __init__(
         self,
@@ -44,6 +45,9 @@ class TrayIcon(QSystemTrayIcon):
 
         self.setIcon(QIcon(str(icon_path)))
         self.setToolTip("RealTypeCoach - Monitoring Active")
+
+        # Connect internal signals
+        self.dismiss_notification_requested.connect(self._do_dismiss_notification)
 
         self.create_menu()
 
@@ -141,7 +145,7 @@ class TrayIcon(QSystemTrayIcon):
         """Show about dialog."""
         self.about_requested.emit()
 
-    def show_notification(self, title: str, message: str, message_type: str = "info") -> None:
+    def show_notification(self, title: str, message: str, message_type: str = "info", timeout_ms: int = 3000) -> None:
         """Show desktop notification.
 
         Thread-safe method that can be called from any thread.
@@ -150,6 +154,7 @@ class TrayIcon(QSystemTrayIcon):
             title: Notification title
             message: Notification message
             message_type: Type of notification (info/warning/error)
+            timeout_ms: Timeout in milliseconds (0 = indefinite/stays until clicked)
         """
         # Use invokeMethod to ensure this runs on the GUI thread
         QMetaObject.invokeMethod(
@@ -158,37 +163,30 @@ class TrayIcon(QSystemTrayIcon):
             Qt.ConnectionType.QueuedConnection,
             Q_ARG(str, title),
             Q_ARG(str, message),
+            Q_ARG(int, timeout_ms),
         )
 
-    @Slot(str, str)
-    def _do_show_notification(self, title: str, message: str) -> None:
+    @Slot(str, str, int)
+    def _do_show_notification(self, title: str, message: str, timeout_ms: int = 3000) -> None:
         """Internal method to show notification on GUI thread.
 
         Args:
             title: Notification title
             message: Notification message
+            timeout_ms: Timeout in milliseconds (0 = indefinite/stays until clicked)
         """
-        # Save current icon
-        current_icon = self.icon()
-        is_monitoring_active = self.monitoring_active
+        # Show notification (Qt handles icon restoration automatically)
+        self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, timeout_ms)
 
-        # Show notification
-        self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
+    def dismiss_notification(self) -> None:
+        """Dismiss the current notification by showing a brief empty message.
 
-        # Restore icon after a short delay (Qt changes it temporarily)
-        QTimer.singleShot(100, lambda: self._restore_icon_after_notification(current_icon, is_monitoring_active))
-
-    def _restore_icon_after_notification(self, saved_icon, was_monitoring_active: bool) -> None:
-        """Restore the icon after showing a notification.
-
-        Args:
-            saved_icon: The icon to restore
-            was_monitoring_active: Whether monitoring was active before notification
+        Thread-safe method that can be called from any thread.
         """
-        self.setIcon(saved_icon)
+        self.dismiss_notification_requested.emit()
 
-        # Update tooltip based on current monitoring state
-        if self.monitoring_active:
-            self.setToolTip("RealTypeCoach - Monitoring Active")
-        else:
-            self.setToolTip("RealTypeCoach - Monitoring Paused")
+    @Slot()
+    def _do_dismiss_notification(self) -> None:
+        """Internal method to dismiss notification on GUI thread."""
+        # Show an empty message with minimal timeout to clear any existing notification
+        self.showMessage("", "", QSystemTrayIcon.MessageIcon.Information, 1)

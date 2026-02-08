@@ -874,7 +874,7 @@ class Storage:
     def delete_all_names_from_database(self) -> int:
         """Delete all common name statistics from the database.
 
-        Loads common names from the embedded list for enabled languages
+        Loads all common names from the embedded list (all languages)
         and deletes all word statistics matching those names.
 
         Returns:
@@ -886,30 +886,12 @@ class Storage:
         """
         from core.common_names import COMMON_NAMES
 
-        # Get enabled languages from config
-        enabled_langs = set()
-        if hasattr(self, "config") and hasattr(self.config, "enabled_dictionaries"):
-            dict_paths = (
-                self.config.enabled_dictionaries.split(",")
-                if self.config.enabled_dictionaries
-                else []
-            )
-            from utils.dict_detector import DictionaryDetector
-
-            for path in dict_paths:
-                dict_info = DictionaryDetector.identify_dictionary(path)
-                if dict_info:
-                    enabled_langs.add(dict_info.language_code)
-
-        # Fallback to common languages if none enabled
-        if not enabled_langs:
-            enabled_langs = {"en", "de"}
-
-        # Collect all names from enabled languages
+        # Collect all names from all available language keys
+        # (Note: COMMON_NAMES currently has the same names for all languages,
+        # but we iterate all keys for forward compatibility)
         names_to_delete = set()
-        for lang in enabled_langs:
-            if lang in COMMON_NAMES:
-                names_to_delete.update(COMMON_NAMES[lang])
+        for lang_names in COMMON_NAMES.values():
+            names_to_delete.update(lang_names)
 
         # Also get any words currently in the database that are names
         # (in case the embedded list has changed or custom names exist)
@@ -918,9 +900,10 @@ class Storage:
         for word in all_words:
             word_lower = word.lower()
             # Check if this word is in our names list
-            for lang in enabled_langs:
-                if lang in COMMON_NAMES and word_lower in COMMON_NAMES[lang]:
+            for lang_names in COMMON_NAMES.values():
+                if word_lower in lang_names:
                     names_to_delete.add(word_lower)
+                    break  # Found it, no need to check other languages
 
         if not names_to_delete:
             log.info("No names to delete from database")
@@ -1147,13 +1130,16 @@ class Storage:
         """
         return self.adapter.get_all_prompts()
 
-    def get_active_prompt(self) -> dict | None:
+    def get_active_prompt(self, active_prompt_id: int = -1) -> dict | None:
         """Get currently active prompt.
+
+        Args:
+            active_prompt_id: The ID of the active prompt from config. -1 means use first.
 
         Returns:
             Active prompt dict or None
         """
-        return self.adapter.get_active_prompt()
+        return self.adapter.get_active_prompt(active_prompt_id)
 
     def update_prompt(self, prompt_id: int, name: str, content: str) -> bool:
         """Update prompt.

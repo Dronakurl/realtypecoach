@@ -629,6 +629,8 @@ class SyncManager:
             return self.remote.batch_update_high_scores(records, encrypted_data_list)
         elif table == "daily_summaries":
             return self.remote.batch_update_daily_summaries(records, encrypted_data_list)
+        elif table == "settings":
+            return self.remote.batch_update_settings(records, encrypted_data_list)
         else:
             log.warning(f"No batch_update method for table: {table}")
             return 0

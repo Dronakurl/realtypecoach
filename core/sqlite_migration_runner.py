@@ -60,11 +60,29 @@ class SQLiteMigrationRunner(MigrationRunner):
         # Import CryptoManager for key retrieval
         from utils.crypto import CryptoManager
 
-        crypto = CryptoManager(self.db_path)
-        encryption_key = crypto.get_key()
+        # Try to get encryption key with retry logic
+        max_retries = 3
+        encryption_key = None
+
+        for attempt in range(max_retries):
+            crypto = CryptoManager(self.db_path)
+            encryption_key = crypto.get_key()
+            if encryption_key:
+                break
+            if attempt < max_retries - 1:
+                log.warning(
+                    f"Encryption key not available (attempt {attempt + 1}/{max_retries}), retrying..."
+                )
+                import time
+
+                time.sleep(0.5)
 
         if not encryption_key:
-            raise RuntimeError("Encryption key not available for database migration")
+            raise RuntimeError(
+                "Encryption key not available for database migration. "
+                "This may indicate a keyring access issue. "
+                "Ensure the keyring is accessible and the database path is correct."
+            )
 
         # Create SQLAlchemy engine with a custom creator function
         # that sets up the encryption key

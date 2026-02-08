@@ -840,7 +840,8 @@ class Application(QObject):
 
                 # Load prompt template from database
                 try:
-                    prompt_data = self.storage.get_active_prompt()
+                    active_prompt_id = self.config.get_int("llm_active_prompt_id", -1)
+                    prompt_data = self.storage.get_active_prompt(active_prompt_id)
 
                     if prompt_data:
                         prompt_template = prompt_data['content']
@@ -897,32 +898,36 @@ class Application(QObject):
         """Practice hardest words with generated text.
 
         Generates text using Ollama, then opens typing practice page.
-        Uses configured word count from settings.
+        Uses the 50 hardest words as input for the prompt.
         """
         import subprocess
         from pathlib import Path
 
         def generate_and_practice():
             try:
-                # Get word count from settings
+                # Always use 50 hardest words for the prompt
+                hardest_word_count = 50
+                # Use configured word count for how much text to generate
                 word_count = self.config.get_int("llm_word_count", 50)
 
-                # Show initial notification
+                # Show initial notification (10 second timeout - won't stay open long)
                 self.tray_icon.show_notification(
                     "Typing Practice",
                     "Generating practice text with Ollama...",
-                    "info"
+                    "info",
+                    timeout_ms=10000  # 10 seconds
                 )
-                log.info(f"Starting typing practice: generating {word_count} words")
+                log.info(f"Starting typing practice: generating {word_count} words using {hardest_word_count} hardest words")
 
-                # Fetch hardest words (up to word count)
+                # Fetch hardest words (exactly 50 words)
                 words = self.analyzer.get_slowest_words(
-                    limit=min(word_count, 100),  # Cap at 100 words
+                    limit=hardest_word_count,
                     layout=self.get_current_layout()
                 )
 
                 if not words:
                     log.warning("No words available for typing practice")
+                    self.tray_icon.dismiss_notification()
                     self.tray_icon.show_notification(
                         "Typing Practice",
                         "No typing data available yet. Type more first!",
@@ -932,7 +937,8 @@ class Application(QObject):
 
                 # Load prompt template from database
                 try:
-                    prompt_data = self.storage.get_active_prompt()
+                    active_prompt_id = self.config.get_int("llm_active_prompt_id", -1)
+                    prompt_data = self.storage.get_active_prompt(active_prompt_id)
 
                     if prompt_data:
                         prompt_template = prompt_data['content']
@@ -948,7 +954,7 @@ class Application(QObject):
                     prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
 
                 # Format prompt
-                hardest_words = [w.word for w in words[:min(word_count, 50)]]  # Use up to 50 words in prompt
+                hardest_words = [w.word for w in words[:hardest_word_count]]
                 hardest_words_str = ", ".join(hardest_words)
                 prompt = prompt_template.format(
                     word_count=word_count,
@@ -961,22 +967,22 @@ class Application(QObject):
                 generated_text = self.ollama_client.generate_text_sync(prompt, hardest_words)
 
                 if not generated_text:
-                    log.error("Ollama text generation failed or returned empty")
-                    self.tray_icon.show_notification(
-                        "Typing Practice Error",
-                        "Failed to generate text. Is Ollama running?",
-                        "error"
-                    )
-                    return
+                    log.warning("Ollama text generation failed or returned empty, using hardest words directly")
+                    # Fallback: use hardest words directly
+                    generated_text = " ".join(hardest_words)
 
                 actual_word_count = len(generated_text.split())
                 log.info(f"Ollama generated {actual_word_count} words")
+
+                # Dismiss the "generating" notification
+                self.tray_icon.dismiss_notification()
 
                 # Get the script path
                 script_path = Path(__file__).parent / "scripts" / "practice.py"
 
                 if not script_path.exists():
                     log.error(f"practice.py not found at {script_path}")
+                    self.tray_icon.dismiss_notification()
                     self.tray_icon.show_notification(
                         "Typing Practice Error",
                         "practice.py script not found",
@@ -990,7 +996,7 @@ class Application(QObject):
                     f.write(generated_text)
                     temp_file = f.name
 
-                hardest_words_list = [w.word for w in words[:min(word_count, 50)]]
+                hardest_words_list = [w.word for w in words[:hardest_word_count]]
                 hardest_words_str = ",".join(hardest_words_list)
 
                 log.info(f"Opening typing practice with: {actual_word_count} words, {len(hardest_words_list)} highlighted")
@@ -1016,18 +1022,22 @@ class Application(QObject):
                     self.tray_icon.show_notification(
                         "Typing Practice Error",
                         "Failed to open practice. See logs.",
-                        "error"
+                        "error",
+                        timeout_ms=6000
                     )
 
             except subprocess.TimeoutExpired:
                 log.error("Practice operation timed out")
+                self.tray_icon.dismiss_notification()
                 self.tray_icon.show_notification(
                     "Typing Practice Error",
                     "Operation timed out",
-                    "error"
+                    "error",
+                    timeout_ms=6000
                 )
             except Exception as e:
                 log.error(f"Error in practice_hardest_words: {e}")
+                self.tray_icon.dismiss_notification()
                 self.tray_icon.show_notification(
                     "Typing Practice Error",
                     f"Error: {str(e)}",
@@ -1307,6 +1317,8 @@ class Application(QObject):
             if "llm_model" in new_settings:
                 new_model = new_settings["llm_model"]
                 if new_model != self.ollama_client.model:
+                    # Stop the current model before switching
+                    self.ollama_client.stop_model()
                     self.ollama_client.model = new_model
                     log.info(f"LLM model changed to: {new_model}")
 

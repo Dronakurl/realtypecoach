@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from alembic.config import Config
+from sqlalchemy import create_engine
 
 from core.migration_runner import MigrationRunner
 
@@ -82,24 +83,24 @@ class PostgreSQLMigrationRunner(MigrationRunner):
         """Get a PostgreSQL connection for migration operations.
 
         Yields:
-            psycopg2 connection
+            SQLAlchemy Connection
         """
-        import psycopg2
-
-        conn = psycopg2.connect(
-            host=self.host,
-            port=self.port,
-            database=self.database,
-            user=self.user,
-            password=self.password,
-            sslmode=self.sslmode,
+        # Build PostgreSQL connection URL
+        url = (
+            f"postgresql://{self.user}:{self.password}@"
+            f"{self.host}:{self.port}/{self.database}"
+            f"?sslmode={self.sslmode}"
         )
-        conn.autocommit = False
+
+        # Create SQLAlchemy engine for migration operations
+        engine = create_engine(url)
+        conn = engine.connect()
 
         try:
             yield conn
         finally:
             conn.close()
+            engine.dispose()
 
     def upgrade(self, revision: str = "head") -> None:
         """Run PostgreSQL migrations.
@@ -117,7 +118,7 @@ class PostgreSQLMigrationRunner(MigrationRunner):
         with self._get_connection() as conn:
             context = MigrationContext.configure(conn)
             with context.begin_transaction():
-                with self.config.attributes["connection"] as conn:
-                    command.upgrade(self.config, revision)
-                    new_version = context.get_current_revision()
-                    log.info(f"Migration complete. New version: {new_version}")
+                self.config.attributes["connection"] = conn
+                command.upgrade(self.config, revision)
+                new_version = context.get_current_revision()
+                log.info(f"Migration complete. New version: {new_version}")

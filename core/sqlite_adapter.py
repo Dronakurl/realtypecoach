@@ -348,6 +348,8 @@ class SQLiteAdapter(DatabaseAdapter):
         try:
             from alembic import command
             from alembic.config import Config
+            from sqlalchemy import create_engine
+            import sqlalchemy.pool
 
             # Get migration directory (use the same logic as in initialize)
             import core
@@ -361,12 +363,32 @@ class SQLiteAdapter(DatabaseAdapter):
             config = Config()
             config.set_main_option("script_location", str(migration_dir))
             config.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
+            config.set_main_option("render_as_batch", "true")
 
-            # Stamp database with initial revision
-            # We use revision '001' which is our baseline migration
-            # Use the connection directly from get_connection()
-            config.attributes["connection"] = conn
-            command.stamp(config, "001")
+            # Get encryption key from existing crypto manager
+            encryption_key = self.crypto.get_key()
+            if not encryption_key:
+                raise RuntimeError("Encryption key not available for stamping")
+
+            # Create SQLAlchemy engine with encryption
+            def db_connection():
+                conn = sqlite3.connect(str(self.db_path))
+                conn.execute(f'PRAGMA key = "x\'{encryption_key.hex()}"')
+                conn.execute("PRAGMA foreign_keys = ON")
+                return conn
+
+            engine = create_engine(
+                "sqlite+pysqlcipher:///:memory:",
+                creator=db_connection,
+                poolclass=sqlalchemy.pool.StaticPool,
+                connect_args={"check_same_thread": False},
+            )
+
+            with engine.connect() as sqlalchemy_conn:
+                config.attributes["connection"] = sqlalchemy_conn
+                command.stamp(config, "001")
+            engine.dispose()
+
             log.info("Stamped legacy database as revision 001")
 
         except Exception as e:
@@ -1985,6 +2007,40 @@ class SQLiteAdapter(DatabaseAdapter):
             conn.commit()
         return inserted
 
+    def batch_update_settings(
+        self, records: list[dict], encrypted_data_list: list[bytes | None]
+    ) -> int:
+        """Batch update settings records using INSERT...ON CONFLICT.
+
+        Args:
+            records: List of settings dictionaries
+            encrypted_data_list: List of encrypted data (same length as records)
+
+        Returns:
+            Number of records updated
+        """
+        if not records:
+            return 0
+
+        updated = 0
+        with self.get_connection() as conn:
+            for i, record in enumerate(records):
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO settings (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                """,
+                    (record.get("key"), record.get("value"), record.get("updated_at")),
+                )
+                if cursor.rowcount > 0:
+                    updated += 1
+            conn.commit()
+        return updated
+
     # ========== LLM Prompt Operations ==========
 
     def create_prompt(self, name: str, content: str, is_default: bool = False) -> int:
@@ -2067,15 +2123,28 @@ class SQLiteAdapter(DatabaseAdapter):
                 for row in cursor.fetchall()
             ]
 
-    def get_active_prompt(self) -> dict | None:
-        """Get the currently active prompt (first one, or by settings).
+    def get_active_prompt(self, active_prompt_id: int = -1) -> dict | None:
+        """Get the currently active prompt (by settings, or first one).
+
+        Args:
+            active_prompt_id: The ID of the active prompt from config. -1 means use first.
 
         Returns:
             Active prompt dict or None
         """
-        # For now, return first prompt (will be enhanced with settings)
         prompts = self.get_all_prompts()
-        return prompts[0] if prompts else None
+        if not prompts:
+            return None
+
+        # If active_prompt_id is specified and valid, use it
+        if active_prompt_id >= 0:
+            for prompt in prompts:
+                if prompt['id'] == active_prompt_id:
+                    return prompt
+            log.warning(f"Active prompt ID {active_prompt_id} not found, using first prompt")
+
+        # Fall back to first prompt
+        return prompts[0]
 
     def update_prompt(self, prompt_id: int, name: str, content: str) -> bool:
         """Update prompt.

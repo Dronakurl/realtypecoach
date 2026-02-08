@@ -124,6 +124,25 @@ class OllamaClient(QObject):
             log.error(f"Error generating text: {e}")
             self.signal_generation_failed.emit(str(e))
 
+    def stop_model(self, model: str | None = None) -> None:
+        """Stop a running model in Ollama.
+
+        Args:
+            model: Model name to stop. If None, stops the current model.
+        """
+        model_to_stop = model or self.model
+        if not model_to_stop:
+            return
+
+        try:
+            # Try using the ollama Python library's stop method if available
+            if hasattr(self.client, 'stop'):
+                self.client.stop(model_to_stop)
+                log.info(f"Stopped model: {model_to_stop}")
+        except Exception as e:
+            # Method might not exist or stop failed - log but don't crash
+            log.debug(f"Could not stop model {model_to_stop}: {e}")
+
     def generate_text_sync(self, prompt: str, words: list[str]) -> str | None:
         """Generate text using Ollama synchronously.
 

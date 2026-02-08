@@ -263,6 +263,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         try:
             from alembic import command
             from alembic.config import Config
+            from sqlalchemy import create_engine
 
             # Get migration directory (use the same logic as in initialize)
             import core
@@ -284,9 +285,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             config.set_main_option("sqlalchemy.url", url)
 
-            # Stamp database with initial revision
-            config.attributes["connection"] = conn
-            command.stamp(config, "001")
+            # Create SQLAlchemy engine for stamp operation
+            engine = create_engine(url)
+            with engine.connect() as sqlalchemy_conn:
+                config.attributes["connection"] = sqlalchemy_conn
+                command.stamp(config, "001")
+            engine.dispose()
+
             log.info("Stamped legacy PostgreSQL database as revision 001")
 
         except Exception as e:
@@ -2702,6 +2707,52 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     total_bursts = EXCLUDED.total_bursts,
                     avg_wpm = EXCLUDED.avg_wpm,
                     encrypted_data = EXCLUDED.encrypted_data
+            """,
+                data_tuples,
+            )
+
+            conn.commit()
+            return len(records)
+
+    def batch_update_settings(
+        self, records: list[dict], encrypted_data_list: list[bytes | None]
+    ) -> int:
+        """Batch update settings records using INSERT...ON CONFLICT DO UPDATE.
+
+        Args:
+            records: List of settings dictionaries
+            encrypted_data_list: List of encrypted data (same length as records)
+
+        Returns:
+            Number of records updated
+        """
+        if not records:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Prepare data tuples (settings table doesn't have encrypted_data column)
+            data_tuples = []
+            for r in records:
+                data_tuples.append(
+                    (
+                        self.user_id,
+                        r.get("key"),
+                        r.get("value"),
+                        r.get("updated_at"),
+                    )
+                )
+
+            execute_batch(
+                cursor,
+                """
+                INSERT INTO settings (user_id, key, value, updated_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id, key)
+                DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_at = EXCLUDED.updated_at
             """,
                 data_tuples,
             )
