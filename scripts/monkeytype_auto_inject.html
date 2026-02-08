@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monkeytype Injector</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            text-align: center;
+        }
+        h1 { color: #e2b714; }
+        .code {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin: 20px 0;
+        }
+        button {
+            background: #e2b714;
+            color: #1e1e1e;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #c9a312; }
+        .step { background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .step-number { color: #e2b714; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐵 Monkeytype Custom Text Injector</h1>
+
+        <div id="setup" style="display: none;">
+            <div class="step">
+                <span class="step-number">Step 1:</span>
+                <button onclick="copyCode()">Copy Injection Code</button>
+                <button onclick="openMonkeytype()">Open Monkeytype</button>
+            </div>
+
+            <div class="step">
+                <span class="step-number">Step 2:</span>
+                <p>On monkeytype.com, press <strong>F12</strong> → <strong>Console</strong> tab → Paste the code</p>
+            </div>
+
+            <div class="step">
+                <span class="step-number">Step 3:</span>
+                <p>The page will reload with your custom text!</p>
+            </div>
+
+            <div class="code" id="codeDisplay"></div>
+        </div>
+
+        <div id="error" style="display: none; color: #f44336;"></div>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const text = params.get('text');
+        const mode = params.get('mode') || 'repeat';
+
+        if (!text) {
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = 'Error: No text provided. Use ?text=your+text+here';
+            throw new Error('No text provided');
+        }
+
+        // Generate injection code
+        const words = text.split(/\s+/).filter(w => w.length > 0);
+
+        const injectionCode = `(function(){
+  const customTextSettings = {
+    text: ${JSON.stringify(words)},
+    mode: "${mode}",
+    limit: { value: ${words.length}, mode: "word" },
+    pipeDelimiter: false
+  };
+  localStorage.setItem('customTextSettings', JSON.stringify(customTextSettings));
+  location.reload();
+})();`;
+
+        document.getElementById('setup').style.display = 'block';
+        document.getElementById('codeDisplay').textContent = injectionCode;
+
+        function copyCode() {
+            navigator.clipboard.writeText(injectionCode).then(() => {
+                alert('✅ Code copied to clipboard!');
+            });
+        }
+
+        function openMonkeytype() {
+            window.open('https://monkeytype.com', '_blank');
+        }
+    </script>
+</body>
+</html>

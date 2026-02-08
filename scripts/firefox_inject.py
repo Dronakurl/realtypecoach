@@ -175,10 +175,10 @@ def inject_text_to_firefox(text: str, mode: str = "repeat", profile_name=None):
     import time
     time.sleep(2)  # Wait for Firefox to fully close
 
-    # Open Firefox to monkeytype.com
+    # Open Firefox to monkeytype.com in a new window (only one tab)
     print(f"✨ Opening Firefox to monkeytype.com...")
     print("="*60)
-    webbrowser.get('firefox').open('https://monkeytype.com')
+    subprocess.Popen(["firefox", "--new-window", "https://monkeytype.com"])
 
 
 def get_text_from_file(filepath: str) -> str:

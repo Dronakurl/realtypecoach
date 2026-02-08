@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monkeytype Custom Text Injector</title>
+    <style>
+        body {
+            font-family: monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: #1e1e1e;
+            color: #e0e0e0;
+        }
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+        .loading {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .info {
+            font-size: 14px;
+            color: #888;
+        }
+        .error {
+            color: #f44336;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="loading">🐵 Injecting custom text into Monkeytype...</div>
+        <div class="info">You'll be redirected automatically</div>
+        <div id="error" class="error"></div>
+    </div>
+
+    <script>
+        // Get text from URL parameter
+        const params = new URLSearchParams(window.location.search);
+        const text = params.get('text');
+        const monkeytypeUrl = params.get('url') || 'http://localhost:3000';
+        const mode = params.get('mode') || 'repeat'; // repeat, zip, maximize
+        const long = params.get('long') === 'true';
+
+        if (!text) {
+            document.getElementById('error').textContent = 'Error: No text provided. Use ?text=your+text+here';
+            throw new Error('No text provided');
+        }
+
+        // Split text into words
+        const words = text.split(/\s+/).filter(w => w.length > 0);
+
+        // Generate unique name for this session
+        const sessionId = Date.now().toString(36);
+        const textName = `rtc_${sessionId}`;
+
+        console.log('Injecting custom text:', {
+            name: textName,
+            wordCount: words.length,
+            mode,
+            long
+        });
+
+        try {
+            // Method 1: Set current custom text settings (for immediate use)
+            const customTextSettings = {
+                text: words,
+                mode: mode,
+                limit: {
+                    value: words.length,
+                    mode: "word"
+                },
+                pipeDelimiter: false
+            };
+            localStorage.setItem('customTextSettings', JSON.stringify(customTextSettings));
+
+            // Method 2: Also save it to saved texts (for later access)
+            if (long) {
+                const customTextLong = JSON.parse(localStorage.getItem('customTextLong') || '{}');
+                customTextLong[textName] = {
+                    text: text,
+                    progress: 0
+                };
+                localStorage.setItem('customTextLong', JSON.stringify(customTextLong));
+            } else {
+                const customText = JSON.parse(localStorage.getItem('customText') || '{}');
+                customText[textName] = text;
+                localStorage.setItem('customText', JSON.stringify(customText));
+            }
+
+            // Set the custom text name state
+            localStorage.setItem('customTextName', textName);
+            localStorage.setItem('customTextLong', long ? 'true' : 'false');
+
+            console.log('Custom text injected successfully! Redirecting...');
+
+            // Redirect to Monkeytype
+            setTimeout(() => {
+                window.location.href = monkeytypeUrl;
+            }, 500);
+
+        } catch (error) {
+            document.getElementById('error').textContent = `Error: ${error.message}`;
+            console.error('Failed to inject custom text:', error);
+        }
+    </script>
+</body>
+</html>
