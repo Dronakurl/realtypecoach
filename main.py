@@ -73,7 +73,7 @@ from utils.keyboard_detector import LayoutMonitor, get_current_layout  # noqa: E
 class Application(QObject):
     """Main application controller."""
 
-    signal_update_stats = Signal(float, float, float, float)
+    signal_update_stats = Signal(float, float, float, float, float)
     signal_update_slowest_keys = Signal(list)
     signal_update_fastest_keys = Signal(list)
     signal_update_hardest_words = Signal(list)
@@ -400,9 +400,17 @@ class Application(QObject):
             self.stats_panel.on_text_generated,
             Qt.ConnectionType.QueuedConnection,
         )
+        self.ollama_client.signal_generation_complete.connect(
+            self.tray_icon.restore_tooltip,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         self.ollama_client.signal_generation_failed.connect(
             self.stats_panel.on_text_generation_failed,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.ollama_client.signal_generation_failed.connect(
+            self.tray_icon.restore_tooltip,
             Qt.ConnectionType.QueuedConnection,
         )
 
@@ -664,7 +672,7 @@ class Application(QObject):
         if "__clear_database__" in new_settings:
             self.storage.clear_database()
             # Refresh statistics panel with empty data
-            self.signal_update_stats.emit(0, 0, 0, 0)
+            self.signal_update_stats.emit(0, 0, 0, 0, 0)
             self.signal_update_slowest_keys.emit([])
             self.signal_update_fastest_keys.emit([])
             self.signal_update_hardest_words.emit([])
@@ -990,13 +998,6 @@ class Application(QObject):
 
                 log.info(f"Opening typing practice with: {len(words_list)} words")
 
-                # Show progress notification
-                self.tray_icon.show_notification(
-                    "Typing Practice",
-                    f"Text generated! Opening practice with {len(words_list)} words...",
-                    "info"
-                )
-
                 # Run the practice script
                 result = subprocess.run(
                     ["python3", str(script_path), text_to_practice],
@@ -1007,10 +1008,6 @@ class Application(QObject):
 
                 if result.returncode == 0:
                     log.info("Successfully opened typing practice with generated text")
-                    self.tray_icon.show_notification(
-                        "Typing Practice",
-                        f"Practice session ready! {len(words_list)} words loaded."
-                    )
                 else:
                     log.error(f"Failed to open practice: {result.stderr}")
                     self.tray_icon.show_notification(
@@ -1127,6 +1124,7 @@ class Application(QObject):
         stats = self.analyzer.get_statistics()
         long_term_avg = self.analyzer.get_long_term_average_wpm() or 0
         all_time_best = self.analyzer.get_all_time_high_score() or 0
+        wpm_95th_percentile = self.analyzer.get_burst_wpm_percentile(95) or 0
 
         log.info(f"get_statistics took {(time.time() - start_time) * 1000:.1f}ms")
 
@@ -1138,6 +1136,7 @@ class Application(QObject):
             stats["personal_best_today"] or 0,
             long_term_avg,
             all_time_best,
+            wpm_95th_percentile,
         )
 
         keys_start = time.time()
@@ -1281,6 +1280,7 @@ class Application(QObject):
             # LLM settings
             "llm_model": self.config.get("llm_model", "gemma2:2b"),
             "llm_active_prompt_id": self.config.get_int("llm_active_prompt_id", -1),
+            "llm_word_count": self.config.get_int("llm_word_count", 50),
         }
         dialog = SettingsDialog(
             current_settings, storage=self.storage, sync_handler=self.sync_handler

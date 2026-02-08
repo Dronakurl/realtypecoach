@@ -212,6 +212,9 @@ class StatsPanel(QWidget):
         elif "Long-term Average" in label_text:
             self.avg_wpm_value_label = value
             self.avg_wpm_subtitle_label = subtitle
+        elif "95% Quantile" in label_text:
+            self.wpm_95th_value_label = value
+            self.wpm_95th_subtitle_label = subtitle
         elif "Hardest Letter" in label_text:
             self.worst_letter_value_label = value
             self.worst_letter_subtitle_label = subtitle
@@ -293,6 +296,10 @@ class StatsPanel(QWidget):
         # Long-term Average WPM Card
         avg_wpm_card = self._create_metric_card("Long-term Average WPM", "#4caf50")
         first_row.addWidget(avg_wpm_card)
+
+        # 95% Quantile WPM Card
+        wpm_95th_card = self._create_metric_card("95% Quantile WPM", "#ff9800")
+        first_row.addWidget(wpm_95th_card)
 
         dashboard_layout.addLayout(first_row)
 
@@ -603,6 +610,7 @@ class StatsPanel(QWidget):
         today_best: float,
         long_term_avg: float,
         all_time_best: float,
+        wpm_95th_percentile: float,
     ) -> None:
         """Update WPM display.
 
@@ -611,6 +619,7 @@ class StatsPanel(QWidget):
             today_best: Personal best WPM today
             long_term_avg: Long-term average WPM
             all_time_best: All-time best WPM
+            wpm_95th_percentile: 95th percentile WPM across all bursts
         """
         log.info(f"update_wpm() called: burst_wpm={burst_wpm:.1f}, visible={self.isVisible()}")
 
@@ -637,6 +646,19 @@ class StatsPanel(QWidget):
                 self.avg_wpm_subtitle_label.setText(f"all-time best: {all_time_best:.1f}")
             else:
                 self.avg_wpm_subtitle_label.setText("all-time best: --")
+
+        # Update 95% Quantile WPM card
+        if hasattr(self, "wpm_95th_value_label"):
+            if wpm_95th_percentile is not None and wpm_95th_percentile > 0:
+                self.wpm_95th_value_label.setText(f"{wpm_95th_percentile:.1f}")
+                # Show exceptional indicator if current burst exceeds 95th percentile
+                if burst_wpm > wpm_95th_percentile:
+                    self.wpm_95th_subtitle_label.setText("Exceptional burst!")
+                else:
+                    self.wpm_95th_subtitle_label.setText("")
+            else:
+                self.wpm_95th_value_label.setText("--")
+                self.wpm_95th_subtitle_label.setText("")
 
     def update_slowest_keys(self, slowest_keys: list[KeyPerformance]) -> None:
         """Update slowest keys display.

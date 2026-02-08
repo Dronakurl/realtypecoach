@@ -449,6 +449,30 @@ class Analyzer:
         """
         return self.storage.get_all_time_high_score()
 
+    def get_burst_wpm_percentile(self, percentile: float) -> float | None:
+        """Get WPM value at a given percentile across all bursts.
+
+        Args:
+            percentile: Percentile value (0-100), e.g., 95 for 95th percentile
+
+        Returns:
+            WPM value at the percentile or None if no bursts recorded
+        """
+        return self.storage.get_burst_wpm_percentile(percentile)
+
+    def is_exceptional_burst(self, wpm: float, percentile: float = 95) -> bool:
+        """Check if a burst WPM is exceptional (exceeds the given percentile).
+
+        Args:
+            wpm: The WPM value to check
+            percentile: Percentile threshold (default: 95)
+
+        Returns:
+            True if WPM exceeds the percentile threshold, False otherwise
+        """
+        threshold = self.get_burst_wpm_percentile(percentile)
+        return threshold is not None and wpm > threshold
+
     def _check_worst_letter_change(self) -> WorstLetterChange | None:
         """Check if worst letter has changed and return change data.
 

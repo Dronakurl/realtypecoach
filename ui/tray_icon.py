@@ -46,12 +46,6 @@ class TrayIcon(QSystemTrayIcon):
         self.setToolTip("RealTypeCoach - Monitoring Active")
 
         self.create_menu()
-        self.showMessage(
-            "RealTypeCoach",
-            "Typing analysis started. Click icon for stats!",
-            QSystemTrayIcon.MessageIcon.Information,
-            3000,
-        )
 
     def create_menu(self) -> None:
         """Create context menu."""
@@ -96,6 +90,9 @@ class TrayIcon(QSystemTrayIcon):
 
     def practice_hardest_words(self) -> None:
         """Practice hardest words with generated text."""
+        # Show indication that text generation has started
+        self.setToolTip("RealTypeCoach - Generating practice text...")
+        QApplication.processEvents()
         self.practice_requested.emit()
 
     def toggle_monitoring(self) -> None:
@@ -106,22 +103,10 @@ class TrayIcon(QSystemTrayIcon):
             self.pause_action.setText("⏸ Pause Monitoring")
             self.setIcon(QIcon(str(self.icon_path)))
             self.setToolTip("RealTypeCoach - Monitoring Active")
-            self.showMessage(
-                "Monitoring Resumed",
-                "RealTypeCoach is now recording your typing!",
-                QSystemTrayIcon.MessageIcon.Information,
-                2000,
-            )
         else:
             self.pause_action.setText("▶️ Resume Monitoring")
             self.setIcon(QIcon(str(self.icon_paused_path)))
             self.setToolTip("RealTypeCoach - Monitoring Paused")
-            self.showMessage(
-                "Monitoring Paused",
-                "RealTypeCoach is not recording typing.",
-                QSystemTrayIcon.MessageIcon.Warning,
-                2000,
-            )
 
     def _quit_app(self) -> None:
         """Quit the application."""
@@ -153,20 +138,21 @@ class TrayIcon(QSystemTrayIcon):
         self.about_requested.emit()
 
     def show_notification(self, title: str, message: str, message_type: str = "info") -> None:
-        """Show desktop notification.
+        """Show desktop notification (disabled to prevent icon change).
 
         Args:
             title: Notification title
             message: Notification message
             message_type: Type of notification (info/warning/error)
         """
-        icon_type = QSystemTrayIcon.MessageIcon.Information
-        if message_type == "warning":
-            icon_type = QSystemTrayIcon.MessageIcon.Warning
-        elif message_type == "error":
-            icon_type = QSystemTrayIcon.MessageIcon.Critical
+        # Disabled - Qt's showMessage() changes the tray icon to an info icon
+        # and doesn't reliably restore it. Notifications are handled by
+        # NotificationHandler instead.
+        pass
 
-        self.showMessage(title, message, icon_type, 5000)
-
-        # Restore the original icon after notification (some DEs replace icon with info icon)
-        QTimer.singleShot(100, lambda: self.setIcon(QIcon(str(self.icon_path))))
+    def restore_tooltip(self) -> None:
+        """Restore tooltip to its normal state."""
+        if self.monitoring_active:
+            self.setToolTip("RealTypeCoach - Monitoring Active")
+        else:
+            self.setToolTip("RealTypeCoach - Monitoring Paused")

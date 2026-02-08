@@ -531,6 +531,18 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_burst_wpm_percentile(self, percentile: float) -> float | None:
+        """Get WPM value at a given percentile across all bursts.
+
+        Args:
+            percentile: Percentile value (0-100), e.g., 95 for 95th percentile
+
+        Returns:
+            WPM value at the percentile or None if no bursts recorded
+        """
+        pass
+
     # ========== Data Management ==========
 
     @abstractmethod

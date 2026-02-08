@@ -2568,6 +2568,17 @@ Create a coherent text that includes as many of these words as possible in their
             cursor.execute("SELECT avg_wpm FROM bursts ORDER BY start_time")
             return [row[0] for row in cursor.fetchall() if row[0] is not None]
 
+    def get_burst_wpm_percentile(self, percentile: float) -> float | None:
+        """Get WPM value at a given percentile across all bursts."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT avg_wpm FROM bursts WHERE avg_wpm IS NOT NULL")
+            wpms = [row[0] for row in cursor.fetchall()]
+            if not wpms:
+                return None
+            import numpy as np
+            return float(np.percentile(wpms, percentile))
+
     # ========== Data Management ==========
 
     def delete_old_data(self, retention_days: int) -> None:

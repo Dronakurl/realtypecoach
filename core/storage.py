@@ -766,6 +766,17 @@ class Storage:
         """
         return self.adapter.get_all_burst_wpms_ordered()
 
+    def get_burst_wpm_percentile(self, percentile: float) -> float | None:
+        """Get WPM value at a given percentile across all bursts.
+
+        Args:
+            percentile: Percentile value (0-100), e.g., 95 for 95th percentile
+
+        Returns:
+            WPM value at the percentile or None if no bursts recorded
+        """
+        return self.adapter.get_burst_wpm_percentile(percentile)
+
     # Data Management
 
     def delete_old_data(self, retention_days: int) -> None:

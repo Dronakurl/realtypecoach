@@ -989,6 +989,7 @@ class SettingsDialog(QDialog):
 
         self.llm_prompt_combo = QComboBox()
         self.llm_prompt_combo.setMinimumWidth(250)
+        self.llm_prompt_combo.currentIndexChanged.connect(self._on_llm_prompt_changed)
         selector_layout.addWidget(self.llm_prompt_combo)
 
         prompt_layout.addLayout(selector_layout)
@@ -1007,20 +1008,27 @@ class SettingsDialog(QDialog):
         # Buttons
         buttons_layout = QHBoxLayout()
 
-        save_prompt_btn = QPushButton("Save Prompt")
-        save_prompt_btn.clicked.connect(self._save_llm_prompt)
-        buttons_layout.addWidget(save_prompt_btn)
+        save_btn = QPushButton("Save")
+        save_btn.setToolTip("Update current prompt")
+        save_btn.clicked.connect(self._save_llm_prompt)
+        buttons_layout.addWidget(save_btn)
 
-        delete_prompt_btn = QPushButton("Delete")
-        delete_prompt_btn.clicked.connect(self._delete_llm_prompt)
-        delete_prompt_btn.setStyleSheet("QPushButton { background-color: #d32f2f; color: white; }")
-        buttons_layout.addWidget(delete_prompt_btn)
+        save_as_btn = QPushButton("Save As...")
+        save_as_btn.setToolTip("Create new prompt from current content")
+        save_as_btn.clicked.connect(self._save_llm_prompt_as)
+        buttons_layout.addWidget(save_as_btn)
 
+        delete_btn = QPushButton("Delete")
+        delete_btn.setToolTip("Delete prompt")
+        delete_btn.setStyleSheet("QPushButton { background-color: #d32f2f; color: white; }")
+        delete_btn.clicked.connect(self._delete_llm_prompt)
+        buttons_layout.addWidget(delete_btn)
 
-        reset_defaults_btn = QPushButton("Reset All to Defaults")
-        reset_defaults_btn.clicked.connect(self._reset_llm_prompts)
-        reset_defaults_btn.setStyleSheet("QPushButton { background-color: #f57c00; color: white; }")
-        buttons_layout.addWidget(reset_defaults_btn)
+        reset_btn = QPushButton("Reset All")
+        reset_btn.setToolTip("Reset all prompts to defaults")
+        reset_btn.setStyleSheet("QPushButton { background-color: #f57c00; color: white; }")
+        reset_btn.clicked.connect(self._reset_llm_prompts)
+        buttons_layout.addWidget(reset_btn)
 
         editor_layout.addLayout(buttons_layout)
         prompt_layout.insertLayout(1, editor_layout)
@@ -1699,34 +1707,100 @@ class SettingsDialog(QDialog):
             log.error(f"Failed to load prompt: {e}")
 
     def _save_llm_prompt(self) -> None:
-        """Save or update prompt."""
+        """Save prompt content to current prompt (no name dialog for existing prompts)."""
         from PySide6.QtWidgets import QMessageBox
 
         if not self.storage:
             return
 
         prompt_id = self.llm_prompt_combo.currentData()
+        content = self.llm_prompt_editor.toPlainText()
+
+        # No prompt selected - ask for name to create new one
+        if prompt_id is None:
+            name, ok = QInputDialog.getText(
+                self, "New Prompt", "Enter a name for this prompt:", text="My Custom Prompt"
+            )
+            if not ok or not name:
+                return
+
+            try:
+                new_prompt_id = self.storage.create_prompt(name, content)
+                self._load_llm_prompts()
+                index = self.llm_prompt_combo.findData(new_prompt_id)
+                if index >= 0:
+                    self.llm_prompt_combo.setCurrentIndex(index)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save prompt: {e}")
+            return
+
+        # Editing existing prompt - check if it's a default prompt
+        try:
+            prompt = self.storage.get_prompt(prompt_id)
+            if not prompt:
+                QMessageBox.warning(self, "Error", "Could not find the selected prompt.")
+                return
+
+            # Warn if trying to save over a default prompt
+            if prompt.get('is_default'):
+                reply = QMessageBox.question(
+                    self,
+                    "Cannot Modify Default Prompt",
+                    "Default prompts cannot be modified directly.\n\n"
+                    "Use 'Save As' to create a custom copy.",
+                    QMessageBox.StandardButton.Ok,
+                )
+                return
+
+            # Save content with existing name (no dialog!)
+            self.storage.update_prompt(prompt_id, prompt['name'], content)
+
+            # Reload prompts to reflect changes (e.g., updated_at timestamp)
+            self._load_llm_prompts()
+            index = self.llm_prompt_combo.findData(prompt_id)
+            if index >= 0:
+                self.llm_prompt_combo.setCurrentIndex(index)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save prompt: {e}")
+
+    def _save_llm_prompt_as(self) -> None:
+        """Save current content as a new prompt (duplicate)."""
+        from PySide6.QtWidgets import QMessageBox
+
+        if not self.storage:
+            return
+
+        content = self.llm_prompt_editor.toPlainText()
+        current_prompt_id = self.llm_prompt_combo.currentData()
+
+        # Get current prompt name for default suggestion
+        default_name = "My Custom Prompt"
+        if current_prompt_id:
+            try:
+                current = self.storage.get_prompt(current_prompt_id)
+                if current:
+                    default_name = f"Copy of {current['name']}"
+            except Exception:
+                pass
+
+        # Ask for new name
         name, ok = QInputDialog.getText(
-            self, "Prompt Name", "Enter a name for this prompt:", text="My Custom Prompt"
+            self, "Save As", "Enter a name for the new prompt:", text=default_name
         )
 
         if not ok or not name:
             return
 
         try:
-            content = self.llm_prompt_editor.toPlainText()
+            # Create new prompt with current content
+            new_prompt_id = self.storage.create_prompt(name, content)
 
-            if prompt_id is None or not name:
-                # Create new prompt
-                self.storage.create_prompt(name, content)
-            else:
-                # Update existing prompt
-                self.storage.update_prompt(prompt_id, name, content)
-
-            # Reload prompts
+            # Reload and select the new prompt
             self._load_llm_prompts()
-
-            QMessageBox.information(self, "Success", "Prompt saved successfully.")
+            index = self.llm_prompt_combo.findData(new_prompt_id)
+            if index >= 0:
+                self.llm_prompt_combo.setCurrentIndex(index)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save prompt: {e}")
@@ -1751,21 +1825,12 @@ class SettingsDialog(QDialog):
             )
             return
 
-        # Confirm
-        reply = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            f"Delete prompt '{prompt['name']}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                self.storage.delete_prompt(prompt_id)
-                self._load_llm_prompts()
-                QMessageBox.information(self, "Success", "Prompt deleted.")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to delete: {e}")
+        try:
+            self.storage.delete_prompt(prompt_id)
+            self._load_llm_prompts()
+            QMessageBox.information(self, "Success", "Prompt deleted.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to delete: {e}")
 
     def _reset_llm_prompts(self) -> None:
         """Reset all prompts to defaults."""
@@ -1788,9 +1853,9 @@ class SettingsDialog(QDialog):
 
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
-        self.burst_timeout_spin.setValue(self.current_settings.get("burst_timeout_ms", 1000))
+        self.burst_timeout_spin.setValue(int(self.current_settings.get("burst_timeout_ms", 1000) or 1000))
         self.word_boundary_timeout_spin.setValue(
-            self.current_settings.get("word_boundary_timeout_ms", 1000)
+            int(self.current_settings.get("word_boundary_timeout_ms", 1000) or 1000)
         )
 
         # Load duration calculation method
@@ -1800,33 +1865,33 @@ class SettingsDialog(QDialog):
             self.duration_method_combo.setCurrentIndex(index)
 
         self.active_threshold_spin.setValue(
-            self.current_settings.get("active_time_threshold_ms", 500)
+            int(self.current_settings.get("active_time_threshold_ms", 500) or 500)
         )
 
         self.high_score_duration_spin.setValue(
-            self.current_settings.get("high_score_min_duration_ms", 5000)
+            int(self.current_settings.get("high_score_min_duration_ms", 5000) or 5000)
         )
-        self.min_key_count_spin.setValue(self.current_settings.get("min_burst_key_count", 10))
+        self.min_key_count_spin.setValue(int(self.current_settings.get("min_burst_key_count", 10) or 10))
         self.min_burst_duration_spin.setValue(
-            self.current_settings.get("min_burst_duration_ms", 5000)
+            int(self.current_settings.get("min_burst_duration_ms", 5000) or 5000)
         )
         self.keyboard_layout_combo.setCurrentText(
             self.current_settings.get("keyboard_layout", "Auto-detect").capitalize()
         )
         self.stats_update_interval_spin.setValue(
-            self.current_settings.get("stats_update_interval_sec", 2)
+            int(self.current_settings.get("stats_update_interval_sec", 2) or 2)
         )
         self.notification_min_burst_spin.setValue(
-            self.current_settings.get("notification_min_burst_ms", 10000) // 1000
+            int(self.current_settings.get("notification_min_burst_ms", 10000) or 10000) // 1000
         )
         self.notification_threshold_days_spin.setValue(
-            self.current_settings.get("notification_threshold_days", 30)
+            int(self.current_settings.get("notification_threshold_days", 30) or 30)
         )
         self.notification_threshold_update_spin.setValue(
-            self.current_settings.get("notification_threshold_update_sec", 300)
+            int(self.current_settings.get("notification_threshold_update_sec", 300) or 300)
         )
         self.notification_hour_spin.setValue(
-            self.current_settings.get("notification_time_hour", 18)
+            int(self.current_settings.get("notification_time_hour", 18) or 18)
         )
         self.daily_summary_enabled_check.setChecked(
             self.current_settings.get("daily_summary_enabled", True)
@@ -1835,11 +1900,11 @@ class SettingsDialog(QDialog):
             self.current_settings.get("worst_letter_notifications_enabled", False)
         )
         self.worst_letter_debounce_spin.setValue(
-            self.current_settings.get("worst_letter_notification_debounce_min", 5)
+            int(self.current_settings.get("worst_letter_notification_debounce_min", 5) or 5)
         )
         # Load speed validation settings
         self.max_realistic_wpm_spin.setValue(
-            self.current_settings.get("max_realistic_wpm", 300)
+            int(self.current_settings.get("max_realistic_wpm", 300) or 300)
         )
         self.unrealistic_speed_warning_check.setChecked(
             self.current_settings.get("unrealistic_speed_warning_enabled", True)
@@ -1866,7 +1931,7 @@ class SettingsDialog(QDialog):
         self.postgres_sync_enabled_check.setChecked(postgres_sync_enabled)
 
         self.postgres_host_input.setText(self.current_settings.get("postgres_host", ""))
-        self.postgres_port_spin.setValue(self.current_settings.get("postgres_port", 5432))
+        self.postgres_port_spin.setValue(int(self.current_settings.get("postgres_port", 5432) or 5432))
         self.postgres_database_input.setText(
             self.current_settings.get("postgres_database", "realtypecoach")
         )
@@ -1884,7 +1949,8 @@ class SettingsDialog(QDialog):
         self.auto_sync_enabled_check.setChecked(
             self.current_settings.get("auto_sync_enabled", False)
         )
-        self.sync_interval_spin.setValue(self.current_settings.get("auto_sync_interval_sec", 300))
+        sync_interval = self.current_settings.get("auto_sync_interval_sec", 300)
+        self.sync_interval_spin.setValue(int(sync_interval) if sync_interval else 300)
 
         # Trigger postgres sync changed to enable/disable postgres settings
         self.on_postgres_sync_changed()
@@ -1894,7 +1960,8 @@ class SettingsDialog(QDialog):
             self.llm_model_combo.findData(self.current_settings.get("llm_model", "gemma2:2b"))
         )
 
-        self.llm_word_count_spin.setValue(self.current_settings.get("llm_word_count", 50))
+        word_count = self.current_settings.get("llm_word_count", 50)
+        self.llm_word_count_spin.setValue(int(word_count) if word_count else 50)
 
         active_prompt_id = self.current_settings.get("llm_active_prompt_id", -1)
         if active_prompt_id >= 0:
@@ -1975,7 +2042,7 @@ class SettingsDialog(QDialog):
             # LLM settings
             "llm_model": self.llm_model_combo.currentData() or "gemma2:2b",
             "llm_active_prompt_id": self.llm_prompt_combo.currentData() or -1,
-            "llm_word_count": self.llm_word_count_spin.value(),
+            "llm_word_count": str(self.llm_word_count_spin.value()),
         }
 
     def accept(self) -> None:
