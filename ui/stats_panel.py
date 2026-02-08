@@ -470,14 +470,14 @@ class StatsPanel(QWidget):
         copy_row.addStretch()
         controls_layout.addLayout(copy_row)
 
-        # Row 2: Monkeytype and Generate Text buttons
+        # Row 2: Practice and Generate Text buttons
         action_row = QHBoxLayout()
 
-        self.monkeytype_btn = QPushButton("🐵 Monkeytype")
-        self.monkeytype_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
-        self.monkeytype_btn.clicked.connect(self.practice_in_monkeytype)
-        self.monkeytype_btn.setToolTip("Open clipboard text in Monkeytype for practice")
-        action_row.addWidget(self.monkeytype_btn)
+        self.practice_btn = QPushButton("⌨️ Practice")
+        self.practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.practice_btn.clicked.connect(self.practice_text)
+        self.practice_btn.setToolTip("Open clipboard text for typing practice")
+        action_row.addWidget(self.practice_btn)
 
         self.generate_text_btn = QPushButton("✨ Generate Text")
         self.generate_text_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
@@ -1062,8 +1062,8 @@ class StatsPanel(QWidget):
         if app and hasattr(app, "tray_icon"):
             app.tray_icon.show_notification("Copy Words", message)
 
-    def practice_in_monkeytype(self) -> None:
-        """Open clipboard text in Monkeytype for practice."""
+    def practice_text(self) -> None:
+        """Open clipboard text for typing practice."""
         import subprocess
         from PySide6.QtGui import QClipboard
 
@@ -1075,59 +1075,59 @@ class StatsPanel(QWidget):
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
                 app.tray_icon.show_notification(
-                    "Monkeytype Error",
+                    "Practice Error",
                     "Clipboard is empty. Copy some text first."
                 )
             return
 
         # Get the script path
         from pathlib import Path
-        script_path = Path(__file__).parent.parent / "scripts" / "firefox_inject.py"
+        script_path = Path(__file__).parent.parent / "scripts" / "practice.py"
 
         if not script_path.exists():
-            log.error(f"firefox_inject.py not found at {script_path}")
+            log.error(f"practice.py not found at {script_path}")
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
                 app.tray_icon.show_notification(
-                    "Monkeytype Error",
-                    "firefox_inject.py script not found"
+                    "Practice Error",
+                    "practice.py script not found"
                 )
             return
 
-        # Run the injection script
+        # Run the practice script
         try:
             # Truncate text if too long (for command line)
             words = clipboard_text.split()[:100]  # Limit to 100 words
-            text_to_inject = " ".join(words)
+            text_to_practice = " ".join(words)
 
-            log.info(f"Injecting text to Monkeytype: {len(words)} words")
+            log.info(f"Opening typing practice: {len(words)} words")
             result = subprocess.run(
-                ["python3", str(script_path), text_to_inject],
+                ["python3", str(script_path), text_to_practice],
                 capture_output=True,
                 text=True,
                 timeout=30
             )
 
             if result.returncode == 0:
-                log.info("Successfully injected text to Monkeytype")
+                log.info("Successfully opened typing practice")
                 app = QApplication.instance()
                 if app and hasattr(app, "tray_icon"):
                     app.tray_icon.show_notification(
-                        "Monkeytype",
+                        "Typing Practice",
                         f"Opened with {len(words)} words from clipboard"
                     )
             else:
-                log.error(f"Failed to inject: {result.stderr}")
+                log.error(f"Failed to open practice: {result.stderr}")
                 app = QApplication.instance()
                 if app and hasattr(app, "tray_icon"):
                     app.tray_icon.show_notification(
-                        "Monkeytype Error",
-                        "Failed to inject text. See logs."
+                        "Practice Error",
+                        "Failed to open practice. See logs."
                     )
         except subprocess.TimeoutExpired:
-            log.error("firefox_inject.py timed out")
+            log.error("practice.py timed out")
         except Exception as e:
-            log.error(f"Error running firefox_inject.py: {e}")
+            log.error(f"Error running practice.py: {e}")
 
     def set_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words for clipboard.

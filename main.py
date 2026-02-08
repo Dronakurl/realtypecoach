@@ -380,7 +380,7 @@ class Application(QObject):
         self.tray_icon.settings_requested.connect(self.show_settings_dialog)
         self.tray_icon.stats_requested.connect(self.update_statistics)
         self.tray_icon.about_requested.connect(self.show_about_dialog)
-        self.tray_icon.monkeytype_practice_requested.connect(self.practice_hardest_words_monkeytype)
+        self.tray_icon.practice_requested.connect(self.practice_hardest_words)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
@@ -893,10 +893,10 @@ class Application(QObject):
         # Initial check
         self.check_ollama_availability()
 
-    def practice_hardest_words_monkeytype(self) -> None:
-        """Practice hardest words in Monkeytype.
+    def practice_hardest_words(self) -> None:
+        """Practice hardest words with generated text.
 
-        Generates text using Ollama, then injects into Firefox and opens Monkeytype.
+        Generates text using Ollama, then opens typing practice page.
         Uses configured word count from settings.
         """
         import subprocess
@@ -909,11 +909,11 @@ class Application(QObject):
 
                 # Show initial notification with word count
                 self.tray_icon.show_notification(
-                    "Monkeytype",
+                    "Typing Practice",
                     f"Generating {word_count} words of practice text with Ollama...",
                     "info"
                 )
-                log.info(f"Starting Monkeytype practice: generating {word_count} words")
+                log.info(f"Starting typing practice: generating {word_count} words")
 
                 # Fetch hardest words (up to word count)
                 words = self.analyzer.get_slowest_words(
@@ -922,9 +922,9 @@ class Application(QObject):
                 )
 
                 if not words:
-                    log.warning("No words available for Monkeytype practice")
+                    log.warning("No words available for typing practice")
                     self.tray_icon.show_notification(
-                        "Monkeytype",
+                        "Typing Practice",
                         "No typing data available yet. Type more first!",
                         "warning"
                     )
@@ -963,7 +963,7 @@ class Application(QObject):
                 if not generated_text:
                     log.error("Ollama text generation failed or returned empty")
                     self.tray_icon.show_notification(
-                        "Monkeytype Error",
+                        "Typing Practice Error",
                         "Failed to generate text. Is Ollama running?",
                         "error"
                     )
@@ -973,68 +973,63 @@ class Application(QObject):
                 log.info(f"Ollama generated {actual_word_count} words")
 
                 # Get the script path
-                script_path = Path(__file__).parent / "scripts" / "firefox_inject.py"
+                script_path = Path(__file__).parent / "scripts" / "practice.py"
 
                 if not script_path.exists():
-                    log.error(f"firefox_inject.py not found at {script_path}")
+                    log.error(f"practice.py not found at {script_path}")
                     self.tray_icon.show_notification(
-                        "Monkeytype Error",
-                        "firefox_inject.py script not found",
+                        "Typing Practice Error",
+                        "practice.py script not found",
                         "error"
                     )
                     return
 
                 # Truncate text if too long (for command line)
                 words_list = generated_text.split()[:100]  # Limit to 100 words
-                text_to_inject = " ".join(words_list)
+                text_to_practice = " ".join(words_list)
 
-                log.info(f"Injecting generated text to Monkeytype: {len(words_list)} words")
+                log.info(f"Opening typing practice with: {len(words_list)} words")
 
                 # Show progress notification
                 self.tray_icon.show_notification(
-                    "Monkeytype",
-                    f"Text generated! Opening Firefox with {len(words_list)} words...",
+                    "Typing Practice",
+                    f"Text generated! Opening practice with {len(words_list)} words...",
                     "info"
                 )
 
-                # Close all Firefox windows first
-                subprocess.run(["killall", "firefox"], stderr=subprocess.DEVNULL, timeout=5)
-                import time
-                time.sleep(1)  # Wait for Firefox to close
-
-                # Run the injection script
+                # Run the practice script
                 result = subprocess.run(
-                    ["python3", str(script_path), text_to_inject],
+                    ["python3", str(script_path), text_to_practice],
                     capture_output=True,
                     text=True,
                     timeout=30
                 )
 
                 if result.returncode == 0:
-                    log.info("Successfully opened Monkeytype with generated text")
+                    log.info("Successfully opened typing practice with generated text")
                     self.tray_icon.show_notification(
-                        "Monkeytype",
+                        "Typing Practice",
                         f"Practice session ready! {len(words_list)} words loaded."
                     )
                 else:
-                    log.error(f"Failed to inject: {result.stderr}")
+                    log.error(f"Failed to open practice: {result.stderr}")
                     self.tray_icon.show_notification(
-                        "Monkeytype Error",
-                        "Failed to inject text. See logs.",
+                        "Typing Practice Error",
+                        "Failed to open practice. See logs.",
                         "error"
                     )
 
             except subprocess.TimeoutExpired:
-                log.error("Firefox operation timed out")
+                log.error("Practice operation timed out")
                 self.tray_icon.show_notification(
-                    "Monkeytype Error",
+                    "Typing Practice Error",
                     "Operation timed out",
                     "error"
                 )
             except Exception as e:
-                log.error(f"Error in practice_hardest_words_monkeytype: {e}")
+                log.error(f"Error in practice_hardest_words: {e}")
                 self.tray_icon.show_notification(
-                    "Monkeytype Error",
+                    "Typing Practice Error",
                     f"Error: {str(e)}",
                     "error"
                 )

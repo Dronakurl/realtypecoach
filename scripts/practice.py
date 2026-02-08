@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Launch a browser-based typing practice session with custom text.
+Launch typing practice session with custom text.
+
+Opens the standalone typing practice page in your default browser.
 
 Usage:
     python3 practice.py "Your practice text here"
     python3 practice.py --file path/to/text.txt
-    python3 practice.py --clipboard  # Use text from clipboard
 """
 import sys
 import webbrowser
@@ -14,16 +15,6 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
 HTML_FILE = SCRIPT_DIR / "typing_practice.html"
-
-
-def get_text_from_clipboard() -> str:
-    """Get text from clipboard."""
-    try:
-        import pyperclip
-        return pyperclip.paste()
-    except ImportError:
-        print("Error: pyperclip not installed. Install with: pip install pyperclip")
-        sys.exit(1)
 
 
 def get_text_from_file(filepath: str) -> str:
@@ -36,7 +27,7 @@ def get_text_from_file(filepath: str) -> str:
 
 
 def launch_practice(text: str):
-    """Launch browser with typing practice and the given text."""
+    """Launch typing practice in default browser."""
     # Truncate text if too long (URL limits)
     if len(text) > 5000:
         print(f"Warning: Text is {len(text)} chars, truncating to 5000")
@@ -46,8 +37,11 @@ def launch_practice(text: str):
     file_url = HTML_FILE.as_uri()
     full_url = f"{file_url}?text={urllib.parse.quote(text)}"
 
-    print(f"Opening typing practice with {len(text)} characters...")
-    print("Press Tab to restart, Esc to close browser tab")
+    word_count = len(text.split())
+    print(f"Opening typing practice with {word_count} words...")
+    print("Press Tab to restart")
+
+    # Open in default browser
     webbrowser.open(full_url)
 
 
@@ -61,13 +55,6 @@ def main():
             print("Error: --file requires a filepath argument")
             sys.exit(1)
         text = get_text_from_file(sys.argv[2])
-
-    elif sys.argv[1] == '--clipboard':
-        text = get_text_from_clipboard()
-        if not text:
-            print("Error: Clipboard is empty")
-            sys.exit(1)
-
     else:
         # Treat all arguments as the practice text
         text = ' '.join(sys.argv[1:])

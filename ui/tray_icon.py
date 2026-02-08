@@ -16,7 +16,7 @@ class TrayIcon(QSystemTrayIcon):
     settings_requested = Signal()  # Emitted when settings dialog is requested
     stats_requested = Signal()  # Emitted when stats panel is requested
     about_requested = Signal()  # Emitted when about dialog is requested
-    monkeytype_practice_requested = Signal()  # Emitted when Monkeytype practice is requested
+    practice_requested = Signal()  # Emitted when typing practice is requested
 
     def __init__(
         self,
@@ -61,9 +61,9 @@ class TrayIcon(QSystemTrayIcon):
         show_stats_action.triggered.connect(self.show_stats)
         menu.addAction(show_stats_action)
 
-        monkeytype_action = QAction("🐵 Practice Hardest Words in Monkeytype", self)
-        monkeytype_action.triggered.connect(self.practice_hardest_words_monkeytype)
-        menu.addAction(monkeytype_action)
+        practice_action = QAction("⌨️ Practice Hardest Words", self)
+        practice_action.triggered.connect(self.practice_hardest_words)
+        menu.addAction(practice_action)
 
         settings_action = QAction("⚙️ Settings", self)
         settings_action.triggered.connect(self.show_settings_dialog)
@@ -94,9 +94,9 @@ class TrayIcon(QSystemTrayIcon):
         self.stats_panel.raise_()
         self.stats_panel.activateWindow()
 
-    def practice_hardest_words_monkeytype(self) -> None:
-        """Practice hardest 10 words in Monkeytype."""
-        self.monkeytype_practice_requested.emit()
+    def practice_hardest_words(self) -> None:
+        """Practice hardest words with generated text."""
+        self.practice_requested.emit()
 
     def toggle_monitoring(self) -> None:
         """Toggle monitoring on/off."""
@@ -167,3 +167,6 @@ class TrayIcon(QSystemTrayIcon):
             icon_type = QSystemTrayIcon.MessageIcon.Critical
 
         self.showMessage(title, message, icon_type, 5000)
+
+        # Restore the original icon after notification (some DEs replace icon with info icon)
+        QTimer.singleShot(100, lambda: self.setIcon(QIcon(str(self.icon_path))))
