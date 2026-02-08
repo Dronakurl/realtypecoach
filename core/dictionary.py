@@ -80,8 +80,11 @@ class Dictionary:
         try:
             from core.common_names import COMMON_NAMES
 
-            # Load names for all loaded languages
-            for lang_code in self.get_loaded_languages():
+            # Use enabled languages from config instead of loaded languages
+            # (loaded_languages is empty during initialization)
+            enabled_langs = self._config.enabled_languages
+
+            for lang_code in enabled_langs:
                 if lang_code in COMMON_NAMES:
                     self._names_set.update(COMMON_NAMES[lang_code])
             log.info(f"Loaded {len(self._names_set)} common names for exclusion")
