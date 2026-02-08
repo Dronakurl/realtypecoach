@@ -1102,6 +1102,86 @@ class Storage:
                 "duration_ms": 0,
             }
 
+    # ========== LLM Prompt Management ==========
+
+    def create_prompt(self, name: str, content: str, is_default: bool = False) -> int:
+        """Create a new LLM prompt.
+
+        Args:
+            name: Prompt name (must be unique)
+            content: Prompt template
+            is_default: Whether this is a default prompt
+
+        Returns:
+            Created prompt ID
+        """
+        return self.adapter.create_prompt(name, content, is_default)
+
+    def get_prompt(self, prompt_id: int) -> dict | None:
+        """Get prompt by ID.
+
+        Args:
+            prompt_id: Prompt ID
+
+        Returns:
+            Prompt dict or None
+        """
+        return self.adapter.get_prompt(prompt_id)
+
+    def get_all_prompts(self) -> list[dict]:
+        """Get all prompts.
+
+        Returns:
+            List of prompt dicts
+        """
+        return self.adapter.get_all_prompts()
+
+    def get_active_prompt(self) -> dict | None:
+        """Get currently active prompt.
+
+        Returns:
+            Active prompt dict or None
+        """
+        return self.adapter.get_active_prompt()
+
+    def update_prompt(self, prompt_id: int, name: str, content: str) -> bool:
+        """Update prompt.
+
+        Args:
+            prompt_id: Prompt ID
+            name: New name
+            content: New content
+
+        Returns:
+            True if updated
+        """
+        return self.adapter.update_prompt(prompt_id, name, content)
+
+    def delete_prompt(self, prompt_id: int) -> bool:
+        """Delete prompt.
+
+        Args:
+            prompt_id: Prompt ID
+
+        Returns:
+            True if deleted
+        """
+        return self.adapter.delete_prompt(prompt_id)
+
+    def reset_default_prompts(self) -> bool:
+        """Reset prompts to defaults.
+
+        Returns:
+            True if successful
+        """
+        return self.adapter.reset_default_prompts()
+
+    def initialize_default_prompts(self) -> None:
+        """Initialize default prompts if no prompts exist."""
+        prompts = self.get_all_prompts()
+        if not prompts:
+            self.reset_default_prompts()
+
     def close(self) -> None:
         """Close the database adapter and cleanup resources."""
         log.info("Closing storage adapter...")
