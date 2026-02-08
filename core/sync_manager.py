@@ -53,6 +53,7 @@ class SyncManager:
         "daily_summaries",
         "ignored_words",
         "settings",
+        "llm_prompts",
     ]
 
     def __init__(
@@ -215,6 +216,8 @@ class SyncManager:
             return record.get("word_hash")
         elif table == "settings":
             return record.get("key")
+        elif table == "llm_prompts":
+            return record.get("id")
         return None
 
     def _records_equal(self, table: str, local: dict, remote: dict) -> bool:
@@ -287,6 +290,14 @@ class SyncManager:
             return (
                 local.get("key") == remote.get("key")
                 and local.get("value") == remote.get("value")
+                and local.get("updated_at") == remote.get("updated_at")
+            )
+        elif table == "llm_prompts":
+            # Compare name, content, and timestamp
+            return (
+                local.get("id") == remote.get("id")
+                and local.get("name") == remote.get("name")
+                and local.get("content") == remote.get("content")
                 and local.get("updated_at") == remote.get("updated_at")
             )
 
@@ -808,6 +819,9 @@ class SyncManager:
         elif table == "settings":
             # Use adapter's get_all_settings method
             return self.local.get_all_settings()
+        elif table == "llm_prompts":
+            # Use adapter's get_all_llm_prompts_for_sync method
+            return self.local.get_all_llm_prompts_for_sync()
 
         return data
 
@@ -1047,6 +1061,9 @@ class SyncManager:
             elif table == "settings":
                 # Use adapter's get_all_settings method
                 return self.remote.get_all_settings()
+            elif table == "llm_prompts":
+                # Use adapter's get_all_llm_prompts_for_sync method
+                return self.remote.get_all_llm_prompts_for_sync()
 
         except Exception as e:
             error_msg = f"Failed to get remote data for {table}: {e}"
@@ -1217,6 +1234,9 @@ class SyncManager:
                 elif table == "settings":
                     # Use adapter's upsert_setting method
                     self.remote.upsert_setting(key=record.get("key"), value=record.get("value"))
+                elif table == "llm_prompts":
+                    # Use batch insert for prompts
+                    self.remote.batch_insert_llm_prompts([record])
 
                 conn.commit()
             return True
@@ -1366,6 +1386,9 @@ class SyncManager:
                 elif table == "settings":
                     # Use adapter's upsert_setting method
                     self.local.upsert_setting(key=record.get("key"), value=record.get("value"))
+                elif table == "llm_prompts":
+                    # Use batch insert for prompts
+                    self.local.batch_insert_llm_prompts([record])
 
                 conn.commit()
             return True
@@ -1443,6 +1466,14 @@ class SyncManager:
                 return remote
 
         elif table == "settings":
+            # Last write wins based on updated_at timestamp
+            local_updated = local.get("updated_at", 0)
+            remote_updated = remote.get("updated_at", 0)
+            if local_updated >= remote_updated:
+                return local
+            else:
+                return remote
+        elif table == "llm_prompts":
             # Last write wins based on updated_at timestamp
             local_updated = local.get("updated_at", 0)
             remote_updated = remote.get("updated_at", 0)
