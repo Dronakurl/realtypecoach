@@ -87,15 +87,19 @@
             // Build a set for O(1) lookup of hardest words (case-insensitive)
             const hardestSet = new Set(hardestWords.map(w => w.toLowerCase()));
 
+            // Helper to check if a character is part of a word (Unicode-aware)
+            // Matches any character that's NOT whitespace, punctuation, or symbols
+            const isWordChar = (c) => !/[\s\p{P}\p{S}]/u.test(c);
+
             for (let i = 0; i < targetText.length; i++) {
                 // Check if this position is within a hardest word
                 let inHardestWord = false;
                 if (hardestSet.size > 0) {
-                    // Find the word boundaries around position i
+                    // Find the word boundaries around position i (Unicode-aware)
                     let start = i;
-                    while (start > 0 && /\w/.test(targetText[start - 1])) start--;
+                    while (start > 0 && isWordChar(targetText[start - 1])) start--;
                     let end = i;
-                    while (end < targetText.length && /\w/.test(targetText[end])) end++;
+                    while (end < targetText.length && isWordChar(targetText[end])) end++;
                     const word = targetText.slice(start, end).toLowerCase();
                     inHardestWord = hardestSet.has(word);
                 }
