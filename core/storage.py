@@ -1053,11 +1053,18 @@ class Storage:
             local_adapter.initialize()
             log.info(f"Created SQLite local adapter for sync, type: {type(local_adapter).__name__}")
 
+            # Create is_name_callback if dictionary excludes names
+            is_name_callback = None
+            if self.dictionary._exclude_names:
+                is_name_callback = self.dictionary._is_name
+                log.info("Passing is_name_callback to SyncManager to filter names during pull")
+
             sync_mgr = SyncManager(
                 local_adapter=local_adapter,
                 remote_adapter=remote_adapter,
                 encryption=encryption,
                 user_id=user.user_id,
+                is_name_callback=is_name_callback,
             )
             log.info(f"SyncManager local adapter type: {type(sync_mgr.local).__name__}")
 

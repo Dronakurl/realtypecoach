@@ -62,6 +62,7 @@ class SyncManager:
         remote_adapter: "DatabaseAdapter",
         encryption: "DataEncryption | None" = None,
         user_id: str = "",
+        is_name_callback: "callable | None" = None,
     ):
         """Initialize sync manager.
 
@@ -70,11 +71,14 @@ class SyncManager:
             remote_adapter: Remote PostgreSQL database adapter
             encryption: DataEncryption instance for client-side encryption
             user_id: User UUID for filtering data
+            is_name_callback: Optional callback to check if a word is a name.
+                              If provided, filters out names during remote data pull.
         """
         self.local = local_adapter
         self.remote = remote_adapter
         self.encryption = encryption
         self.user_id = user_id
+        self.is_name_callback = is_name_callback
 
     def bidirectional_merge(self) -> SyncResult:
         """Perform bidirectional merge between local and remote databases.
@@ -984,6 +988,14 @@ class SyncManager:
                                 error_msg = f"Failed to decrypt word statistics for word={row[0]}, layout={row[1]}: {e}"
                                 log.error(error_msg)
                                 raise RuntimeError(error_msg) from e
+
+                        # Filter out names if callback is provided
+                        if self.is_name_callback:
+                            word = record.get("word", "")
+                            if self.is_name_callback(word):
+                                log.debug(f"Filtering out name '{word}' from remote word_statistics")
+                                continue
+
                         data.append(record)
 
             elif table == "high_scores":
