@@ -3,6 +3,7 @@
 
 import logging
 import os
+import re
 import signal
 import sys
 import time
@@ -970,6 +971,12 @@ class Application(QObject):
                     log.warning("Ollama text generation failed or returned empty, using hardest words directly")
                     # Fallback: use hardest words directly
                     generated_text = " ".join(hardest_words)
+
+                # Clean up LLM output: remove asterisk markdown formatting
+                # This handles cases like *word* or **word** that LLMs sometimes use for emphasis
+                generated_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', generated_text)  # Remove **word**
+                generated_text = re.sub(r'\*([^*]+)\*', r'\1', generated_text)      # Remove *word*
+                log.debug(f"Cleaned LLM output (removed asterisk formatting)")
 
                 actual_word_count = len(generated_text.split())
                 log.info(f"Ollama generated {actual_word_count} words")
