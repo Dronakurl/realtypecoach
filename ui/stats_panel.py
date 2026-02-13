@@ -624,9 +624,16 @@ class StatsPanel(QWidget):
         if hasattr(self, "burst_wpm_value_label"):
             self.burst_wpm_value_label.setText(f"{burst_wpm:.1f}")
             if today_best > 0:
-                self.burst_wpm_subtitle_label.setText(f"today's best: {today_best:.1f}")
+                today_best_text = f"{today_best:.1f}"
             else:
-                self.burst_wpm_subtitle_label.setText("today's best: --")
+                today_best_text = "--"
+            if wpm_95th_percentile > 0:
+                percentile_text = f"{wpm_95th_percentile:.1f}"
+            else:
+                percentile_text = "--"
+            self.burst_wpm_subtitle_label.setText(
+                f"today's best: {today_best_text} • 95% quantile: {percentile_text}"
+            )
 
         # Update Long-term Average WPM card
         if hasattr(self, "avg_wpm_value_label"):
@@ -854,7 +861,7 @@ class StatsPanel(QWidget):
             )
             wpm_95_display = f"{wpm_95th_percentile:.1f} WPM" if wpm_95th_percentile > 0 else "--"
             self.avg_burst_time_subtitle_label.setText(
-                f"95% WPM: {wpm_95_display} • 95% time: {p95_display} • min: {min_display} • max: {max_display}"
+                f"95%: {p95_display} • max: {max_display}"
             )
 
     @staticmethod
