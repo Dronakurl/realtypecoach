@@ -127,6 +127,7 @@ cp -r "$SCRIPT_DIR"/core "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR"/ui "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR"/utils "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR"/tests "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR"/scripts "$INSTALL_DIR/"
 # Copy migrations directory for Alembic
 cp -r "$SCRIPT_DIR"/migrations "$INSTALL_DIR/"
 # Copy alembic.ini for migration configuration
