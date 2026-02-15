@@ -219,6 +219,46 @@ class WordDetector:
 
         return None
 
+    def _filter_keystrokes_to_final_word(self, keystrokes: list[KeystrokeInfo], final_word: str) -> list[KeystrokeInfo]:
+        """Filter keystrokes to only include those contributing to the final word.
+
+        Handles backspaces by tracking which keystrokes remain in the final word.
+        Preserves original timing information for valid keystrokes.
+
+        Args:
+            keystrokes: Complete keystroke list including backspaces
+            final_word: The final recognized word
+
+        Returns:
+            Filtered keystroke list with only final word characters
+        """
+        # Simulate typing to find which keystrokes contribute to final word
+        temp_word = []
+        preserved_keystrokes = []
+
+        for ks in keystrokes:
+            if ks.type == "letter":
+                temp_word.append(ks.key)
+                preserved_keystrokes.append(ks)
+            elif ks.type == "backspace" and temp_word:
+                temp_word.pop()
+                preserved_keystrokes.append(ks)
+
+        # Match preserved keystrokes to final word characters
+        final_keystrokes = []
+        word_idx = 0
+
+        for ks in preserved_keystrokes:
+            if ks.type == "letter":
+                if word_idx < len(final_word) and ks.key == final_word[word_idx]:
+                    final_keystrokes.append(ks)
+                    word_idx += 1
+            elif ks.type == "backspace":
+                # Skip backspaces in final keystroke list
+                continue
+
+        return final_keystrokes
+
     def _finalize_current_state(self, end_time_ms: int | None = None) -> WordInfo | None:
         """Finalize current word state.
 
@@ -241,6 +281,9 @@ class WordDetector:
 
         total_duration_ms = state.finalize(end_time_ms)
 
+        # Filter keystrokes to only include those contributing to the final word
+        filtered_keystrokes = self._filter_keystrokes_to_final_word(state.keystrokes, state.word)
+
         return WordInfo(
             word=state.word,
             layout=state.layout,
@@ -248,7 +291,7 @@ class WordDetector:
             editing_time_ms=state.editing_time_ms,
             backspace_count=state.backspace_count,
             num_letters=len(state.word),
-            keystrokes=list(state.keystrokes),  # Include keystroke list
+            keystrokes=filtered_keystrokes,  # Include only filtered keystroke list
         )
 
     def reset(self) -> None:

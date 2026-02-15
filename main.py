@@ -1181,6 +1181,17 @@ class Application(QObject):
         self.signal_update_fastest_words_stats.emit(fastest_words)
         log.info(f"Slowest/fastest words queries took {(time.time() - words_start) * 1000:.1f}ms")
 
+        # Update digraph statistics
+        digraphs_start = time.time()
+        fastest_digraphs = self.analyzer.get_fastest_digraphs(
+            limit=10, layout=self.get_current_layout()
+        )
+        slowest_digraphs = self.analyzer.get_slowest_digraphs(
+            limit=10, layout=self.get_current_layout()
+        )
+        self.signal_update_digraph_stats.emit(fastest_digraphs, slowest_digraphs)
+        log.info(f"Digraph queries took {(time.time() - digraphs_start) * 1000:.1f}ms")
+
         # Update typing time display (today + all-time excluding today)
         all_time_typing_sec = self.storage.get_all_time_typing_time(
             exclude_today=stats["date"]
