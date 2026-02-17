@@ -581,6 +581,28 @@ class SyncManager:
                                 f"Daily summary update affected 0 rows: date={record.get('date')}"
                             )
 
+                elif table == "settings":
+                    for record in records:
+                        cursor.execute(
+                            """
+                            UPDATE settings
+                            SET value = ?,
+                                updated_at = ?
+                            WHERE key = ?
+                        """,
+                            (
+                                record.get("value"),
+                                record.get("updated_at"),
+                                record.get("key"),
+                            ),
+                        )
+                        if cursor.rowcount > 0:
+                            updated_count += 1
+                        else:
+                            log.warning(
+                                f"Settings update affected 0 rows: key={record.get('key')}"
+                            )
+
                 conn.commit()
 
                 if updated_count != len(records):
