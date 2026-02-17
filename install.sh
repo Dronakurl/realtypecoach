@@ -196,7 +196,7 @@ cat > "$APPLICATIONS_DIR/realtypecoach.desktop" << EOF
 [Desktop Entry]
 Name=RealTypeCoach
 GenericName=Typing Analysis Tool
-Comment=KDE Wayland typing analysis application
+Comment=Wayland typing analysis application
 Exec=$BIN_DIR/realtypecoach
 Icon=$INSTALL_DIR/icon.svg
 Type=Application

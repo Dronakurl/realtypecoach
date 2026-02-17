@@ -23,7 +23,7 @@ Unlike artificial typing tests, RealTypeCoach analyzes your real-world typing to
 
 ## Requirements
 
-- **Tested on**: Ubuntu 24.04+ with KDE Plasma on Wayland (likely works on other Linux desktops)
+- **Tested on**: Ubuntu 24.04+ on Wayland (works on KDE Plasma, XFCE, and other Linux desktops)
 - **Python**: 3.10 or higher
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for compatibility reports.

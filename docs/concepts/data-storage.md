@@ -10,7 +10,7 @@ RealTypeCoach uses an **encrypted SQLite database** (SQLCipher) to store typing 
 - Daily summaries
 - High scores
 
-Encryption keys are stored in your system keyring (GNOME Keyring or KDE KWallet).
+Encryption keys are stored in your system keyring (GNOME Keyring, KDE KWallet, or other keyring backends).
 
 ## Schema
 

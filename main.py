@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RealTypeCoach - KDE Wayland typing analysis application."""
+"""RealTypeCoach - Wayland typing analysis application."""
 
 import logging
 import os

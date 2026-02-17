@@ -1,7 +1,7 @@
 [project]
 name = "realtypecoach"
 version = "1.0.0"
-description = "KDE Wayland typing analysis application"
+description = "Wayland typing analysis application"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
