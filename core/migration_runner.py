@@ -114,16 +114,12 @@ class MigrationRunner(ABC):
         Returns:
             True if upgrades are available, False otherwise
         """
-        from alembic.runtime.migration import MigrationContext
-
         current = self.get_current_version()
         if current is None:
             # Not versioned yet
             return True
 
-        with self._get_connection() as conn:
-            context = MigrationContext.configure(conn)
-            return context.get_current_head() != current
+        return self.script_dir.get_current_head() != current
 
     def stamp(self, revision: str) -> None:
         """Stamp database with revision without running migrations.

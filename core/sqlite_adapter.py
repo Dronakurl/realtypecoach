@@ -351,6 +351,13 @@ class SQLiteAdapter(DatabaseAdapter):
             from sqlalchemy import create_engine
             import sqlalchemy.pool
 
+            # Check if database file exists and is not empty
+            db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
+            log.debug(f"Database file size check: {db_size} bytes")
+            if not self.db_path.exists() or db_size == 0:
+                log.info("Database file is empty or doesn't exist, skipping Alembic stamp")
+                return
+
             # Get migration directory (use the same logic as in initialize)
             import core
 
@@ -370,19 +377,37 @@ class SQLiteAdapter(DatabaseAdapter):
             if not encryption_key:
                 raise RuntimeError("Encryption key not available for stamping")
 
-            # Create SQLAlchemy engine with encryption
-            def db_connection():
-                conn = sqlite3.connect(str(self.db_path))
-                conn.execute(f'PRAGMA key = "x\'{encryption_key.hex()}"')
-                conn.execute("PRAGMA foreign_keys = ON")
-                return conn
+            # Check if database is encrypted by trying to open it first
+            db_is_encrypted = False
+            try:
+                test_conn = sqlite3.connect(str(self.db_path))
+                test_conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
+                test_conn.execute("SELECT 1")
+                test_conn.close()
+                db_is_encrypted = True
+            except sqlite3.OperationalError:
+                # Database not encrypted or doesn't exist yet
+                pass
 
-            engine = create_engine(
-                "sqlite+pysqlcipher:///:memory:",
-                creator=db_connection,
-                poolclass=sqlalchemy.pool.StaticPool,
-                connect_args={"check_same_thread": False},
-            )
+            # Create SQLAlchemy engine - use plain SQLite for unencrypted databases
+            if db_is_encrypted:
+                def db_connection():
+                    conn = sqlite3.connect(str(self.db_path))
+                    conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
+                    conn.execute("PRAGMA foreign_keys = ON")
+                    return conn
+                engine = create_engine(
+                    "sqlite+pysqlcipher:///:memory:",
+                    creator=db_connection,
+                    poolclass=sqlalchemy.pool.StaticPool,
+                    connect_args={"check_same_thread": False},
+                )
+            else:
+                # For unencrypted databases, use direct file path with standard SQLite
+                engine = create_engine(
+                    f"sqlite:///{self.db_path}",
+                    connect_args={"check_same_thread": False},
+                )
 
             with engine.connect() as sqlalchemy_conn:
                 config.attributes["connection"] = sqlalchemy_conn
