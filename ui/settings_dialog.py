@@ -2356,7 +2356,7 @@ class SettingsDialog(QDialog):
                     f"Sync completed successfully!\n\n"
                     f"Pushed: {result['pushed']} records\n"
                     f"Pulled: {result['pulled']} records\n"
-                    f"Conflicts resolved: {result['conflicts_resolved']}\n"
+                    f"Merged: {result['merged']} records\n"
                     f"Duration: {result['duration_ms'] / 1000:.2f} s",
                 )
             else:

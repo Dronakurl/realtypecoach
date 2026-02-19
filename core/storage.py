@@ -973,7 +973,7 @@ class Storage:
                 - success: True if sync succeeded
                 - pushed: Number of records pushed to remote
                 - pulled: Number of records pulled from remote
-                - conflicts_resolved: Number of conflicts merged
+                - merged: Number of records merged
                 - error: Error message if failed
                 - duration_ms: Sync duration in milliseconds
 
@@ -1087,7 +1087,7 @@ class Storage:
                 "success": result.success,
                 "pushed": result.pushed,
                 "pulled": result.pulled,
-                "conflicts_resolved": result.conflicts_resolved,
+                "merged": result.merged,
                 "error": result.error,
                 "duration_ms": result.duration_ms,
             }
@@ -1099,7 +1099,7 @@ class Storage:
                 "error": str(e),
                 "pushed": 0,
                 "pulled": 0,
-                "conflicts_resolved": 0,
+                "merged": 0,
                 "duration_ms": 0,
             }
 

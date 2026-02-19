@@ -551,7 +551,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 completed_at BIGINT,
                 records_pushed INTEGER DEFAULT 0,
                 records_pulled INTEGER DEFAULT 0,
-                conflicts_resolved INTEGER DEFAULT 0,
+                merged INTEGER DEFAULT 0,
                 status TEXT NOT NULL,
                 error_message TEXT,
                 metadata TEXT

@@ -92,7 +92,7 @@ Examples:
             print(f"✓ Sync completed successfully in {duration:.2f}s")
             print(f"  Pushed: {result['pushed']} records")
             print(f"  Pulled: {result['pulled']} records")
-            print(f"  Conflicts resolved: {result['conflicts_resolved']}")
+            print(f"  Merged: {result['merged']} records")
             print(f"  Total records transferred: {total_records}")
         else:
             print("✗ Sync failed")

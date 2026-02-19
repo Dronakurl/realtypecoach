@@ -27,7 +27,7 @@ class SyncResult:
     success: bool
     pushed: int = 0
     pulled: int = 0
-    conflicts_resolved: int = 0
+    merged: int = 0
     error: str | None = None
     duration_ms: int = 0
 
@@ -100,8 +100,8 @@ class SyncManager:
                 pushed, pulled, conflicts = self._sync_table(table)
                 result.pushed += pushed
                 result.pulled += pulled
-                result.conflicts_resolved += conflicts
-                log.info(f"Synced {table}: pushed={pushed}, pulled={pulled}, conflicts={conflicts}")
+                result.merged += conflicts
+                log.info(f"Synced {table}: pushed={pushed}, pulled={pulled}, merged={conflicts}")
 
             result.success = True
 
@@ -120,7 +120,7 @@ class SyncManager:
             table: Table name to sync
 
         Returns:
-            Tuple of (pushed, pulled, conflicts_resolved)
+            Tuple of (pushed, pulled, merged)
         """
         # Get local and remote data
         local_data = self._get_local_data(table)
@@ -846,7 +846,9 @@ class SyncManager:
 
         elif table == "settings":
             # Use adapter's get_all_settings method
-            return self.local.get_all_settings()
+            # Filter out last_sync_timestamp as it's sync metadata, not user data
+            all_settings = self.local.get_all_settings()
+            return [s for s in all_settings if s.get("key") != "last_sync_timestamp"]
         elif table == "llm_prompts":
             # Use adapter's get_all_llm_prompts_for_sync method
             return self.local.get_all_llm_prompts_for_sync()
@@ -1096,7 +1098,9 @@ class SyncManager:
 
             elif table == "settings":
                 # Use adapter's get_all_settings method
-                return self.remote.get_all_settings()
+                # Filter out last_sync_timestamp as it's sync metadata, not user data
+                all_settings = self.remote.get_all_settings()
+                return [s for s in all_settings if s.get("key") != "last_sync_timestamp"]
             elif table == "llm_prompts":
                 # Use adapter's get_all_llm_prompts_for_sync method
                 return self.remote.get_all_llm_prompts_for_sync()
