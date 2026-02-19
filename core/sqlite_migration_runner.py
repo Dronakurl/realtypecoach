@@ -91,48 +91,19 @@ class SQLiteMigrationRunner(MigrationRunner):
                 "Ensure the keyring is accessible and the database path is correct."
             )
 
-        # Check if database is encrypted by trying to open it first
-        db_is_encrypted = False
-        try:
-            test_conn = sqlite3.connect(str(self.db_path))
-            test_conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
-            test_conn.execute("SELECT 1")
-            test_conn.close()
-            db_is_encrypted = True
-        except sqlite3.OperationalError:
-            # Database not encrypted or doesn't exist yet
-            pass
-
-        # Create SQLAlchemy engine with a custom creator function
-        # that sets up the encryption key only if database is encrypted
-        if db_is_encrypted:
-            def db_connection():
-                conn = sqlite3.connect(str(self.db_path))
-                # Use SQLCipher PRAGMA key with hex format (same as adapter)
-                conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
-                conn.execute("PRAGMA foreign_keys = ON")
-                return conn
-            engine = create_engine(
-                "sqlite+pysqlcipher:///:memory:",
-                creator=db_connection,
-                poolclass=sqlalchemy.pool.StaticPool,
-                connect_args={"check_same_thread": False},
-            )
-        else:
-            # For unencrypted databases, use direct file path with standard SQLite
-            engine = create_engine(
-                f"sqlite:///{self.db_path}",
-                connect_args={"check_same_thread": False},
-            )
-
-        # Get a connection from the engine
-        conn = engine.connect()
+        # Create a raw SQLite connection with proper encryption setup
+        # This avoids SQLAlchemy's pysqlcipher dialect initialization issues
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
+        conn.execute("PRAGMA cipher_memory_security = ON")
+        conn.execute("PRAGMA cipher_page_size = 4096")
+        conn.execute("PRAGMA cipher_kdf_iter = 256000")
+        conn.execute("PRAGMA foreign_keys = ON")
 
         try:
             yield conn
         finally:
             conn.close()
-            engine.dispose()
 
     def upgrade(self, revision: str = "head") -> None:
         """Run SQLite migrations with batch mode support.

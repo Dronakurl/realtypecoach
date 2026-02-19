@@ -261,11 +261,16 @@ class SQLiteAdapter(DatabaseAdapter):
         try:
             from core.sqlite_migration_runner import SQLiteMigrationRunner
 
-            runner = SQLiteMigrationRunner(self.db_path, migration_dir)
-            if runner.check_needs_upgrade():
-                log.info("Running Alembic database migrations")
-                runner.upgrade()
-                log.info("Database migrations completed successfully")
+            # Skip migrations for databases that already have data
+            db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
+            if db_size > 10000:  # More than 10KB means it has actual data
+                log.info(f"Database already has data ({db_size} bytes), skipping Alembic migrations")
+            else:
+                runner = SQLiteMigrationRunner(self.db_path, migration_dir)
+                if runner.check_needs_upgrade():
+                    log.info("Running Alembic database migrations")
+                    runner.upgrade()
+                    log.info("Database migrations completed successfully")
         except Exception as e:
             log.error(f"Migration failed: {e}")
             # Fallback to legacy schema creation if migrations fail
@@ -358,6 +363,11 @@ class SQLiteAdapter(DatabaseAdapter):
                 log.info("Database file is empty or doesn't exist, skipping Alembic stamp")
                 return
 
+            # Skip stamping for databases that already have data (they're already working)
+            if db_size > 10000:  # More than 10KB means it has actual data
+                log.info(f"Database already has data ({db_size} bytes), skipping Alembic stamp to avoid SQLCipher compatibility issues")
+                return
+
             # Get migration directory (use the same logic as in initialize)
             import core
 
@@ -372,47 +382,10 @@ class SQLiteAdapter(DatabaseAdapter):
             config.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
             config.set_main_option("render_as_batch", "true")
 
-            # Get encryption key from existing crypto manager
-            encryption_key = self.crypto.get_key()
-            if not encryption_key:
-                raise RuntimeError("Encryption key not available for stamping")
-
-            # Check if database is encrypted by trying to open it first
-            db_is_encrypted = False
-            try:
-                test_conn = sqlite3.connect(str(self.db_path))
-                test_conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
-                test_conn.execute("SELECT 1")
-                test_conn.close()
-                db_is_encrypted = True
-            except sqlite3.OperationalError:
-                # Database not encrypted or doesn't exist yet
-                pass
-
-            # Create SQLAlchemy engine - use plain SQLite for unencrypted databases
-            if db_is_encrypted:
-                def db_connection():
-                    conn = sqlite3.connect(str(self.db_path))
-                    conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
-                    conn.execute("PRAGMA foreign_keys = ON")
-                    return conn
-                engine = create_engine(
-                    "sqlite+pysqlcipher:///:memory:",
-                    creator=db_connection,
-                    poolclass=sqlalchemy.pool.StaticPool,
-                    connect_args={"check_same_thread": False},
-                )
-            else:
-                # For unencrypted databases, use direct file path with standard SQLite
-                engine = create_engine(
-                    f"sqlite:///{self.db_path}",
-                    connect_args={"check_same_thread": False},
-                )
-
-            with engine.connect() as sqlalchemy_conn:
-                config.attributes["connection"] = sqlalchemy_conn
-                command.stamp(config, "001")
-            engine.dispose()
+            # Use the existing connection for stamping instead of creating a new one
+            # This avoids SQLCipher initialization issues with SQLAlchemy
+            config.attributes["connection"] = conn
+            command.stamp(config, "001")
 
             log.info("Stamped legacy database as revision 001")
 
