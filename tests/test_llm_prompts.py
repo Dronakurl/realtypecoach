@@ -63,7 +63,9 @@ class TestLLMPrompts:
         """Test that llm_prompts table is created."""
         with storage._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='llm_prompts'")
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='llm_prompts'"
+            )
             result = cursor.fetchone()
             assert result is not None
             assert result[0] == "llm_prompts"
@@ -75,7 +77,7 @@ class TestLLMPrompts:
         prompts = storage.get_all_prompts()
         assert len(prompts) == 3
 
-        names = [p['name'] for p in prompts]
+        names = [p["name"] for p in prompts]
         assert "Professional Technical" in names
         assert "Casual Narrative" in names
         assert "Minimal Simple" in names
@@ -90,8 +92,8 @@ class TestLLMPrompts:
 
         prompt = storage.get_prompt(prompt_id)
         assert prompt is not None
-        assert prompt['name'] == "My Custom Prompt"
-        assert prompt['is_default'] == False
+        assert prompt["name"] == "My Custom Prompt"
+        assert prompt["is_default"] == False
 
     def test_update_prompt(self, storage):
         """Test updating prompt."""
@@ -101,8 +103,8 @@ class TestLLMPrompts:
         assert result is True
 
         prompt = storage.get_prompt(prompt_id)
-        assert prompt['name'] == "Updated"
-        assert prompt['content'] == "New content"
+        assert prompt["name"] == "Updated"
+        assert prompt["content"] == "New content"
 
     def test_delete_custom_prompt(self, storage):
         """Test deleting custom prompt."""
@@ -120,8 +122,8 @@ class TestLLMPrompts:
         prompts = storage.get_all_prompts()
 
         for prompt in prompts:
-            if prompt['is_default']:
-                result = storage.delete_prompt(prompt['id'])
+            if prompt["is_default"]:
+                result = storage.delete_prompt(prompt["id"])
                 assert result is False
 
     def test_get_active_prompt(self, storage):
@@ -130,7 +132,7 @@ class TestLLMPrompts:
 
         prompt = storage.get_active_prompt()
         assert prompt is not None
-        assert 'content' in prompt
+        assert "content" in prompt
 
     def test_initialize_default_prompts_only_if_empty(self, storage):
         """Test that initialize_default_prompts only creates prompts if none exist."""
@@ -148,7 +150,7 @@ class TestLLMPrompts:
         assert len(prompts) == 4
 
         # Verify custom prompt still exists
-        names = [p['name'] for p in prompts]
+        names = [p["name"] for p in prompts]
         assert "Custom" in names
 
     def test_prompt_has_placeholders(self, storage):
@@ -157,6 +159,6 @@ class TestLLMPrompts:
         prompts = storage.get_all_prompts()
 
         for prompt in prompts:
-            content = prompt['content']
-            assert '{word_count}' in content
-            assert '{hardest_words}' in content
+            content = prompt["content"]
+            assert "{word_count}" in content
+            assert "{hardest_words}" in content

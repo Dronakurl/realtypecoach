@@ -431,3 +431,214 @@ class TestWordStorageWithDictionary:
 
         # 'shooes' not in dictionary, 'shoes' should be stored
         assert "shoes" in words
+
+
+class TestWordWPMCalculation:
+    """Test that word WPM calculation correctly handles pauses."""
+
+    def test_pause_between_letters_accumulates_in_duration(self):
+        """Test that pauses BETWEEN letters are excluded from WPM calculation."""
+        detector = WordDetector(
+            word_boundary_timeout_ms=1000,
+            min_word_length=3,
+            active_time_threshold_ms=2000,
+        )
+
+        base_time = int(time.time() * 1000)
+
+        # Type 'h' at time 0
+        result = detector.process_keystroke("h", base_time, "us", is_letter=True, keycode=35)
+        assert result is None
+
+        # Type 'a' after 900ms (under threshold, should count)
+        result = detector.process_keystroke("a", base_time + 900, "us", is_letter=True, keycode=30)
+        assert result is None
+
+        # Type 'i' after another 900ms (still under threshold)
+        result = detector.process_keystroke("i", base_time + 1800, "us", is_letter=True, keycode=23)
+        assert result is None
+
+        # Press space
+        result = detector.process_keystroke("SPACE", base_time + 1900, "us", is_letter=False)
+
+        assert result is not None
+        assert result.word == "hai"
+        assert result.num_letters == 3
+
+        # Active duration: 900 + 900 = 1800ms (both intervals counted)
+        assert result.active_duration_ms == 1800
+
+        # WPM calculated from active duration
+        avg_speed_ms_per_letter = result.active_duration_ms / 3  # 600ms per letter
+        wpm = 12000 / avg_speed_ms_per_letter
+        assert wpm == 20.0
+
+    def test_long_pauses_excluded_from_wpm(self):
+        """Test that long pauses between letters are excluded from WPM calculation."""
+        detector = WordDetector(
+            word_boundary_timeout_ms=10000,  # Allow long pauses without splitting
+            min_word_length=3,
+            active_time_threshold_ms=2000,  # Exclude intervals > 2000ms
+        )
+
+        base_time = int(time.time() * 1000)
+
+        # Type 'h' ... wait 5 sec ... 'a' ... wait 5 sec ... 'i'
+        result = detector.process_keystroke("h", base_time, "us", is_letter=True, keycode=35)
+        assert result is None
+
+        result = detector.process_keystroke("a", base_time + 5000, "us", is_letter=True, keycode=30)
+        assert result is None
+
+        result = detector.process_keystroke(
+            "i", base_time + 10000, "us", is_letter=True, keycode=23
+        )
+        assert result is None
+
+        result = detector.process_keystroke("SPACE", base_time + 10100, "us", is_letter=False)
+
+        assert result is not None
+        assert result.word == "hai"
+
+        # Total duration includes all pauses: 10000ms
+        assert result.total_duration_ms == 10000
+
+        # Active duration excludes pauses > 2000ms: uses minimum fallback
+        # With no intervals < threshold, falls back to ~50ms per letter
+        assert result.active_duration_ms >= 150  # At least 50ms per letter
+
+        # WPM should be realistic (not 1.2!)
+        avg_speed_ms_per_letter = result.active_duration_ms / 3
+        wpm = 12000 / avg_speed_ms_per_letter
+        assert wpm > 100  # Much more realistic!
+
+    def test_backspace_editing_still_tracked(self):
+        """Verify that backspace editing time is still tracked correctly."""
+        detector = WordDetector(
+            word_boundary_timeout_ms=1000,
+            min_word_length=3,
+            active_time_threshold_ms=2000,
+        )
+
+        base_time = int(time.time() * 1000)
+
+        # S H O E S <BACKSPACE> S
+        detector.process_keystroke("s", base_time, "us", is_letter=True, keycode=35)
+        detector.process_keystroke("h", base_time + 100, "us", is_letter=True, keycode=18)
+        detector.process_keystroke("o", base_time + 200, "us", is_letter=True, keycode=24)
+        detector.process_keystroke("e", base_time + 300, "us", is_letter=True, keycode=23)
+        detector.process_keystroke("s", base_time + 400, "us", is_letter=True, keycode=35)
+        detector.process_keystroke("BACKSPACE", base_time + 500, "us", is_letter=False)
+        detector.process_keystroke("s", base_time + 600, "us", is_letter=True, keycode=35)
+        result = detector.process_keystroke("SPACE", base_time + 700, "us", is_letter=False)
+
+        assert result is not None
+        assert result.word == "shoes"
+        assert result.backspace_count == 1
+
+        # editing_time_ms should still work
+        assert result.editing_time_ms == 100  # Time between 's' (400) and backspace (500)
+
+        # Active duration excludes the backspace correction interval
+        # Only counts letter-to-letter intervals < threshold
+        assert result.active_duration_ms > 0
+
+    def test_multiple_sub_timeout_pauses_create_slow_wpm(self):
+        """Test that many small pauses accumulate to create very slow WPM.
+
+        Now with the fix: active duration excludes long pauses from WPM calculation.
+
+        Scenario: User types slowly with 900ms gaps between each letter.
+        For a 6-letter word, with 2000ms threshold, this is still active typing.
+        """
+        detector = WordDetector(
+            word_boundary_timeout_ms=1000,
+            min_word_length=3,
+            active_time_threshold_ms=2000,
+        )
+
+        base_time = int(time.time() * 1000)
+
+        # Type a 6-letter word with 900ms between each letter
+        word = "shadow"
+        for i, letter in enumerate(word):
+            result = detector.process_keystroke(
+                letter, base_time + (i * 900), "us", is_letter=True, keycode=35 + i
+            )
+            assert result is None
+
+        # Press space
+        result = detector.process_keystroke("SPACE", base_time + 5400, "us", is_letter=False)
+
+        assert result is not None
+        assert result.word == "shadow"
+        assert result.num_letters == 6
+
+        # Duration: from first letter (0) to last letter (4500) = 4500ms
+        assert result.total_duration_ms == 4500
+
+        # Active duration includes all intervals (900ms < 2000ms threshold)
+        assert result.active_duration_ms == 4500
+
+        # Calculate WPM from active duration
+        avg_speed_ms_per_letter = result.active_duration_ms / 6  # 750ms per letter
+        wpm = 12000 / avg_speed_ms_per_letter
+
+        # 16 WPM for slow typing is reasonable
+        assert wpm == 16.0
+
+    def test_actual_2_wpm_hai_scenario_fixed(self):
+        """Test that extreme pauses are now excluded from WPM calculation.
+
+        Before the fix: 2 WPM for 'hai' with 9 second pauses
+        After the fix: Realistic WPM because long pauses are excluded
+        """
+        detector = WordDetector(
+            word_boundary_timeout_ms=10000,  # Allow long pauses without splitting
+            min_word_length=3,
+            active_time_threshold_ms=2000,  # Exclude intervals > 2000ms
+        )
+
+        base_time = int(time.time() * 1000)
+
+        # Type 'h', wait 9 sec, type 'a', wait 9 sec, type 'i'
+        # Each gap is 9000ms which is < 10000ms timeout but > 2000ms active threshold
+        result = detector.process_keystroke("h", base_time, "us", is_letter=True, keycode=35)
+        assert result is None
+
+        result = detector.process_keystroke("a", base_time + 9000, "us", is_letter=True, keycode=30)
+        assert result is None
+
+        result = detector.process_keystroke(
+            "i", base_time + 18000, "us", is_letter=True, keycode=23
+        )
+        assert result is None
+
+        # Press space
+        result = detector.process_keystroke("SPACE", base_time + 18100, "us", is_letter=False)
+
+        assert result is not None
+        assert result.word == "hai"
+        assert result.num_letters == 3
+
+        # Total duration from 'h' to 'i' = 18000ms
+        assert result.total_duration_ms == 18000
+
+        # Active duration excludes the 9000ms pauses (uses minimum fallback)
+        # With no intervals < 2000ms threshold, falls back to 50ms per letter
+        assert result.active_duration_ms >= 150  # At least 50ms per letter
+
+        # Calculate WPM from active duration - should be realistic now!
+        avg_speed_ms_per_letter = result.active_duration_ms / 3
+        wpm = 12000 / avg_speed_ms_per_letter
+
+        # Should be much more realistic than 2 WPM!
+        assert wpm > 100
+
+        print("\n✓ Fixed! 'hai' now shows realistic WPM:")
+        print(f"  Word: {result.word}")
+        print(f"  Total duration: {result.total_duration_ms}ms")
+        print(f"  Active duration: {result.active_duration_ms}ms")
+        print(f"  Avg per letter (active): {avg_speed_ms_per_letter:.0f}ms")
+        print(f"  WPM: {wpm:.1f}")
+        print("  Long pauses (> 2000ms) are now excluded from WPM calculation!")

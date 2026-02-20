@@ -150,29 +150,25 @@ class TestOllamaClient:
     def test_model_constant(self):
         """Test that model constant is set correctly."""
         from core.ollama_client import MODEL
+
         assert MODEL == "gemma2:2b"
 
 
 class TestOllamaIntegration:
     """Integration tests for Ollama functionality."""
 
-    @pytest.mark.skipif(
-        sys.version_info < (3, 12),
-        reason="Requires Python 3.12+"
-    )
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="Requires Python 3.12+")
     def test_ollama_import(self):
         """Test that ollama package can be imported."""
         try:
             import ollama
+
             assert hasattr(ollama, "Client")
             assert hasattr(ollama, "generate")
         except ImportError:
             pytest.skip("ollama package not installed")
 
-    @pytest.mark.skipif(
-        sys.version_info < (3, 12),
-        reason="Requires Python 3.12+"
-    )
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="Requires Python 3.12+")
     @pytest.mark.slow
     def test_ollama_server_connection(self):
         """Test actual connection to Ollama server (if available)."""
@@ -187,10 +183,7 @@ class TestOllamaIntegration:
         except Exception as e:
             pytest.skip(f"Ollama server not available: {e}")
 
-    @pytest.mark.skipif(
-        sys.version_info < (3, 12),
-        reason="Requires Python 3.12+"
-    )
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="Requires Python 3.12+")
     @pytest.mark.slow
     def test_ollama_text_generation(self):
         """Test actual text generation (if Ollama available)."""
