@@ -13,9 +13,10 @@ Usage:
     python3 monkeytype_auto.py --file text.txt
     python3 monkeytype_auto.py --headless=false "text"
 """
+
 import sys
-import asyncio
 from pathlib import Path
+
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
@@ -25,7 +26,9 @@ except ImportError:
     sys.exit(1)
 
 
-def inject_text_monkeytype(text: str, mode: str = "repeat", headless: bool = False, url: str = "https://monkeytype.com"):
+def inject_text_monkeytype(
+    text: str, mode: str = "repeat", headless: bool = False, url: str = "https://monkeytype.com"
+):
     """
     Open Monkeytype and inject custom text using browser automation.
     """
@@ -76,12 +79,12 @@ def inject_text_monkeytype(text: str, mode: str = "repeat", headless: bool = Fal
         print("🔄 Reloading page to apply custom text...")
         page.reload(wait_until="networkidle")
 
-        print(f"\n{'='*60}")
-        print(f"✨ SUCCESS! Monkeytype is now open with your custom text:")
+        print(f"\n{'=' * 60}")
+        print("✨ SUCCESS! Monkeytype is now open with your custom text:")
         print(f"   - Words: {len(words)}")
         print(f"   - Characters: {len(text)}")
         print(f"   - Mode: {mode}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         # Keep browser open
         print("Browser is open. Press Ctrl+C to close...")
@@ -142,7 +145,7 @@ def main():
             print(f"Unknown option: {arg}")
             sys.exit(1)
         else:
-            text = ' '.join(sys.argv[i:])
+            text = " ".join(sys.argv[i:])
             break
 
     if not text:

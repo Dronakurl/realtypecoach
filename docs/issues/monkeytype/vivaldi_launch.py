@@ -14,9 +14,9 @@ Usage:
     python3 vivaldi_launch.py "Your text here"
     python3 vivaldi_launch.py --file text.txt
 """
+
 import sys
 import webbrowser
-import urllib.parse
 from pathlib import Path
 
 
@@ -51,8 +51,7 @@ One-time setup required:
 3. Enable the script for monkeytype.com
 
 That's it! Now you can inject custom text.
-"""
-    )
+""")
 
 
 def inject_and_launch(text: str, mode: str = "repeat"):
@@ -61,10 +60,7 @@ def inject_and_launch(text: str, mode: str = "repeat"):
     """
 
     # Store injection data in a special localStorage key via a data URL
-    injection_data = {
-        "text": text,
-        "mode": mode
-    }
+    injection_data = {"text": text, "mode": mode}
 
     # Create a simple HTML page that sets localStorage and redirects
     html_injector = f"""
@@ -84,9 +80,8 @@ window.location.href = 'https://monkeytype.com';
 
     # Write to a temp file
     import tempfile
-    import json
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
         f.write(html_injector)
         temp_path = f.name
 
@@ -96,14 +91,14 @@ window.location.href = 'https://monkeytype.com';
 
         word_count = len(text.split())
 
-        print(f"🐵 Launching Vivaldi with custom text...")
+        print("🐵 Launching Vivaldi with custom text...")
         print(f"   Words: {word_count}")
         print(f"   Characters: {len(text)}")
         print(f"   Mode: {mode}")
         print()
 
         # Open in Vivaldi
-        webbrowser.get('vivaldi').open(file_url)
+        webbrowser.get("vivaldi").open(file_url)
 
         print("✅ Vivaldi should open with Monkeytype!")
         print("   The userscript will automatically apply your custom text.")
@@ -111,6 +106,7 @@ window.location.href = 'https://monkeytype.com';
     finally:
         # Clean up temp file after a delay
         import time
+
         time.sleep(5)
         try:
             Path(temp_path).unlink()
@@ -163,7 +159,7 @@ def main():
             print(f"Unknown option: {arg}")
             sys.exit(1)
         else:
-            text = ' '.join(sys.argv[i:])
+            text = " ".join(sys.argv[i:])
             break
 
     if not text:

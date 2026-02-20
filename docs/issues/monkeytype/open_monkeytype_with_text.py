@@ -15,13 +15,12 @@ Installation (one-time setup):
     3. Save the script
     4. That's it! Now this script will work automatically.
 """
-import sys
+
 import json
-import subprocess
+import sys
 import time
 import webbrowser
 from pathlib import Path
-
 
 RTC_TEXT_FILE = Path.home() / ".rtc_monkeytype_text.txt"
 
@@ -31,10 +30,7 @@ def set_injection_text(text: str):
     print(f"📝 Text to inject ({len(text)} chars): {text[:60]}{'...' if len(text) > 60 else ''}")
 
     # Write to file that Tampermonkey will read
-    data = {
-        "text": text,
-        "timestamp": int(time.time() * 1000)
-    }
+    data = {"text": text, "timestamp": int(time.time() * 1000)}
 
     RTC_TEXT_FILE.write_text(json.dumps(data))
     print("✅ Text file created for Tampermonkey")
@@ -58,13 +54,13 @@ def main():
         print("\nError: No text provided")
         sys.exit(1)
 
-    if sys.argv[1] == '--file':
+    if sys.argv[1] == "--file":
         if len(sys.argv) < 3:
             print("Error: --file requires a filepath")
             sys.exit(1)
         text = Path(sys.argv[2]).read_text()
     else:
-        text = ' '.join(sys.argv[1:])
+        text = " ".join(sys.argv[1:])
 
     try:
         set_injection_text(text)
@@ -73,9 +69,10 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

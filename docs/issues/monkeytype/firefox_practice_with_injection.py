@@ -5,10 +5,8 @@ Launch Firefox with Monkeytype and inject custom text via JavaScript bookmarklet
 This opens Monkeytype and automatically injects custom text using a data URI that runs
 JavaScript on the Monkeytype domain itself.
 """
-import sys
+
 import subprocess
-import webbrowser
-import urllib.parse
 
 # The custom text to inject
 CUSTOM_TEXT = """javascript:(function(){
@@ -37,6 +35,7 @@ CUSTOM_TEXT = """javascript:(function(){
     alert('Text injected! Reloading...');
     location.reload();
 })();"""
+
 
 def launch():
     # Close Firefox first
@@ -78,5 +77,6 @@ setTimeout(() => location.reload(), 500);"""
 
     subprocess.Popen(["firefox", "--new-window", "https://monkeytype.com"])
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     launch()

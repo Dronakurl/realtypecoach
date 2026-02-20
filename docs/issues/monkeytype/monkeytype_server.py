@@ -5,9 +5,10 @@ Simple HTTP server to provide text for Monkeytype injection.
 Run this server, then open https://monkeytype.com.
 The Tampermonkey script will poll this server for text.
 """
+
 import http.server
-import socketserver
 import json
+import socketserver
 import time
 from pathlib import Path
 
@@ -17,15 +18,15 @@ RTC_FILE = Path.home() / ".rtc_monkeytype_inject.json"
 
 class InjectionHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/inject':
+        if self.path == "/inject":
             if RTC_FILE.exists():
                 data = json.loads(RTC_FILE.read_text())
-                age = time.time() * 1000 - data.get('timestamp', 0)
+                age = time.time() * 1000 - data.get("timestamp", 0)
 
                 if age < 30000:  # 30 seconds
                     self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header("Content-type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps(data).encode())
                     print(f"✅ Sent injection data: {data['text'][:50]}...")
@@ -55,5 +56,5 @@ def start_server():
             print("\nServer stopped")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     start_server()

@@ -8,10 +8,11 @@ Usage:
     python3 monkeytype_injector.py "Your text here"
     python3 monkeytype_injector.py --file text.txt
 """
+
 import sys
-import webbrowser
 import urllib.parse
 from pathlib import Path
+
 
 def create_injection_script(text: str, mode: str = "repeat") -> str:
     """Create JavaScript to inject text into Monkeytype localStorage."""
@@ -41,7 +42,7 @@ def create_injection_script(text: str, mode: str = "repeat") -> str:
     """
 
     # Compress to single line for URL
-    return script.replace('\n', ' ').replace('  ', ' ').strip()
+    return script.replace("\n", " ").replace("  ", " ").strip()
 
 
 def create_bookmarklet(text: str, mode: str = "repeat") -> str:
@@ -72,9 +73,9 @@ def inject_via_clipboard(text: str):
 
     print(instructions)
     print(script)
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("After pasting, the page will reload with your custom text!")
-    print("="*70)
+    print("=" * 70)
 
 
 def main():
@@ -107,7 +108,7 @@ def main():
             print(f"Unknown option: {arg}")
             sys.exit(1)
         else:
-            text = ' '.join(sys.argv[i:])
+            text = " ".join(sys.argv[i:])
             break
 
     if not text:

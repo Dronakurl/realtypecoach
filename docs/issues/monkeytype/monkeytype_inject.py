@@ -9,9 +9,10 @@ Usage:
     python3 monkeytype_inject.py --file text.txt
     python3 monkeytype_inject.py --mode zip "text"
 """
+
 import sys
-import webbrowser
 import urllib.parse
+import webbrowser
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
@@ -22,6 +23,7 @@ def get_text_from_clipboard() -> str:
     """Get text from clipboard."""
     try:
         import pyperclip
+
         return pyperclip.paste()
     except ImportError:
         print("Error: pyperclip not installed. Install with: pip install pyperclip")
@@ -47,16 +49,13 @@ def launch_injector(text: str, mode: str = "repeat"):
 
     # Build URL with parameters
     file_url = INJECTOR_HTML.as_uri()
-    params = {
-        "text": text,
-        "mode": mode
-    }
+    params = {"text": text, "mode": mode}
 
     query_string = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
     full_url = f"{file_url}?{query_string}"
 
     word_count = len(text.split())
-    print(f"🐵 Opening Monkeytype injector...")
+    print("🐵 Opening Monkeytype injector...")
     print(f"   Text: {word_count} words, {len(text)} characters")
     print(f"   Mode: {mode}")
     print()
@@ -104,7 +103,7 @@ def main():
             print(f"Unknown option: {arg}")
             sys.exit(1)
         else:
-            text = ' '.join(sys.argv[i:])
+            text = " ".join(sys.argv[i:])
             break
 
     if not text:

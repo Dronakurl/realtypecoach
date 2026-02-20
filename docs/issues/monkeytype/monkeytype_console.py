@@ -9,8 +9,9 @@ Usage:
     python3 monkeytype_console.py "Your text here"
     python3 monkeytype_console.py --file text.txt
 """
-import sys
+
 import json
+import sys
 from pathlib import Path
 
 
@@ -72,6 +73,7 @@ Steps:
     # Try to copy to clipboard
     try:
         import pyperclip
+
         pyperclip.copy(code)
         print("✅ Code copied to clipboard!")
         print()
@@ -81,9 +83,9 @@ Steps:
 
     # Show the code
     print("Paste this code:")
-    print("─"*70)
+    print("─" * 70)
     print(code)
-    print("─"*70)
+    print("─" * 70)
 
 
 def get_text_from_file(filepath: str) -> str:
@@ -126,7 +128,7 @@ def main():
             print(f"Unknown option: {arg}")
             sys.exit(1)
         else:
-            text = ' '.join(sys.argv[i:])
+            text = " ".join(sys.argv[i:])
             break
 
     if not text:
