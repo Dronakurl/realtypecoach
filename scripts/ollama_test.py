@@ -10,6 +10,7 @@ try:
 except ImportError:
     print("❌ ollama package not installed. Installing...")
     import subprocess
+
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "ollama"],
         check=True,

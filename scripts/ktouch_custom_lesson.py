@@ -2,11 +2,13 @@
 """
 Add a custom lesson to KTouch via SQLite database.
 """
+
 import sqlite3
-import uuid
 import sys
+import uuid
 
 DB_PATH = "~/.local/share/ktouch/profiles.db"
+
 
 def add_custom_lesson(title: str, text: str, keyboard_layout: str = "us"):
     """Add a custom lesson to KTouch database."""
@@ -29,7 +31,7 @@ def add_custom_lesson(title: str, text: str, keyboard_layout: str = "us"):
     # Insert into custom_lessons table
     cursor.execute(
         "INSERT INTO custom_lessons (id, profile_id, title, text, keyboard_layout_name) VALUES (?, ?, ?, ?, ?)",
-        (lesson_id, profile_id, title, text, keyboard_layout)
+        (lesson_id, profile_id, title, text, keyboard_layout),
     )
 
     conn.commit()
@@ -38,6 +40,7 @@ def add_custom_lesson(title: str, text: str, keyboard_layout: str = "us"):
     print(f"Added custom lesson '{title}' to KTouch")
     print(f"Lesson ID: {lesson_id}")
     return True
+
 
 if __name__ == "__main__":
     import getpass

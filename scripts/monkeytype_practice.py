@@ -10,9 +10,10 @@ Usage:
     python3 monkeytype_practice.py --url http://localhost:3000 "text"
     python3 monkeytype_practice.py --mode zip "text for zip mode"
 """
+
 import sys
-import webbrowser
 import urllib.parse
+import webbrowser
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
@@ -27,6 +28,7 @@ def get_text_from_clipboard() -> str:
     """Get text from clipboard."""
     try:
         import pyperclip
+
         return pyperclip.paste()
     except ImportError:
         print("Error: pyperclip not installed. Install with: pip install pyperclip")
@@ -42,7 +44,9 @@ def get_text_from_file(filepath: str) -> str:
     return path.read_text()
 
 
-def launch_monkeytype(text: str, monkeytype_url: str = DEFAULT_LOCAL_URL, mode: str = "repeat", long: bool = False):
+def launch_monkeytype(
+    text: str, monkeytype_url: str = DEFAULT_LOCAL_URL, mode: str = "repeat", long: bool = False
+):
     """
     Launch Monkeytype with injected custom text.
 
@@ -63,7 +67,7 @@ def launch_monkeytype(text: str, monkeytype_url: str = DEFAULT_LOCAL_URL, mode: 
         "text": text,
         "url": monkeytype_url,
         "mode": mode,
-        "long": "true" if long else "false"
+        "long": "true" if long else "false",
     }
 
     # Build query string
@@ -129,7 +133,7 @@ def main():
             sys.exit(1)
         else:
             # First non-option argument is the start of text
-            text = ' '.join(sys.argv[i:])
+            text = " ".join(sys.argv[i:])
             text_args_start = i
             break
 
@@ -138,7 +142,7 @@ def main():
         if text_args_start >= len(sys.argv):
             print("Error: No text provided")
             sys.exit(1)
-        text = ' '.join(sys.argv[text_args_start:])
+        text = " ".join(sys.argv[text_args_start:])
 
     launch_monkeytype(text, monkeytype_url, mode, long)
 
