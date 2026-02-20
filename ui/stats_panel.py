@@ -482,7 +482,9 @@ class StatsPanel(QWidget):
         self.generate_text_btn = QPushButton("✨ Generate Text")
         self.generate_text_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.generate_text_btn.setVisible(False)  # Hidden until Ollama detected
-        self.generate_text_btn.setToolTip("Generate practice text using Ollama (uses word count from LLM settings)")
+        self.generate_text_btn.setToolTip(
+            "Generate practice text using Ollama (uses word count from LLM settings)"
+        )
         self.generate_text_btn.clicked.connect(self.generate_text_with_ollama)
         self._original_button_text = "✨ Generate Text"  # Store original text for restoration
         action_row.addWidget(self.generate_text_btn)
@@ -831,7 +833,12 @@ class StatsPanel(QWidget):
             )
 
     def update_avg_burst_duration(
-        self, avg_ms: int, min_ms: int, max_ms: int, percentile_95_ms: int, wpm_95th_percentile: float = 0
+        self,
+        avg_ms: int,
+        min_ms: int,
+        max_ms: int,
+        percentile_95_ms: int,
+        wpm_95th_percentile: float = 0,
     ) -> None:
         """Update average burst duration display.
 
@@ -860,9 +867,7 @@ class StatsPanel(QWidget):
                 else f"{percentile_95_ms}ms"
             )
             wpm_95_display = f"{wpm_95th_percentile:.1f} WPM" if wpm_95th_percentile > 0 else "--"
-            self.avg_burst_time_subtitle_label.setText(
-                f"95%: {p95_display} • max: {max_display}"
-            )
+            self.avg_burst_time_subtitle_label.setText(f"95%: {p95_display} • max: {max_display}")
 
     @staticmethod
     def _format_large_number(count: int) -> str:
@@ -1076,6 +1081,7 @@ class StatsPanel(QWidget):
     def practice_text(self) -> None:
         """Open clipboard text for typing practice."""
         import subprocess
+
         from PySide6.QtGui import QClipboard
 
         # Get text from clipboard
@@ -1086,23 +1092,20 @@ class StatsPanel(QWidget):
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
                 app.tray_icon.show_notification(
-                    "Practice Error",
-                    "Clipboard is empty. Copy some text first."
+                    "Practice Error", "Clipboard is empty. Copy some text first."
                 )
             return
 
         # Get the script path
         from pathlib import Path
+
         script_path = Path(__file__).parent.parent / "scripts" / "practice.py"
 
         if not script_path.exists():
             log.error(f"practice.py not found at {script_path}")
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification(
-                    "Practice Error",
-                    "practice.py script not found"
-                )
+                app.tray_icon.show_notification("Practice Error", "practice.py script not found")
             return
 
         # Run the practice script
@@ -1116,7 +1119,7 @@ class StatsPanel(QWidget):
                 ["python3", str(script_path), text_to_practice],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
 
             if result.returncode == 0:
@@ -1124,16 +1127,14 @@ class StatsPanel(QWidget):
                 app = QApplication.instance()
                 if app and hasattr(app, "tray_icon"):
                     app.tray_icon.show_notification(
-                        "Typing Practice",
-                        f"Opened with {len(words)} words from clipboard"
+                        "Typing Practice", f"Opened with {len(words)} words from clipboard"
                     )
             else:
                 log.error(f"Failed to open practice: {result.stderr}")
                 app = QApplication.instance()
                 if app and hasattr(app, "tray_icon"):
                     app.tray_icon.show_notification(
-                        "Practice Error",
-                        "Failed to open practice. See logs."
+                        "Practice Error", "Failed to open practice. See logs."
                     )
         except subprocess.TimeoutExpired:
             log.error("practice.py timed out")
@@ -1200,7 +1201,9 @@ class StatsPanel(QWidget):
         else:
             log.error("_request_text_generation_callback not set - cannot generate text")
             # Show error immediately
-            self.on_text_generation_failed("Text generation callback not initialized. Please restart the application.")
+            self.on_text_generation_failed(
+                "Text generation callback not initialized. Please restart the application."
+            )
 
     def on_text_generated(self, text: str) -> None:
         """Handle generated text - copy to clipboard.
@@ -1227,8 +1230,7 @@ class StatsPanel(QWidget):
         app = QApplication.instance()
         if app and hasattr(app, "tray_icon"):
             app.tray_icon.show_notification(
-                "Text Generated",
-                f"Copied {word_count} words to clipboard"
+                "Text Generated", f"Copied {word_count} words to clipboard"
             )
 
     def on_text_generation_failed(self, error: str) -> None:
@@ -1238,15 +1240,20 @@ class StatsPanel(QWidget):
             error: Error message
         """
         from PySide6.QtCore import QTimer
-        from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QLabel, QPushButton, QTextEdit
-        from PySide6.QtGui import QClipboard
+        from PySide6.QtWidgets import (
+            QDialog,
+            QLabel,
+            QPushButton,
+            QTextEdit,
+            QVBoxLayout,
+        )
 
         # Log the error
         log.error(f"Text generation failed: {error}")
 
         # Restore button state
         self.generate_text_btn.setEnabled(True)
-        self.generate_text_btn.setText(f"✗ Failed")
+        self.generate_text_btn.setText("✗ Failed")
 
         # Reset button text after 3 seconds
         QTimer.singleShot(3000, lambda: self.generate_text_btn.setText(self._original_button_text))
@@ -1286,10 +1293,7 @@ class StatsPanel(QWidget):
         # Also show tray notification if available
         app = QApplication.instance()
         if app and hasattr(app, "tray_icon"):
-            app.tray_icon.show_notification(
-                "Generation Failed",
-                f"Error: {error}"
-            )
+            app.tray_icon.show_notification("Generation Failed", f"Error: {error}")
 
     def _copy_error_to_clipboard(self, error_text: str, dialog: QDialog) -> None:
         """Copy error text to clipboard.
@@ -1298,7 +1302,6 @@ class StatsPanel(QWidget):
             error_text: Error message to copy
             dialog: Dialog to close after copying
         """
-        from PySide6.QtGui import QClipboard
 
         clipboard = QApplication.clipboard()
         clipboard.setText(error_text)
@@ -1309,6 +1312,7 @@ class StatsPanel(QWidget):
             original_text = close_btn.text()
             close_btn.setText("✓ Copied!")
             from PySide6.QtCore import QTimer
+
             QTimer.singleShot(1000, lambda: close_btn.setText(original_text))
 
     def update_digraph_stats(

@@ -145,7 +145,9 @@ class TrayIcon(QSystemTrayIcon):
         """Show about dialog."""
         self.about_requested.emit()
 
-    def show_notification(self, title: str, message: str, message_type: str = "info", timeout_ms: int = 3000) -> None:
+    def show_notification(
+        self, title: str, message: str, message_type: str = "info", timeout_ms: int = 3000
+    ) -> None:
         """Show desktop notification.
 
         Thread-safe method that can be called from any thread.

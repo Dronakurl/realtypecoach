@@ -67,8 +67,7 @@ class AboutDialog(QDialog):
 
         # Description
         desc_label = QLabel(
-            "Wayland typing analysis application\n"
-            "Track your typing speed and improve your skills"
+            "Wayland typing analysis application\nTrack your typing speed and improve your skills"
         )
         desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc_label.setWordWrap(True)

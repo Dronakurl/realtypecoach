@@ -104,7 +104,7 @@ class SettingsDialog(QDialog):
         """
         self._available_models_internal = models
         # Refresh the dropdown after a delay to ensure UI is fully initialized
-        if hasattr(self, 'llm_model_combo') and self.ollama_available:
+        if hasattr(self, "llm_model_combo") and self.ollama_available:
             QTimer.singleShot(0, self._refresh_llm_models)
 
     @staticmethod
@@ -929,7 +929,9 @@ class SettingsDialog(QDialog):
         self.llm_status_label.setStyleSheet("font-weight: bold;")
         status_layout.addWidget(self.llm_status_label)
 
-        info_label = QLabel("Ollama must be running to use LLM features. Start with: just start-ollama")
+        info_label = QLabel(
+            "Ollama must be running to use LLM features. Start with: just start-ollama"
+        )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: gray; font-size: 11px;")
         status_layout.addWidget(info_label)
@@ -1034,9 +1036,7 @@ class SettingsDialog(QDialog):
         prompt_layout.insertLayout(1, editor_layout)
 
         # Placeholders info
-        placeholders_label = QLabel(
-            "Available placeholders: {word_count}, {hardest_words}"
-        )
+        placeholders_label = QLabel("Available placeholders: {word_count}, {hardest_words}")
         placeholders_label.setStyleSheet("color: gray; font-size: 10px; padding: 5px;")
         placeholders_label.setWordWrap(True)
         prompt_layout.addWidget(placeholders_label)
@@ -1583,7 +1583,9 @@ class SettingsDialog(QDialog):
             if index < 0 and models:
                 # Current model not available, use first available model
                 index = 0
-                log.warning(f"Configured model '{current_model}' not available, using '{models[0]}' instead")
+                log.warning(
+                    f"Configured model '{current_model}' not available, using '{models[0]}' instead"
+                )
             if index >= 0:
                 self.llm_model_combo.setCurrentIndex(index)
 
@@ -1672,7 +1674,7 @@ class SettingsDialog(QDialog):
             self.llm_prompt_combo.clear()
             for prompt in prompts:
                 display_name = f"{'★ ' if prompt['is_default'] else ''}{prompt['name']}"
-                self.llm_prompt_combo.addItem(display_name, prompt['id'])
+                self.llm_prompt_combo.addItem(display_name, prompt["id"])
 
             # Select active prompt
             active_id = self.current_settings.get("llm_active_prompt_id", -1)
@@ -1702,7 +1704,7 @@ class SettingsDialog(QDialog):
         try:
             prompt = self.storage.get_prompt(prompt_id)
             if prompt:
-                self.llm_prompt_editor.setPlainText(prompt['content'])
+                self.llm_prompt_editor.setPlainText(prompt["content"])
         except Exception as e:
             log.error(f"Failed to load prompt: {e}")
 
@@ -1742,7 +1744,7 @@ class SettingsDialog(QDialog):
                 return
 
             # Warn if trying to save over a default prompt
-            if prompt.get('is_default'):
+            if prompt.get("is_default"):
                 reply = QMessageBox.question(
                     self,
                     "Cannot Modify Default Prompt",
@@ -1753,7 +1755,7 @@ class SettingsDialog(QDialog):
                 return
 
             # Save content with existing name (no dialog!)
-            self.storage.update_prompt(prompt_id, prompt['name'], content)
+            self.storage.update_prompt(prompt_id, prompt["name"], content)
 
             # Reload prompts to reflect changes (e.g., updated_at timestamp)
             self._load_llm_prompts()
@@ -1819,10 +1821,8 @@ class SettingsDialog(QDialog):
 
         # Check if default prompt
         prompt = self.storage.get_prompt(prompt_id)
-        if prompt and prompt.get('is_default'):
-            QMessageBox.warning(
-                self, "Cannot Delete", "Default prompts cannot be deleted."
-            )
+        if prompt and prompt.get("is_default"):
+            QMessageBox.warning(self, "Cannot Delete", "Default prompts cannot be deleted.")
             return
 
         try:
@@ -1853,7 +1853,9 @@ class SettingsDialog(QDialog):
 
     def load_current_settings(self) -> None:
         """Load current settings into UI."""
-        self.burst_timeout_spin.setValue(int(self.current_settings.get("burst_timeout_ms", 1000) or 1000))
+        self.burst_timeout_spin.setValue(
+            int(self.current_settings.get("burst_timeout_ms", 1000) or 1000)
+        )
         self.word_boundary_timeout_spin.setValue(
             int(self.current_settings.get("word_boundary_timeout_ms", 1000) or 1000)
         )
@@ -1871,7 +1873,9 @@ class SettingsDialog(QDialog):
         self.high_score_duration_spin.setValue(
             int(self.current_settings.get("high_score_min_duration_ms", 5000) or 5000)
         )
-        self.min_key_count_spin.setValue(int(self.current_settings.get("min_burst_key_count", 10) or 10))
+        self.min_key_count_spin.setValue(
+            int(self.current_settings.get("min_burst_key_count", 10) or 10)
+        )
         self.min_burst_duration_spin.setValue(
             int(self.current_settings.get("min_burst_duration_ms", 5000) or 5000)
         )
@@ -1931,7 +1935,9 @@ class SettingsDialog(QDialog):
         self.postgres_sync_enabled_check.setChecked(postgres_sync_enabled)
 
         self.postgres_host_input.setText(self.current_settings.get("postgres_host", ""))
-        self.postgres_port_spin.setValue(int(self.current_settings.get("postgres_port", 5432) or 5432))
+        self.postgres_port_spin.setValue(
+            int(self.current_settings.get("postgres_port", 5432) or 5432)
+        )
         self.postgres_database_input.setText(
             self.current_settings.get("postgres_database", "realtypecoach")
         )
@@ -2023,7 +2029,9 @@ class SettingsDialog(QDialog):
             ),
             "worst_letter_notification_debounce_min": str(self.worst_letter_debounce_spin.value()),
             "max_realistic_wpm": str(self.max_realistic_wpm_spin.value()),
-            "unrealistic_speed_warning_enabled": str(self.unrealistic_speed_warning_check.isChecked()),
+            "unrealistic_speed_warning_enabled": str(
+                self.unrealistic_speed_warning_check.isChecked()
+            ),
             "data_retention_days": str(self.retention_combo.currentData()),
             "dictionary_mode": "validate" if self.validate_mode_radio.isChecked() else "accept_all",
             "enabled_languages": enabled_langs_str,
