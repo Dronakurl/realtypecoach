@@ -291,6 +291,7 @@ class DatabaseAdapter(ABC):
         num_letters: int,
         backspace_count: int = 0,
         editing_time_ms: int = 0,
+        active_duration_ms: int = 0,
     ) -> None:
         """Update statistics for a word.
 
@@ -301,6 +302,7 @@ class DatabaseAdapter(ABC):
             num_letters: Number of letters in the word
             backspace_count: Number of backspaces used
             editing_time_ms: Time spent editing with backspace (ms)
+            active_duration_ms: Active typing time excluding long pauses (ms)
         """
         pass
 

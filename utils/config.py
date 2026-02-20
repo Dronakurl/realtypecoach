@@ -28,6 +28,11 @@ class AppSettings(BaseModel):
         gt=0,
         description="Max pause between letters before word splits (ms)",
     )
+    word_active_time_threshold_ms: int = Field(
+        default=2000,
+        gt=0,
+        description="Max interval between letters to count as active typing for word WPM (ms)",
+    )
     burst_duration_calculation: str = Field(
         default="total_time",
         description="How to calculate burst duration (total_time or active_time)",

@@ -108,6 +108,9 @@ class WordInfo(BaseModel):
     word: str = Field(..., description="The typed word")
     layout: str = Field(..., description="Keyboard layout")
     total_duration_ms: int = Field(..., description="Total duration in milliseconds")
+    active_duration_ms: int = Field(
+        default=0, description="Active typing time excluding long pauses (ms)"
+    )
     editing_time_ms: int = Field(..., description="Time spent editing with backspace")
     backspace_count: int = Field(..., description="Number of backspaces used")
     num_letters: int = Field(..., description="Number of letters in word")

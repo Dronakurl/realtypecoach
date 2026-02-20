@@ -59,6 +59,35 @@ class WordState:
             )
             self.last_keystroke_time_ms = timestamp_ms
 
+    def _calculate_active_duration(self, threshold_ms: int) -> int:
+        """Calculate active typing duration from keystroke intervals.
+
+        Only counts intervals between consecutive keystrokes that are
+        shorter than threshold_ms. Longer gaps (thinking pauses) are excluded.
+
+        Args:
+            threshold_ms: Maximum interval to count as active typing (ms)
+
+        Returns:
+            Active typing duration in milliseconds
+        """
+        if len(self.keystrokes) < 2:
+            return 0
+
+        # Use only filtered keystrokes (letters, no backspaces)
+        letter_keystrokes = [ks for ks in self.keystrokes if ks.type == "letter"]
+
+        if len(letter_keystrokes) < 2:
+            return 0
+
+        active_duration = 0
+        for i in range(1, len(letter_keystrokes)):
+            interval = letter_keystrokes[i].time - letter_keystrokes[i - 1].time
+            if interval <= threshold_ms:
+                active_duration += interval
+
+        return max(active_duration, 50 * len(letter_keystrokes))  # Minimum 50ms per letter
+
     def finalize(self, end_time_ms: int) -> int:
         """Calculate total duration for this word.
 
@@ -101,6 +130,7 @@ class WordDetector:
         word_boundary_timeout_ms: int = 1000,
         min_word_length: int = 3,
         max_correction_window_ms: int = 3000,
+        active_time_threshold_ms: int = 2000,
     ):
         """Initialize word detector.
 
@@ -108,10 +138,12 @@ class WordDetector:
             word_boundary_timeout_ms: Max pause before word splits (ms)
             min_word_length: Minimum letters for a word to be stored
             max_correction_window_ms: Max time for backspace to count as editing (ms)
+            active_time_threshold_ms: Max interval to count as active typing for word WPM (ms)
         """
         self.word_boundary_timeout_ms = word_boundary_timeout_ms
         self.min_word_length = min_word_length
         self.max_correction_window_ms = max_correction_window_ms
+        self.active_time_threshold_ms = active_time_threshold_ms
         self.current_state: WordState | None = None
 
     def process_keystroke(
@@ -219,7 +251,9 @@ class WordDetector:
 
         return None
 
-    def _filter_keystrokes_to_final_word(self, keystrokes: list[KeystrokeInfo], final_word: str) -> list[KeystrokeInfo]:
+    def _filter_keystrokes_to_final_word(
+        self, keystrokes: list[KeystrokeInfo], final_word: str
+    ) -> list[KeystrokeInfo]:
         """Filter keystrokes to only include those contributing to the final word.
 
         Handles backspaces by tracking which keystrokes remain in the final word.
@@ -281,6 +315,9 @@ class WordDetector:
 
         total_duration_ms = state.finalize(end_time_ms)
 
+        # Calculate active typing duration (excludes long pauses)
+        active_duration_ms = state._calculate_active_duration(self.active_time_threshold_ms)
+
         # Filter keystrokes to only include those contributing to the final word
         filtered_keystrokes = self._filter_keystrokes_to_final_word(state.keystrokes, state.word)
 
@@ -288,6 +325,7 @@ class WordDetector:
             word=state.word,
             layout=state.layout,
             total_duration_ms=total_duration_ms,
+            active_duration_ms=active_duration_ms,
             editing_time_ms=state.editing_time_ms,
             backspace_count=state.backspace_count,
             num_letters=len(state.word),

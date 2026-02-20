@@ -1646,9 +1646,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
         num_letters: int,
         backspace_count: int = 0,
         editing_time_ms: int = 0,
+        active_duration_ms: int = 0,
     ) -> None:
         """Update statistics for a word."""
-        speed_per_letter = duration_ms / num_letters
+        # Use active_duration_ms for WPM calculation if available, else fall back to duration_ms
+        wpm_duration_ms = active_duration_ms if active_duration_ms > 0 else duration_ms
+        speed_per_letter = wpm_duration_ms / num_letters
         now_ms = int(time.time() * 1000)
 
         with self.get_connection() as conn:
@@ -2100,10 +2103,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT id, name, content, created_at, updated_at, is_default
                 FROM llm_prompts WHERE user_id = %s ORDER BY name
-            """, (self.user_id,))
+            """,
+                (self.user_id,),
+            )
             return [
                 {
                     "id": row[0],
@@ -2874,6 +2880,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             if not wpms:
                 return None
             import numpy as np
+
             return float(np.percentile(wpms, percentile))
 
     # ========== Data Management ==========

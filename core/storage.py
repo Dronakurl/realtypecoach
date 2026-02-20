@@ -95,7 +95,9 @@ class Storage:
         dict_config = dictionary_config or DictionaryConfig()
         self.dictionary = Dictionary(dict_config, ignore_file_path, storage=self)
         self.word_detector = WordDetector(
-            word_boundary_timeout_ms=word_boundary_timeout_ms, min_word_length=3
+            word_boundary_timeout_ms=word_boundary_timeout_ms,
+            min_word_length=3,
+            active_time_threshold_ms=config.get_int("word_active_time_threshold_ms", 2000),
         )
 
         # Reference to analyzer (set later)
@@ -258,6 +260,7 @@ class Storage:
         word = word_info.word
         layout = word_info.layout
         total_duration_ms = word_info.total_duration_ms
+        active_duration_ms = word_info.active_duration_ms
         editing_time_ms = word_info.editing_time_ms
         backspace_count = word_info.backspace_count
         num_letters = word_info.num_letters
@@ -270,6 +273,7 @@ class Storage:
             num_letters=num_letters,
             backspace_count=backspace_count,
             editing_time_ms=editing_time_ms,
+            active_duration_ms=active_duration_ms,
         )
 
         # Update key statistics for keystrokes in this valid dictionary word
@@ -568,6 +572,7 @@ class Storage:
         num_letters: int,
         backspace_count: int = 0,
         editing_time_ms: int = 0,
+        active_duration_ms: int = 0,
     ) -> None:
         """Update statistics for a word with running average.
 
@@ -578,9 +583,16 @@ class Storage:
             num_letters: Number of letters in the word
             backspace_count: Number of backspaces used for this word
             editing_time_ms: Time spent editing with backspace (ms)
+            active_duration_ms: Active typing time excluding long pauses (ms)
         """
         self.adapter.update_word_statistics(
-            word, layout, duration_ms, num_letters, backspace_count, editing_time_ms
+            word,
+            layout,
+            duration_ms,
+            num_letters,
+            backspace_count,
+            editing_time_ms,
+            active_duration_ms,
         )
 
     def get_slowest_words(

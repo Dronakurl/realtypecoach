@@ -7,6 +7,9 @@ from PySide6.QtCore import QObject, Signal
 
 log = logging.getLogger("realtypecoach")
 
+# Default model to use for text generation
+MODEL = "gemma2:2b"
+
 
 class OllamaClient(QObject):
     """Client for Ollama text generation API."""
@@ -14,7 +17,9 @@ class OllamaClient(QObject):
     signal_generation_complete = Signal(str)  # Generated text
     signal_generation_failed = Signal(str)  # Error message
 
-    def __init__(self, host: str = "localhost", port: int = 11434, model: str = "gemma2:2b") -> None:
+    def __init__(
+        self, host: str = "localhost", port: int = 11434, model: str = "gemma2:2b"
+    ) -> None:
         """Initialize Ollama client.
 
         Args:
@@ -136,7 +141,7 @@ class OllamaClient(QObject):
 
         try:
             # Try using the ollama Python library's stop method if available
-            if hasattr(self.client, 'stop'):
+            if hasattr(self.client, "stop"):
                 self.client.stop(model_to_stop)
                 log.info(f"Stopped model: {model_to_stop}")
         except Exception as e:

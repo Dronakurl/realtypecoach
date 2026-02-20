@@ -261,11 +261,27 @@ class SQLiteAdapter(DatabaseAdapter):
         try:
             from core.sqlite_migration_runner import SQLiteMigrationRunner
 
-            # Skip migrations for databases that already have data
-            db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
-            if db_size > 10000:  # More than 10KB means it has actual data
-                log.info(f"Database already has data ({db_size} bytes), skipping Alembic migrations")
+            # Check if migrations are needed by checking for alembic_version table
+            has_alembic_version = False
+            if self.db_path.exists():
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+                    )
+                    has_alembic_version = cursor.fetchone() is not None
+
+            if has_alembic_version:
+                # Database is already migrated, check if upgrade is needed
+                runner = SQLiteMigrationRunner(self.db_path, migration_dir)
+                if runner.check_needs_upgrade():
+                    log.info("Running Alembic database migrations")
+                    runner.upgrade()
+                    log.info("Database migrations completed successfully")
+                else:
+                    log.info("Database is at latest version")
             else:
+                # New database or legacy database, run migrations
                 runner = SQLiteMigrationRunner(self.db_path, migration_dir)
                 if runner.check_needs_upgrade():
                     log.info("Running Alembic database migrations")
@@ -353,8 +369,6 @@ class SQLiteAdapter(DatabaseAdapter):
         try:
             from alembic import command
             from alembic.config import Config
-            from sqlalchemy import create_engine
-            import sqlalchemy.pool
 
             # Check if database file exists and is not empty
             db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
@@ -365,7 +379,9 @@ class SQLiteAdapter(DatabaseAdapter):
 
             # Skip stamping for databases that already have data (they're already working)
             if db_size > 10000:  # More than 10KB means it has actual data
-                log.info(f"Database already has data ({db_size} bytes), skipping Alembic stamp to avoid SQLCipher compatibility issues")
+                log.info(
+                    f"Database already has data ({db_size} bytes), skipping Alembic stamp to avoid SQLCipher compatibility issues"
+                )
                 return
 
             # Get migration directory (use the same logic as in initialize)
@@ -756,6 +772,15 @@ class SQLiteAdapter(DatabaseAdapter):
         start = time.time()
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Check if bursts table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='bursts'"
+            )
+            if cursor.fetchone() is None:
+                # Table doesn't exist yet, keep cache at defaults
+                return
+
             cursor.execute("SELECT COALESCE(SUM(duration_ms), 0) FROM bursts")
             total_ms = cursor.fetchone()[0]
             self._cache_all_time_typing_sec = int(total_ms / 1000)
@@ -1592,9 +1617,12 @@ class SQLiteAdapter(DatabaseAdapter):
         num_letters: int,
         backspace_count: int = 0,
         editing_time_ms: int = 0,
+        active_duration_ms: int = 0,
     ) -> None:
         """Update statistics for a word."""
-        speed_per_letter = duration_ms / num_letters
+        # Use active_duration_ms for WPM calculation if available, else fall back to duration_ms
+        wpm_duration_ms = active_duration_ms if active_duration_ms > 0 else duration_ms
+        speed_per_letter = wpm_duration_ms / num_letters
         now_ms = int(time.time() * 1000)
 
         with self.get_connection() as conn:
@@ -2137,7 +2165,7 @@ class SQLiteAdapter(DatabaseAdapter):
         # If active_prompt_id is specified and valid, use it
         if active_prompt_id >= 0:
             for prompt in prompts:
-                if prompt['id'] == active_prompt_id:
+                if prompt["id"] == active_prompt_id:
                     return prompt
             log.warning(f"Active prompt ID {active_prompt_id} not found, using first prompt")
 
@@ -2644,6 +2672,7 @@ Create a coherent text that includes as many of these words as possible in their
             if not wpms:
                 return None
             import numpy as np
+
             return float(np.percentile(wpms, percentile))
 
     # ========== Data Management ==========

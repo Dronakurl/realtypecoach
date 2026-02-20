@@ -168,7 +168,7 @@ class Analyzer:
         if burst_wpm > max_wpm_threshold:
             log.warning(
                 f"Ignored unrealistic burst: {burst_wpm:.1f} WPM > {max_wpm_threshold} WPM threshold, "
-                f"{burst.key_count} keys, {burst.duration_ms/1000:.1f}s"
+                f"{burst.key_count} keys, {burst.duration_ms / 1000:.1f}s"
             )
             return  # Early return - no storage, no stats update
 

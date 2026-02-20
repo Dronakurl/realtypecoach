@@ -599,9 +599,7 @@ class SyncManager:
                         if cursor.rowcount > 0:
                             updated_count += 1
                         else:
-                            log.warning(
-                                f"Settings update affected 0 rows: key={record.get('key')}"
-                            )
+                            log.warning(f"Settings update affected 0 rows: key={record.get('key')}")
 
                 conn.commit()
 
@@ -1017,7 +1015,9 @@ class SyncManager:
                         if self.is_name_callback:
                             word = record.get("word", "")
                             if self.is_name_callback(word):
-                                log.debug(f"Filtering out name '{word}' from remote word_statistics")
+                                log.debug(
+                                    f"Filtering out name '{word}' from remote word_statistics"
+                                )
                                 continue
 
                         data.append(record)
@@ -1505,15 +1505,7 @@ class SyncManager:
             else:
                 return remote
 
-        elif table == "settings":
-            # Last write wins based on updated_at timestamp
-            local_updated = local.get("updated_at", 0)
-            remote_updated = remote.get("updated_at", 0)
-            if local_updated >= remote_updated:
-                return local
-            else:
-                return remote
-        elif table == "llm_prompts":
+        elif table == "settings" or table == "llm_prompts":
             # Last write wins based on updated_at timestamp
             local_updated = local.get("updated_at", 0)
             remote_updated = remote.get("updated_at", 0)

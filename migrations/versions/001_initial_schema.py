@@ -8,12 +8,11 @@ Revises:
 Create Date: 2025-02-08
 
 """
-from alembic import op
-import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = '001'
+revision = "001"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -33,9 +32,9 @@ def upgrade() -> None:
     log_msg = f"Creating initial schema for {dialect_name}"
     print(log_msg)
 
-    if dialect_name == 'sqlite':
+    if dialect_name == "sqlite":
         _create_sqlite_schema()
-    elif dialect_name == 'postgresql':
+    elif dialect_name == "postgresql":
         _create_postgresql_schema()
     else:
         raise ValueError(f"Unsupported dialect: {dialect_name}")
@@ -48,22 +47,23 @@ def downgrade() -> None:
     dialect_name = conn.dialect.name
 
     # Drop tables in reverse order of creation
-    op.drop_table('llm_prompts')
-    op.drop_table('settings')
-    op.drop_table('ignored_words')
-    op.drop_table('word_statistics')
-    op.drop_table('daily_summaries')
-    op.drop_table('high_scores')
-    op.drop_table('digraph_statistics')
-    op.drop_table('statistics')
-    op.drop_table('bursts')
+    op.drop_table("llm_prompts")
+    op.drop_table("settings")
+    op.drop_table("ignored_words")
+    op.drop_table("word_statistics")
+    op.drop_table("daily_summaries")
+    op.drop_table("high_scores")
+    op.drop_table("digraph_statistics")
+    op.drop_table("statistics")
+    op.drop_table("bursts")
 
 
 def _create_sqlite_schema() -> None:
     """Create SQLite schema without user support."""
 
     # Bursts table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS bursts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             start_time INTEGER NOT NULL UNIQUE,
@@ -75,10 +75,12 @@ def _create_sqlite_schema() -> None:
             avg_wpm REAL,
             qualifies_for_high_score INTEGER DEFAULT 0
         )
-    """.strip())
+    """.strip()
+    )
 
     # Statistics table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS statistics (
             keycode INTEGER NOT NULL,
             key_name TEXT NOT NULL,
@@ -90,10 +92,12 @@ def _create_sqlite_schema() -> None:
             last_updated INTEGER,
             PRIMARY KEY (keycode, layout)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Digraph statistics table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS digraph_statistics (
             first_keycode INTEGER NOT NULL,
             second_keycode INTEGER NOT NULL,
@@ -107,10 +111,12 @@ def _create_sqlite_schema() -> None:
             last_updated INTEGER,
             PRIMARY KEY (first_keycode, second_keycode, layout)
         )
-    """.strip())
+    """.strip()
+    )
 
     # High scores table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS high_scores (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
@@ -120,10 +126,12 @@ def _create_sqlite_schema() -> None:
             timestamp INTEGER NOT NULL UNIQUE,
             burst_duration_ms INTEGER
         )
-    """.strip())
+    """.strip()
+    )
 
     # Daily summaries table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS daily_summaries (
             date TEXT PRIMARY KEY,
             total_keystrokes INTEGER,
@@ -134,10 +142,12 @@ def _create_sqlite_schema() -> None:
             total_typing_sec INTEGER,
             summary_sent INTEGER DEFAULT 0
         )
-    """.strip())
+    """.strip()
+    )
 
     # Word statistics table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS word_statistics (
             word TEXT NOT NULL,
             layout TEXT NOT NULL,
@@ -150,27 +160,33 @@ def _create_sqlite_schema() -> None:
             editing_time_ms INTEGER DEFAULT 0,
             PRIMARY KEY (word, layout)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Ignored words table (hash-based)
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS ignored_words (
             word_hash TEXT PRIMARY KEY,
             added_at INTEGER NOT NULL
         )
-    """.strip())
+    """.strip()
+    )
 
     # Settings table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
             updated_at INTEGER NOT NULL
         )
-    """.strip())
+    """.strip()
+    )
 
     # LLM prompts table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS llm_prompts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
@@ -179,14 +195,16 @@ def _create_sqlite_schema() -> None:
             updated_at INTEGER NOT NULL,
             is_default BOOLEAN DEFAULT 0
         )
-    """.strip())
+    """.strip()
+    )
 
 
 def _create_postgresql_schema() -> None:
     """Create PostgreSQL schema with user support and encryption."""
 
     # Bursts table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS bursts (
             id SERIAL PRIMARY KEY,
             user_id UUID NOT NULL,
@@ -200,10 +218,12 @@ def _create_postgresql_schema() -> None:
             qualifies_for_high_score INTEGER DEFAULT 0,
             UNIQUE(user_id, start_time)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Statistics table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS statistics (
             user_id UUID NOT NULL,
             keycode INTEGER NOT NULL,
@@ -216,10 +236,12 @@ def _create_postgresql_schema() -> None:
             last_updated BIGINT,
             PRIMARY KEY (user_id, keycode, layout)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Digraph statistics table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS digraph_statistics (
             user_id UUID NOT NULL,
             first_keycode INTEGER NOT NULL,
@@ -234,10 +256,12 @@ def _create_postgresql_schema() -> None:
             last_updated BIGINT,
             PRIMARY KEY (user_id, first_keycode, second_keycode, layout)
         )
-    """.strip())
+    """.strip()
+    )
 
     # High scores table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS high_scores (
             id SERIAL PRIMARY KEY,
             user_id UUID NOT NULL,
@@ -249,10 +273,12 @@ def _create_postgresql_schema() -> None:
             burst_duration_ms INTEGER,
             UNIQUE(user_id, timestamp)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Daily summaries table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS daily_summaries (
             user_id UUID NOT NULL,
             date TEXT NOT NULL,
@@ -265,10 +291,12 @@ def _create_postgresql_schema() -> None:
             summary_sent INTEGER DEFAULT 0,
             PRIMARY KEY (user_id, date)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Word statistics table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS word_statistics (
             user_id UUID NOT NULL,
             word TEXT NOT NULL,
@@ -282,20 +310,24 @@ def _create_postgresql_schema() -> None:
             editing_time_ms INTEGER DEFAULT 0,
             PRIMARY KEY (user_id, word, layout)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Ignored words table (hash-based)
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS ignored_words (
             user_id UUID NOT NULL,
             word_hash TEXT NOT NULL,
             added_at BIGINT NOT NULL,
             PRIMARY KEY (user_id, word_hash)
         )
-    """.strip())
+    """.strip()
+    )
 
     # Settings table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS settings (
             user_id UUID NOT NULL,
             key TEXT NOT NULL,
@@ -303,10 +335,12 @@ def _create_postgresql_schema() -> None:
             updated_at BIGINT NOT NULL,
             PRIMARY KEY (user_id, key)
         )
-    """.strip())
+    """.strip()
+    )
 
     # LLM prompts table
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS llm_prompts (
             id SERIAL PRIMARY KEY,
             user_id UUID NOT NULL,
@@ -317,4 +351,5 @@ def _create_postgresql_schema() -> None:
             is_default INTEGER DEFAULT 0,
             UNIQUE(user_id, name)
         )
-    """.strip())
+    """.strip()
+    )

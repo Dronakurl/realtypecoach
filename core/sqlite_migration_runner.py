@@ -7,9 +7,7 @@ import logging
 from contextlib import contextmanager
 from pathlib import Path
 
-import sqlalchemy.pool
 from alembic.config import Config
-from sqlalchemy import create_engine
 
 from core.migration_runner import MigrationRunner
 
@@ -55,35 +53,26 @@ class SQLiteMigrationRunner(MigrationRunner):
         Yields:
             SQLAlchemy Connection with sqlcipher3 backend
         """
+        from sqlalchemy import create_engine
+        from sqlalchemy.engine import Engine
+        from sqlalchemy.pool import StaticPool
         import sqlcipher3 as sqlite3
 
-        # Check if database file is empty (new database)
+        # Check if database file exists (may be empty for fresh install)
         db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
         log.debug(f"Migration runner: database file size check: {db_size} bytes")
-        if not self.db_path.exists() or db_size == 0:
-            log.info("Database file is empty or doesn't exist, skipping migrations")
-            raise RuntimeError("Database file is empty, migrations not needed")
+        if not self.db_path.exists():
+            log.info("Database file doesn't exist, creating it")
+            # Create empty file
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db_path.touch()
 
         # Import CryptoManager for key retrieval
         from utils.crypto import CryptoManager
 
-        # Try to get encryption key with retry logic
-        max_retries = 3
-        encryption_key = None
-
-        for attempt in range(max_retries):
-            crypto = CryptoManager(self.db_path)
-            encryption_key = crypto.get_key()
-            if encryption_key:
-                break
-            if attempt < max_retries - 1:
-                log.warning(
-                    f"Encryption key not available (attempt {attempt + 1}/{max_retries}), retrying..."
-                )
-                import time
-
-                time.sleep(0.5)
-
+        # Get encryption key
+        crypto = CryptoManager(self.db_path)
+        encryption_key = crypto.get_key()
         if not encryption_key:
             raise RuntimeError(
                 "Encryption key not available for database migration. "
@@ -91,19 +80,34 @@ class SQLiteMigrationRunner(MigrationRunner):
                 "Ensure the keyring is accessible and the database path is correct."
             )
 
-        # Create a raw SQLite connection with proper encryption setup
-        # This avoids SQLAlchemy's pysqlcipher dialect initialization issues
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute(f"PRAGMA key = \"x'{encryption_key.hex()}'\"")
-        conn.execute("PRAGMA cipher_memory_security = ON")
-        conn.execute("PRAGMA cipher_page_size = 4096")
-        conn.execute("PRAGMA cipher_kdf_iter = 256000")
-        conn.execute("PRAGMA foreign_keys = ON")
+        # Store key for use in creator function
+        key_hex = encryption_key.hex()
+
+        # Creator function that sets up encryption
+        def connect():
+            conn = sqlite3.connect(str(self.db_path))
+            conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
+            conn.execute("PRAGMA cipher_memory_security = ON")
+            conn.execute("PRAGMA cipher_page_size = 4096")
+            conn.execute("PRAGMA cipher_kdf_iter = 256000")
+            conn.execute("PRAGMA foreign_keys = ON")
+            return conn
+
+        # Create SQLAlchemy engine with plain sqlite dialect
+        # Using custom creator to set up encryption
+        engine: Engine = create_engine(
+            "sqlite://",
+            creator=connect,
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+            echo=False,
+        )
 
         try:
-            yield conn
+            with engine.connect() as conn:
+                yield conn
         finally:
-            conn.close()
+            engine.dispose()
 
     def upgrade(self, revision: str = "head") -> None:
         """Run SQLite migrations with batch mode support.

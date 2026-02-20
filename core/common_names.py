@@ -18,7 +18,7 @@ def generate_genitive(name: str) -> str | None:
     Returns:
         The genitive form (name + 's') or None if name ends with 's'.
     """
-    if not name.endswith('s'):
+    if not name.endswith("s"):
         return f"{name}s"
     return None
 
@@ -51,7 +51,7 @@ def load_and_generate_genitives(file_path: Path) -> set[str]:
         with open(file_path) as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#'):
+                if line and not line.startswith("#"):
                     add_name_with_genitive(names, line)
     return names
 
@@ -63,7 +63,7 @@ def save_names_sorted(names: set[str], file_path: Path) -> None:
         names: Set of names to save.
         file_path: Path to save to.
     """
-    with open(file_path, 'w') as f:
+    with open(file_path, "w") as f:
         for name in sorted(names):
             f.write(f"{name}\n")
 
@@ -78,4 +78,10 @@ COMMON_NAMES: dict[str, set[str]] = {
     "de": _ALL_NAMES_WITH_GENITIVES,
 }
 
-__all__ = ["COMMON_NAMES", "generate_genitive", "add_name_with_genitive", "load_and_generate_genitives", "save_names_sorted"]
+__all__ = [
+    "COMMON_NAMES",
+    "generate_genitive",
+    "add_name_with_genitive",
+    "load_and_generate_genitives",
+    "save_names_sorted",
+]

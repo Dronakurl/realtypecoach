@@ -7,7 +7,6 @@ import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Self
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -132,10 +131,9 @@ class MigrationRunner(ABC):
         from alembic import command
 
         log.info(f"Stamping database as {revision}")
-        with self._get_connection() as conn:
-            with self.config.attributes["connection"] as conn:
-                command.stamp(self.config, revision)
-                log.info(f"Database stamped as {revision}")
+        with self._get_connection() as conn, self.config.attributes["connection"] as conn:
+            command.stamp(self.config, revision)
+            log.info(f"Database stamped as {revision}")
 
     @abstractmethod
     @contextmanager

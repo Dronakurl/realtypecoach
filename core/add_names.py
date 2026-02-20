@@ -17,7 +17,7 @@ def generate_genitive(name: str) -> str | None:
     Returns:
         The genitive form (name + 's') or None if name ends with 's'.
     """
-    if not name.endswith('s'):
+    if not name.endswith("s"):
         return f"{name}s"
     return None
 
@@ -47,7 +47,7 @@ def load_existing_names() -> set[str]:
         with open(NAMES_FILE) as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#'):
+                if line and not line.startswith("#"):
                     names.add(line.lower())
     return names
 
@@ -58,7 +58,7 @@ def save_names(names: set[str]) -> None:
     Args:
         names: Set of names to save.
     """
-    with open(NAMES_FILE, 'w') as f:
+    with open(NAMES_FILE, "w") as f:
         for name in sorted(names):
             f.write(f"{name}\n")
 
@@ -91,7 +91,7 @@ def add_names_from_file(file_path: Path) -> None:
     with open(file_path) as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith('#'):
+            if line and not line.startswith("#"):
                 name_lower = line.lower()
                 if name_lower not in names:
                     add_name_to_set(names, line)
@@ -111,9 +111,7 @@ def sort_and_deduplicate() -> None:
 
 def main() -> None:
     """Main entry point for CLI."""
-    parser = argparse.ArgumentParser(
-        description="Add names to the common names list."
-    )
+    parser = argparse.ArgumentParser(description="Add names to the common names list.")
     parser.add_argument(
         "name",
         nargs="?",
