@@ -1,0 +1,2 @@
+#!/usr/bin/env fish
+.venv/bin/python -m pytest $argv
