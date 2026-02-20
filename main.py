@@ -449,7 +449,7 @@ class Application(QObject):
             if burst_wpm > max_wpm_threshold:
                 log.warning(
                     f"Unrealistic burst detected: {burst_wpm:.1f} WPM > {max_wpm_threshold} WPM threshold, "
-                    f"{burst.key_count} keys, {burst.duration_ms/1000:.1f}s"
+                    f"{burst.key_count} keys, {burst.duration_ms / 1000:.1f}s"
                 )
                 # Emit signal for notification
                 self.notification_handler.signal_unrealistic_burst.emit(burst_wpm, burst.key_count)
@@ -824,12 +824,13 @@ class Application(QObject):
         Args:
             count: Number of words to generate
         """
+
         def generate_in_thread():
             try:
                 # Fetch hardest words
                 words = self.analyzer.get_slowest_words(
                     limit=min(count, 100),  # Cap at 100 words
-                    layout=self.get_current_layout()
+                    layout=self.get_current_layout(),
                 )
 
                 if not words:
@@ -845,7 +846,7 @@ class Application(QObject):
                     prompt_data = self.storage.get_active_prompt(active_prompt_id)
 
                     if prompt_data:
-                        prompt_template = prompt_data['content']
+                        prompt_template = prompt_data["content"]
                         log.debug(f"Using active prompt: {prompt_data['name']}")
                     else:
                         # Fallback to built-in minimal prompt
@@ -858,12 +859,9 @@ class Application(QObject):
                     prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
 
                 # Format prompt
-                hardest_words = [w.word for w in words[:min(count, 50)]]
+                hardest_words = [w.word for w in words[: min(count, 50)]]
                 hardest_words_str = ", ".join(hardest_words)
-                prompt = prompt_template.format(
-                    word_count=count,
-                    hardest_words=hardest_words_str
-                )
+                prompt = prompt_template.format(word_count=count, hardest_words=hardest_words_str)
 
                 # Generate text (OllamaClient handles threading)
                 self.ollama_client.generate_text(prompt, hardest_words)
@@ -877,6 +875,7 @@ class Application(QObject):
 
     def check_ollama_availability(self) -> None:
         """Check Ollama availability and update UI (called periodically)."""
+
         def check_in_thread():
             available = self.ollama_client.check_server_available()
             # Thread-safe UI update via signal
@@ -916,14 +915,15 @@ class Application(QObject):
                     "Typing Practice",
                     "Generating practice text with Ollama...",
                     "info",
-                    timeout_ms=10000  # 10 seconds
+                    timeout_ms=10000,  # 10 seconds
                 )
-                log.info(f"Starting typing practice: generating {word_count} words using {hardest_word_count} hardest words")
+                log.info(
+                    f"Starting typing practice: generating {word_count} words using {hardest_word_count} hardest words"
+                )
 
                 # Fetch hardest words (exactly 50 words)
                 words = self.analyzer.get_slowest_words(
-                    limit=hardest_word_count,
-                    layout=self.get_current_layout()
+                    limit=hardest_word_count, layout=self.get_current_layout()
                 )
 
                 if not words:
@@ -932,7 +932,7 @@ class Application(QObject):
                     self.tray_icon.show_notification(
                         "Typing Practice",
                         "No typing data available yet. Type more first!",
-                        "warning"
+                        "warning",
                     )
                     return
 
@@ -942,7 +942,7 @@ class Application(QObject):
                     prompt_data = self.storage.get_active_prompt(active_prompt_id)
 
                     if prompt_data:
-                        prompt_template = prompt_data['content']
+                        prompt_template = prompt_data["content"]
                         log.debug(f"Using active prompt: {prompt_data['name']}")
                     else:
                         # Fallback to built-in minimal prompt
@@ -958,8 +958,7 @@ class Application(QObject):
                 hardest_words = [w.word for w in words[:hardest_word_count]]
                 hardest_words_str = ", ".join(hardest_words)
                 prompt = prompt_template.format(
-                    word_count=word_count,
-                    hardest_words=hardest_words_str
+                    word_count=word_count, hardest_words=hardest_words_str
                 )
 
                 log.info(f"Sending prompt to Ollama (target: {word_count} words)")
@@ -968,15 +967,19 @@ class Application(QObject):
                 generated_text = self.ollama_client.generate_text_sync(prompt, hardest_words)
 
                 if not generated_text:
-                    log.warning("Ollama text generation failed or returned empty, using hardest words directly")
+                    log.warning(
+                        "Ollama text generation failed or returned empty, using hardest words directly"
+                    )
                     # Fallback: use hardest words directly
                     generated_text = " ".join(hardest_words)
 
                 # Clean up LLM output: remove asterisk markdown formatting
                 # This handles cases like *word* or **word** that LLMs sometimes use for emphasis
-                generated_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', generated_text)  # Remove **word**
-                generated_text = re.sub(r'\*([^*]+)\*', r'\1', generated_text)      # Remove *word*
-                log.debug(f"Cleaned LLM output (removed asterisk formatting)")
+                generated_text = re.sub(
+                    r"\*\*([^*]+)\*\*", r"\1", generated_text
+                )  # Remove **word**
+                generated_text = re.sub(r"\*([^*]+)\*", r"\1", generated_text)  # Remove *word*
+                log.debug("Cleaned LLM output (removed asterisk formatting)")
 
                 actual_word_count = len(generated_text.split())
                 log.info(f"Ollama generated {actual_word_count} words")
@@ -991,29 +994,30 @@ class Application(QObject):
                     log.error(f"practice.py not found at {script_path}")
                     self.tray_icon.dismiss_notification()
                     self.tray_icon.show_notification(
-                        "Typing Practice Error",
-                        "practice.py script not found",
-                        "error"
+                        "Typing Practice Error", "practice.py script not found", "error"
                     )
                     return
 
                 # Write text to temp file for practice script
                 import tempfile
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
                     f.write(generated_text)
                     temp_file = f.name
 
                 hardest_words_list = [w.word for w in words[:hardest_word_count]]
                 hardest_words_str = ",".join(hardest_words_list)
 
-                log.info(f"Opening typing practice with: {actual_word_count} words, {len(hardest_words_list)} highlighted")
+                log.info(
+                    f"Opening typing practice with: {actual_word_count} words, {len(hardest_words_list)} highlighted"
+                )
 
                 # Run the practice script with hardest words
                 result = subprocess.run(
                     ["python3", str(script_path), "--hardest", temp_file, hardest_words_str],
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
                 )
 
                 # Clean up temp file
@@ -1030,25 +1034,20 @@ class Application(QObject):
                         "Typing Practice Error",
                         "Failed to open practice. See logs.",
                         "error",
-                        timeout_ms=6000
+                        timeout_ms=6000,
                     )
 
             except subprocess.TimeoutExpired:
                 log.error("Practice operation timed out")
                 self.tray_icon.dismiss_notification()
                 self.tray_icon.show_notification(
-                    "Typing Practice Error",
-                    "Operation timed out",
-                    "error",
-                    timeout_ms=6000
+                    "Typing Practice Error", "Operation timed out", "error", timeout_ms=6000
                 )
             except Exception as e:
                 log.error(f"Error in practice_hardest_words: {e}")
                 self.tray_icon.dismiss_notification()
                 self.tray_icon.show_notification(
-                    "Typing Practice Error",
-                    f"Error: {str(e)}",
-                    "error"
+                    "Typing Practice Error", f"Error: {str(e)}", "error"
                 )
 
         # Run in background thread
@@ -1231,7 +1230,9 @@ class Application(QObject):
 
         # Update average burst duration stats
         avg_ms, min_ms, max_ms, percentile_95_ms = self.storage.get_burst_duration_stats_ms()
-        self.signal_update_avg_burst_duration.emit(avg_ms, min_ms, max_ms, percentile_95_ms, wpm_95th_percentile)
+        self.signal_update_avg_burst_duration.emit(
+            avg_ms, min_ms, max_ms, percentile_95_ms, wpm_95th_percentile
+        )
 
         total_time = (time.time() - start_time) * 1000
         log.info(f"update_statistics() completed in {total_time:.1f}ms")
