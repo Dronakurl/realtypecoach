@@ -574,6 +574,43 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    # ========== Sync Log Operations ==========
+
+    @abstractmethod
+    def insert_sync_log(self, entry: dict) -> int:
+        """Insert a sync log entry.
+
+        Args:
+            entry: Dictionary with keys: timestamp, machine_name, pushed, pulled,
+                   merged, duration_ms, error, table_breakdown
+
+        Returns:
+            Inserted record ID
+        """
+        pass
+
+    @abstractmethod
+    def get_sync_logs(self, limit: int = 100) -> list[dict]:
+        """Get sync log entries (most recent first).
+
+        Args:
+            limit: Maximum number of entries to return
+
+        Returns:
+            List of sync log dictionaries
+        """
+        pass
+
+    @abstractmethod
+    def get_sync_log_stats(self) -> dict:
+        """Get aggregate sync log statistics.
+
+        Returns:
+            Dictionary with keys: total_syncs, total_pushed, total_pulled,
+            total_merged, last_sync
+        """
+        pass
+
 
 class AdapterError(Exception):
     """Base exception for database adapter errors."""

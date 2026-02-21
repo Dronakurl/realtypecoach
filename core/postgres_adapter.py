@@ -2948,6 +2948,87 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         return count
 
+    # ========== Sync Log Operations ==========
+
+    def insert_sync_log(self, entry: dict) -> int:
+        """Insert a sync log entry."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO sync_log
+                (user_id, timestamp, machine_name, pushed, pulled, merged, duration_ms, error, table_breakdown)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id""",
+                (
+                    self.user_id,
+                    entry["timestamp"],
+                    entry["machine_name"],
+                    entry["pushed"],
+                    entry["pulled"],
+                    entry["merged"],
+                    entry["duration_ms"],
+                    entry["error"],
+                    entry.get("table_breakdown", "{}"),
+                ),
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            return result[0] if result else 0
+
+    def get_sync_logs(self, limit: int = 100) -> list[dict]:
+        """Get sync log entries (most recent first)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT id, timestamp, machine_name, pushed, pulled, merged,
+                          duration_ms, error, table_breakdown
+                   FROM sync_log
+                   WHERE user_id = %s
+                   ORDER BY timestamp DESC LIMIT %s""",
+                (self.user_id, limit),
+            )
+            logs = []
+            for row in cursor.fetchall():
+                logs.append(
+                    {
+                        "id": row[0],
+                        "timestamp": row[1],
+                        "machine_name": row[2],
+                        "pushed": row[3],
+                        "pulled": row[4],
+                        "merged": row[5],
+                        "duration_ms": row[6],
+                        "error": row[7],
+                        "table_breakdown": row[8],
+                    }
+                )
+            return logs
+
+    def get_sync_log_stats(self) -> dict:
+        """Get aggregate sync log statistics."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) as total_syncs,
+                       COALESCE(SUM(pushed), 0) as total_pushed,
+                       COALESCE(SUM(pulled), 0) as total_pulled,
+                       COALESCE(SUM(merged), 0) as total_merged,
+                       MAX(timestamp) as last_sync
+                FROM sync_log
+                WHERE user_id = %s
+            """,
+                (self.user_id,),
+            )
+            row = cursor.fetchone()
+            return {
+                "total_syncs": row[0],
+                "total_pushed": row[1],
+                "total_pulled": row[2],
+                "total_merged": row[3],
+                "last_sync": row[4],
+            }
+
     def check_user_exists(self, user_id: str) -> bool:
         """Check if user exists in the remote database.
 

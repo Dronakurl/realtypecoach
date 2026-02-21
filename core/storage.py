@@ -28,6 +28,7 @@ from utils.crypto import CryptoManager
 
 if TYPE_CHECKING:
     from core.analyzer import Analyzer
+    from core.sync_manager import SyncResult
 
 log = logging.getLogger("realtypecoach.storage")
 
@@ -823,15 +824,14 @@ class Storage:
         Returns:
             Number of rows deleted
         """
+
         def is_ignored_or_name(word: str) -> bool:
             """Check if word is ignored (hash-based) or is a common name."""
             # Check hash-based ignored words first
             if self.is_word_ignored(word):
                 return True
-            # Check if it's a name (if exclude_names is enabled)
-            if self.dictionary._exclude_names and self.dictionary._is_name(word):
-                return True
-            return False
+            # Check if it is a name (if exclude_names is enabled)
+            return self.dictionary._exclude_names and self.dictionary._is_name(word)
 
         return self.adapter.clean_ignored_words_stats(is_ignored_or_name)
 
@@ -1100,11 +1100,11 @@ class Storage:
             def is_ignored_or_name(word: str) -> bool:
                 """Check if word is ignored (hash-based) or is a common name."""
                 # Check hash-based ignored words first
+                # Check if it is a name (if exclude_names is enabled)
+                return self.dictionary._exclude_names and self.dictionary._is_name(word)
                 if self.is_word_ignored(word):
                     return True
                 # Check if it's a name (if exclude_names is enabled)
-                if self.dictionary._exclude_names and self.dictionary._is_name(word):
-                    return True
                 return False
 
             local_adapter.clean_ignored_words_stats(is_ignored_or_name)
@@ -1116,6 +1116,12 @@ class Storage:
             # Close adapters
             local_adapter.close()
             remote_adapter.close()
+
+            # Log the sync result
+            try:
+                self.log_sync_result(result, user.username)
+            except Exception as e:
+                log.error(f"Failed to log sync result: {e}")
 
             return {
                 "success": result.success,
@@ -1219,6 +1225,70 @@ class Storage:
         prompts = self.get_all_prompts()
         if not prompts:
             self.reset_default_prompts()
+
+    # ========== Sync Log Operations ==========
+
+    def log_sync_result(self, result: "SyncResult", machine_name: str = "") -> int:
+        """Log a sync result to the database.
+
+        Args:
+            result: SyncResult from sync_manager
+            machine_name: Machine name (auto-detected from UserManager if empty)
+
+        Returns:
+            Inserted record ID
+        """
+        import json
+        import time
+
+        from core.user_manager import UserManager
+
+        if not machine_name:
+            user_manager = UserManager(self.db_path, self.config)
+            user = user_manager.get_or_create_current_user()
+            machine_name = user.username
+
+        # Build table_breakdown dict
+        table_breakdown = {}
+        if hasattr(result, "table_breakdown") and result.table_breakdown:
+            for table, stats in result.table_breakdown.items():
+                table_breakdown[table] = {
+                    "pushed": stats.pushed,
+                    "pulled": stats.pulled,
+                    "merged": stats.merged,
+                }
+
+        entry = {
+            "timestamp": int(time.time() * 1000),
+            "machine_name": machine_name,
+            "pushed": result.pushed,
+            "pulled": result.pulled,
+            "merged": result.merged,
+            "duration_ms": result.duration_ms,
+            "error": result.error,
+            "table_breakdown": json.dumps(table_breakdown),
+        }
+        return self.adapter.insert_sync_log(entry)
+
+    def get_sync_logs(self, limit: int = 100) -> list[dict]:
+        """Get sync log entries (most recent first).
+
+        Args:
+            limit: Maximum number of entries to return
+
+        Returns:
+            List of sync log dictionaries
+        """
+        return self.adapter.get_sync_logs(limit)
+
+    def get_sync_log_stats(self) -> dict:
+        """Get aggregate sync log statistics.
+
+        Returns:
+            Dictionary with keys: total_syncs, total_pushed, total_pulled,
+            total_merged, last_sync
+        """
+        return self.adapter.get_sync_log_stats()
 
     def close(self) -> None:
         """Close the database adapter and cleanup resources."""

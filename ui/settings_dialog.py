@@ -908,6 +908,16 @@ class SettingsDialog(QDialog):
         auto_sync_group.setLayout(auto_sync_layout)
         layout.addWidget(auto_sync_group)
 
+        # Sync Audit Log Group
+        sync_log_group = QGroupBox("Sync Audit Log")
+        sync_log_layout = QVBoxLayout()
+        view_log_btn = QPushButton("View Sync Log")
+        view_log_btn.clicked.connect(self.view_sync_log)
+        view_log_btn.setToolTip("View history of sync operations with per-table breakdown")
+        sync_log_layout.addWidget(view_log_btn)
+        sync_log_group.setLayout(sync_log_layout)
+        layout.addWidget(sync_log_group)
+
         layout.addStretch()
         widget.setLayout(layout)
 
@@ -2382,6 +2392,26 @@ class SettingsDialog(QDialog):
             # Always restore button state
             self.upload_history_btn.setEnabled(True)
             self.upload_history_btn.setText("Sync Now")
+
+    def view_sync_log(self) -> None:
+        """Open sync log viewer window."""
+        from PySide6.QtWidgets import QMessageBox
+
+        storage = None
+        if hasattr(self, "storage") and self.storage is not None:
+            storage = self.storage
+        elif hasattr(self.window(), "storage"):
+            storage = self.window().storage
+
+        if storage:
+            try:
+                from ui.sync_log_window import SyncLogWindow
+
+                SyncLogWindow(storage, self).exec()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to open sync log viewer:\n{e}")
+        else:
+            QMessageBox.warning(self, "Error", "Could not access storage.")
 
     def _update_user_display(self) -> None:
         """Update user identity display."""

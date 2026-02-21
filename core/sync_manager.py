@@ -10,7 +10,7 @@ local SQLite and remote PostgreSQL databases with support for:
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,6 +18,15 @@ if TYPE_CHECKING:
     from core.database_adapter import DatabaseAdapter
 
 log = logging.getLogger("realtypecoach.sync_manager")
+
+
+@dataclass
+class TableSyncStats:
+    """Per-table sync statistics."""
+
+    pushed: int = 0
+    pulled: int = 0
+    merged: int = 0
 
 
 @dataclass
@@ -30,6 +39,7 @@ class SyncResult:
     merged: int = 0
     error: str | None = None
     duration_ms: int = 0
+    table_breakdown: dict[str, TableSyncStats] = field(default_factory=dict)
 
 
 class SyncManager:
@@ -101,6 +111,11 @@ class SyncManager:
                 result.pushed += pushed
                 result.pulled += pulled
                 result.merged += conflicts
+
+                # Store per-table breakdown
+                result.table_breakdown[table] = TableSyncStats(
+                    pushed=pushed, pulled=pulled, merged=conflicts
+                )
                 log.info(f"Synced {table}: pushed={pushed}, pulled={pulled}, merged={conflicts}")
 
             result.success = True

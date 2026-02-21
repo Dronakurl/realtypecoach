@@ -774,9 +774,7 @@ class SQLiteAdapter(DatabaseAdapter):
             cursor = conn.cursor()
 
             # Check if bursts table exists
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='bursts'"
-            )
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bursts'")
             if cursor.fetchone() is None:
                 # Table doesn't exist yet, keep cache at defaults
                 return
@@ -2721,3 +2719,77 @@ Create a coherent text that includes as many of these words as possible in their
                 count = len(rows)
 
         return count
+
+    # ========== Sync Log Operations ==========
+
+    def insert_sync_log(self, entry: dict) -> int:
+        """Insert a sync log entry."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO sync_log
+                (timestamp, machine_name, pushed, pulled, merged, duration_ms, error, table_breakdown)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    entry["timestamp"],
+                    entry["machine_name"],
+                    entry["pushed"],
+                    entry["pulled"],
+                    entry["merged"],
+                    entry["duration_ms"],
+                    entry["error"],
+                    entry.get("table_breakdown", "{}"),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_sync_logs(self, limit: int = 100) -> list[dict]:
+        """Get sync log entries (most recent first)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT id, timestamp, machine_name, pushed, pulled, merged,
+                          duration_ms, error, table_breakdown
+                   FROM sync_log ORDER BY timestamp DESC LIMIT ?""",
+                (limit,),
+            )
+            logs = []
+            for row in cursor.fetchall():
+                logs.append(
+                    {
+                        "id": row[0],
+                        "timestamp": row[1],
+                        "machine_name": row[2],
+                        "pushed": row[3],
+                        "pulled": row[4],
+                        "merged": row[5],
+                        "duration_ms": row[6],
+                        "error": row[7],
+                        "table_breakdown": row[8],
+                    }
+                )
+            return logs
+
+    def get_sync_log_stats(self) -> dict:
+        """Get aggregate sync log statistics."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) as total_syncs,
+                       COALESCE(SUM(pushed), 0) as total_pushed,
+                       COALESCE(SUM(pulled), 0) as total_pulled,
+                       COALESCE(SUM(merged), 0) as total_merged,
+                       MAX(timestamp) as last_sync
+                FROM sync_log
+            """
+            )
+            row = cursor.fetchone()
+            return {
+                "total_syncs": row[0],
+                "total_pushed": row[1],
+                "total_pulled": row[2],
+                "total_merged": row[3],
+                "last_sync": row[4],
+            }
