@@ -816,12 +816,24 @@ class Storage:
         return self.adapter.export_to_csv(file_path, start_date)
 
     def clean_ignored_words(self) -> int:
-        """Delete word statistics for words in the ignore list.
+        """Delete word statistics for words in the ignore list and common names.
+
+        If exclude_names_enabled is True, also deletes all common name statistics.
 
         Returns:
             Number of rows deleted
         """
-        return self.adapter.clean_ignored_words_stats(self.is_word_ignored)
+        def is_ignored_or_name(word: str) -> bool:
+            """Check if word is ignored (hash-based) or is a common name."""
+            # Check hash-based ignored words first
+            if self.is_word_ignored(word):
+                return True
+            # Check if it's a name (if exclude_names is enabled)
+            if self.dictionary._exclude_names and self.dictionary._is_name(word):
+                return True
+            return False
+
+        return self.adapter.clean_ignored_words_stats(is_ignored_or_name)
 
     # ========== Ignored Words Operations ==========
 
@@ -1084,9 +1096,19 @@ class Storage:
             result = sync_mgr.bidirectional_merge()
 
             # Clean up word statistics for all ignored words on both sides
-            # We need to iterate through word_statistics and check each word
-            local_adapter.clean_ignored_words_stats(self.is_word_ignored)
-            remote_adapter.clean_ignored_words_stats(self.is_word_ignored)
+            # This includes both hash-based ignored words AND names (if exclude_names is enabled)
+            def is_ignored_or_name(word: str) -> bool:
+                """Check if word is ignored (hash-based) or is a common name."""
+                # Check hash-based ignored words first
+                if self.is_word_ignored(word):
+                    return True
+                # Check if it's a name (if exclude_names is enabled)
+                if self.dictionary._exclude_names and self.dictionary._is_name(word):
+                    return True
+                return False
+
+            local_adapter.clean_ignored_words_stats(is_ignored_or_name)
+            remote_adapter.clean_ignored_words_stats(is_ignored_or_name)
 
             # Update last sync timestamp
             user_manager.update_last_sync()
