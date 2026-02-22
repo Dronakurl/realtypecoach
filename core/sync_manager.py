@@ -90,6 +90,92 @@ class SyncManager:
         self.user_id = user_id
         self.is_name_callback = is_name_callback
 
+    def _validate_remote_connection(self) -> bool:
+        """Validate remote PostgreSQL connection is healthy before sync.
+
+        Returns:
+            True if remote is reachable and schema-compatible, False otherwise
+
+        Raises:
+            AdapterError: If remote connection fails
+        """
+        try:
+            # Test connection with simple query
+            with self.remote.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+
+            # Verify critical tables exist
+            required_tables = ["bursts", "statistics", "word_statistics",
+                              "digraph_statistics", "high_scores", "daily_summaries"]
+            for table in required_tables:
+                cursor.execute(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_name = %s)",
+                    (table,)
+                )
+                if not cursor.fetchone()[0]:
+                    raise AdapterError(f"Remote missing required table: {table}")
+
+            log.info("Remote connection validated successfully")
+            return True
+
+        except Exception as e:
+            log.error(f"Remote validation failed: {e}")
+            raise AdapterError(f"Remote database unavailable: {e}") from e
+
+    def _validate_schema_compatibility(self, table: str) -> None:
+        """Verify local and remote schemas are compatible for sync.
+
+        Args:
+            table: Table name to validate
+
+        Raises:
+            AdapterError: If schemas are incompatible
+        """
+        # Check that column sets match
+        local_columns = self._get_table_columns(self.local, table)
+        remote_columns = self._get_table_columns(self.remote, table)
+
+        local_set = set(local_columns)
+        remote_set = set(remote_columns)
+
+        # Remote should have all local columns (may have extras like user_id)
+        missing = local_set - remote_set
+        if missing:
+            raise AdapterError(
+                f"Schema mismatch for {table}: remote missing columns {missing}"
+            )
+
+        log.debug(f"Schema compatibility verified for {table}")
+
+    def _get_table_columns(self, adapter: "DatabaseAdapter", table: str) -> list[str]:
+        """Get column names for a table.
+
+        Args:
+            adapter: Database adapter to query
+            table: Table name
+
+        Returns:
+            List of column names
+        """
+        with adapter.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Use PRAGMA for SQLite, information_schema for PostgreSQL
+            from core.sqlite_adapter import SQLiteAdapter
+            if isinstance(adapter, SQLiteAdapter):
+                cursor.execute(f"PRAGMA table_info({table})")
+                return [row[1] for row in cursor.fetchall()]
+            else:
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = %s",
+                    (table,)
+                )
+                return [row[0] for row in cursor.fetchall()]
+
     def bidirectional_merge(self) -> SyncResult:
         """Perform bidirectional merge between local and remote databases.
 
@@ -105,8 +191,14 @@ class SyncManager:
         log.info(f"Starting bidirectional merge for user {self.user_id}")
 
         try:
+            # Validate remote connection before starting sync
+            self._validate_remote_connection()
+
             # Sync each table
             for table in self.SYNC_TABLES:
+                # Validate schema compatibility for this table
+                self._validate_schema_compatibility(table)
+
                 pushed, pulled, conflicts = self._sync_table(table)
                 result.pushed += pushed
                 result.pulled += pulled
@@ -124,6 +216,15 @@ class SyncManager:
             log.error(f"Sync failed: {e}")
             result.success = False
             result.error = str(e)
+
+            # Add helpful context for common failures
+            error_str = str(e).lower()
+            if "connection" in error_str or "timeout" in error_str:
+                result.error += "\n\nHint: Check your internet connection and PostgreSQL server status."
+            elif "schema" in error_str or "column" in error_str:
+                result.error += "\n\nHint: Local and remote databases may be at different versions. Run migrations on both."
+            elif "authentication" in error_str or "password" in error_str:
+                result.error += "\n\nHint: Check your PostgreSQL credentials in settings."
 
         result.duration_ms = int((time.time() - start_time) * 1000)
         return result

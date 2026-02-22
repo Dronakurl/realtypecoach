@@ -27,7 +27,12 @@ BURST_TIMEOUT_MS = 1000
 
 
 class Analyzer:
-    """Analyzes typing data and computes statistics."""
+    """Analyzes typing data and computes statistics.
+
+    The analyzer delegates database queries to the Storage layer, which in turn
+    delegates to the DatabaseAdapter. For simple read operations, the analyzer
+    uses storage.db to access the database adapter directly, reducing indirection.
+    """
 
     def __init__(self, storage: Storage):
         """Initialize analyzer.
@@ -85,7 +90,7 @@ class Analyzer:
     def _load_today_data(self) -> None:
         """Load today's existing data from database."""
         # Load daily summary if exists
-        summary = self.storage.get_daily_summary(self.today_date)
+        summary = self.storage.db.get_daily_summary(self.today_date)
         if summary:
             self.today_stats["total_keystrokes"] = summary.total_keystrokes
             self.today_stats["total_bursts"] = summary.total_bursts
@@ -99,7 +104,7 @@ class Analyzer:
             endOfDay = startOfDay + 86400000
 
             # Get burst statistics using adapter
-            total_keystrokes, total_bursts = self.storage.get_burst_stats_for_date_range(
+            total_keystrokes, total_bursts = self.storage.db.get_burst_stats_for_date_range(
                 startOfDay, endOfDay
             )
             self.today_stats["total_keystrokes"] = total_keystrokes
@@ -110,7 +115,7 @@ class Analyzer:
             self.today_stats["total_typing_ms"] = 0
 
         # Load personal best for today
-        self.personal_best_today = self.storage.get_today_high_score(self.today_date)
+        self.personal_best_today = self.storage.db.get_today_high_score(self.today_date)
 
     def process_key_event(
         self, keycode: int, key_name: str, timestamp_ms: int, layout: str = "us"
@@ -212,7 +217,7 @@ class Analyzer:
             duration_ms: Burst duration in milliseconds
             key_count: Number of keystrokes
         """
-        today_high = self.storage.get_today_high_score(self.today_date)
+        today_high = self.storage.db.get_today_high_score(self.today_date)
 
         if today_high is None or wpm > today_high:
             self.storage.store_high_score(self.today_date, wpm, duration_ms, key_count)
@@ -264,7 +269,7 @@ class Analyzer:
         startOfDay = int(datetime.strptime(date, "%Y-%m-%d").timestamp() * 1000)
         endOfDay = startOfDay + 86400000
 
-        total_typing_ms = self.storage.get_total_burst_duration(startOfDay, endOfDay)
+        total_typing_ms = self.storage.db.get_total_burst_duration(startOfDay, endOfDay)
 
         # Use backspace count for accurate WPM calculation
         avg_wpm = self._calculate_wpm(
@@ -304,7 +309,7 @@ class Analyzer:
         startOfDay = int(datetime.strptime(today_date, "%Y-%m-%d").timestamp() * 1000)
         endOfDay = startOfDay + 86400000
 
-        total_typing_ms = self.storage.get_total_burst_duration(startOfDay, endOfDay)
+        total_typing_ms = self.storage.db.get_total_burst_duration(startOfDay, endOfDay)
 
         total_time_sec = total_typing_ms / 1000.0
         if total_time_sec == 0:
@@ -331,7 +336,7 @@ class Analyzer:
             current_burst_wpm = self.current_burst_wpm
 
         # Calculate total typing time from database to avoid double-counting
-        total_typing_ms = self.storage.get_today_typing_time(today_date)
+        total_typing_ms = self.storage.db.get_today_typing_time(today_date)
         total_time_sec = total_typing_ms / 1000.0
 
         return {
@@ -356,7 +361,7 @@ class Analyzer:
         Returns:
             List of KeyPerformance models
         """
-        return self.storage.get_slowest_keys(limit, layout)
+        return self.storage.db.get_slowest_keys(limit, layout)
 
     def get_fastest_keys(self, limit: int = 10, layout: str | None = None) -> list[KeyPerformance]:
         """Get fastest keys from database.
@@ -368,7 +373,7 @@ class Analyzer:
         Returns:
             List of KeyPerformance models
         """
-        return self.storage.get_fastest_keys(limit, layout)
+        return self.storage.db.get_fastest_keys(limit, layout)
 
     def get_slowest_words(
         self, limit: int = 10, layout: str | None = None
@@ -382,7 +387,7 @@ class Analyzer:
         Returns:
             List of WordStatisticsLite models
         """
-        return self.storage.get_slowest_words(limit, layout)
+        return self.storage.db.get_slowest_words(limit, layout)
 
     def get_fastest_words(
         self, limit: int = 10, layout: str | None = None
@@ -396,7 +401,7 @@ class Analyzer:
         Returns:
             List of WordStatisticsLite models
         """
-        return self.storage.get_fastest_words(limit, layout)
+        return self.storage.db.get_fastest_words(limit, layout)
 
     def get_slowest_digraphs(
         self, limit: int = 10, layout: str | None = None
@@ -410,7 +415,7 @@ class Analyzer:
         Returns:
             List of DigraphPerformance models
         """
-        return self.storage.get_slowest_digraphs(limit, layout)
+        return self.storage.db.get_slowest_digraphs(limit, layout)
 
     def get_fastest_digraphs(
         self, limit: int = 10, layout: str | None = None
@@ -424,7 +429,7 @@ class Analyzer:
         Returns:
             List of DigraphPerformance models
         """
-        return self.storage.get_fastest_digraphs(limit, layout)
+        return self.storage.db.get_fastest_digraphs(limit, layout)
 
     def get_long_term_average_wpm(self) -> float | None:
         """Get long-term average WPM across all recorded bursts.
@@ -432,7 +437,7 @@ class Analyzer:
         Returns:
             Average WPM or None if no bursts recorded
         """
-        return self.storage.get_average_burst_wpm()
+        return self.storage.db.get_average_burst_wpm()
 
     def get_all_time_high_score(self) -> float | None:
         """Get all-time highest WPM.
@@ -440,7 +445,7 @@ class Analyzer:
         Returns:
             WPM or None if no bursts recorded
         """
-        return self.storage.get_all_time_high_score()
+        return self.storage.db.get_all_time_high_score()
 
     def get_burst_wpm_percentile(self, percentile: float) -> float | None:
         """Get WPM value at a given percentile across all bursts.
@@ -451,7 +456,7 @@ class Analyzer:
         Returns:
             WPM value at the percentile or None if no bursts recorded
         """
-        return self.storage.get_burst_wpm_percentile(percentile)
+        return self.storage.db.get_burst_wpm_percentile(percentile)
 
     def is_exceptional_burst(self, wpm: float, percentile: float = 95) -> bool:
         """Check if a burst WPM is exceptional (exceeds the given percentile).
@@ -474,7 +479,7 @@ class Analyzer:
         """
         with self._lock:
             # Get current worst letter from database
-            slowest_keys = self.storage.get_slowest_keys(limit=1, layout=None)
+            slowest_keys = self.storage.db.get_slowest_keys(limit=1, layout=None)
 
             if not slowest_keys:
                 return None
@@ -527,7 +532,7 @@ class Analyzer:
         Returns:
             DailySummaryDB model or None
         """
-        return self.storage.get_daily_summary(date)
+        return self.storage.db.get_daily_summary(date)
 
     def get_wpm_burst_sequence(self, smoothness: int = 1) -> tuple[list[float], list[int]]:
         """Get WPM values over burst sequence with moving average smoothing.
@@ -541,7 +546,7 @@ class Analyzer:
             Tuple of (wpm_values, x_positions) where x_positions are burst numbers
         """
         # Get all bursts ordered by time from Storage facade
-        raw_wpm = self.storage.get_all_burst_wpms_ordered()
+        raw_wpm = self.storage.db.get_all_burst_wpms_ordered()
 
         if not raw_wpm:
             return [], []
@@ -566,7 +571,7 @@ class Analyzer:
         Returns:
             List of TypingTimeDataPoint models
         """
-        return self.storage.get_typing_time_by_granularity(
+        return self.storage.db.get_typing_time_by_granularity(
             granularity=granularity,
             start_date=start_date,
             end_date=end_date,
@@ -582,4 +587,4 @@ class Analyzer:
         Returns:
             List of (bin_center_wpm, count) tuples
         """
-        return self.storage.get_burst_wpm_histogram(bin_count=bin_count)
+        return self.storage.db.get_burst_wpm_histogram(bin_count=bin_count)
