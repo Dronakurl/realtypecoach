@@ -229,6 +229,26 @@ class AppSettings(BaseModel):
         ge=-1,
         description="Active prompt ID (-1 = use first prompt)",
     )
+    llm_word_count: int = Field(
+        default=50,
+        ge=10,
+        le=1000,
+        description="Word count for LLM text generation",
+    )
+
+    # Practice Text Settings
+    special_char_probability: int = Field(
+        default=20,
+        ge=0,
+        le=100,
+        description="Probability (0-100%) that a word gets special characters in practice text",
+    )
+    number_probability: int = Field(
+        default=15,
+        ge=0,
+        le=100,
+        description="Probability (0-100%) that a number is inserted between words in practice text",
+    )
 
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
@@ -423,6 +443,7 @@ class Config:
         # Check temporary overrides first
         if hasattr(self, "_temp_overrides") and key in self._temp_overrides:
             value = self._temp_overrides[key]
+            log.info(f"Config {key} from temporary override: {value}")
             # Validate through pydantic if key is in AppSettings
             if key in AppSettings.model_fields:
                 try:
@@ -439,6 +460,7 @@ class Config:
             if result:
                 raw_value = result[0]
                 parsed = self._simple_parse(raw_value)
+                log.info(f"Config {key} from database: {parsed}")
                 # Validate through pydantic if key is in AppSettings
                 if key in AppSettings.model_fields:
                     try:
@@ -447,12 +469,16 @@ class Config:
                     except Exception:
                         return parsed
                 return parsed
+            # Key not found in database
+            log.info(f"Config {key} not in database, using default: {default}")
             if default is not None:
                 return default
             # Fall back to AppSettings default if key exists
             if key in AppSettings.model_fields:
                 settings = AppSettings()
-                return getattr(settings, key)
+                default_value = getattr(settings, key)
+                log.info(f"Config {key} using AppSettings default: {default_value}")
+                return default_value
             return None
 
     def get_int(self, key: str, default: int | None = None) -> int:
@@ -549,18 +575,30 @@ class Config:
         import time
 
         timestamp_ms = int(time.time() * 1000)
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO settings (key, value, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value,
-                    updated_at = excluded.updated_at
-            """,
-                (key, self._serialize_value(value), timestamp_ms),
-            )
-            conn.commit()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO settings (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                """,
+                    (key, self._serialize_value(value), timestamp_ms),
+                )
+                conn.commit()
+                # Verify the write was successful
+                cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                result = cursor.fetchone()
+                if result:
+                    log.info(f"Config saved: {key} = {result[0]}")
+                else:
+                    log.error(f"Config save failed: {key} - not found after write")
+        except Exception as e:
+            log.error(f"Failed to save config {key} = {value}: {e}")
+            raise
 
     def get_all(self) -> dict[str, Any]:
         """Get all settings as dictionary."""

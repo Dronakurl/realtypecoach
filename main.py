@@ -288,7 +288,7 @@ class Application(QObject):
             interval_sec=auto_sync_interval,
         )
 
-        self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
+        self.stats_panel = StatsPanel(icon_path=str(self.icon_path), config=self.config)
 
         # Hide digraph practice controls if no dictionaries are configured
         # (in accept_all_mode, there's no word list to search for matching digraphs)
@@ -1361,8 +1361,8 @@ class Application(QObject):
 
         Args:
             words: List of words to enhance
-            special_chars: Whether to add special characters (30% probability)
-            numbers: Whether to insert numbers (15% probability between words)
+            special_chars: Whether to add special characters (configurable probability per word)
+            numbers: Whether to insert numbers (configurable probability between words)
 
         Returns:
             Enhanced list of words (with hyphens joining adjacent words where applied)
@@ -1386,7 +1386,7 @@ class Application(QObject):
     def _apply_special_characters_to_list(self, words: list[str]) -> list[str]:
         """Apply special character modifications to a list of words.
 
-        Special characters with 30% probability per modification type:
+        Special characters with configurable probability per word:
         - Single tick: 'word'
         - Double tick: "word"
         - Hyphen: joins adjacent words (word-word)
@@ -1403,37 +1403,38 @@ class Application(QObject):
         if not words:
             return words
 
+        # Get probability from config (default 20%)
+        special_char_probability = self.config.get_int("special_char_probability", 20) / 100.0
+
         result = []
         i = 0
 
         while i < len(words):
             word = words[i]
 
+            # First decide if this word gets a special character at all
+            if random.random() >= special_char_probability:
+                # No special character for this word
+                result.append(word)
+                i += 1
+                continue
+
+            # This word gets a special character - choose which type
             # Check for hyphen (joins with next word)
-            # 30% chance if there's a next word
-            if i < len(words) - 1 and random.random() < 0.30:
+            if i < len(words) - 1 and random.random() < 0.33:
                 # Join this word with next word using hyphen
                 hyphenated = f"{word}-{words[i + 1]}"
                 result.append(hyphenated)
                 i += 2  # Skip the next word since we joined it
                 continue
 
-            # 30% chance for tick marks
-            if random.random() < 0.30:
+            # Equal chance for tick marks or trailing punctuation
+            if random.random() < 0.5:
                 tick_type = random.choice(["'", '"'])
                 result.append(f"{tick_type}{word}{tick_type}")
-                i += 1
-                continue
-
-            # 30% chance for trailing punctuation
-            if random.random() < 0.30:
+            else:
                 punctuation = random.choice([",", ";", "!", "?", "."])
                 result.append(f"{word}{punctuation}")
-                i += 1
-                continue
-
-            # No modification (10% chance when reaching here)
-            result.append(word)
             i += 1
 
         return result
@@ -1445,12 +1446,15 @@ class Application(QObject):
             words: List of words
 
         Returns:
-            List with random numbers (1-1000) inserted between words (15% probability per gap)
+            List with random numbers (1-1000) inserted between words (configurable probability per gap)
         """
         import random
 
         if not words:
             return words
+
+        # Get probability from config (default 15%)
+        number_probability = self.config.get_int("number_probability", 15) / 100.0
 
         result = []
 
@@ -1458,7 +1462,7 @@ class Application(QObject):
             result.append(word)
 
             # Insert number after this word (except after last word)
-            if i < len(words) - 1 and random.random() < 0.15:
+            if i < len(words) - 1 and random.random() < number_probability:
                 result.append(str(random.randint(1, 1000)))
 
         return result
