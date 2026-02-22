@@ -595,13 +595,60 @@ class Storage:
 
         return list(matching_words)
 
+    def _is_abbreviation(self, word: str) -> bool:
+        """Check if word is an abbreviation (>2 capital letters).
+
+        Args:
+            word: The word to check
+
+        Returns:
+            True if word has more than 2 capital letters
+        """
+        return sum(1 for c in word if c.isupper()) > 2
+
+    def _calculate_length_penalty(self, word: str, target_length: float, penalty_factor: float) -> float:
+        """Calculate length penalty for weighted word selection.
+
+        Applies penalties for:
+        - Short words: 3-letter words get penalty equivalent to 10-letter words,
+                       4-letter words get penalty equivalent to 8-letter words
+        - Long words: penalty based on how much longer than target
+        - Abbreviations: heavily penalized (effective_length = 20)
+
+        Args:
+            word: The word to calculate penalty for
+            target_length: Target average word length
+            penalty_factor: Penalty factor from config
+
+        Returns:
+            Weight value (0.0 to 1.0, where 1.0 is no penalty)
+        """
+        length = len(word)
+
+        # Heavily penalize abbreviations
+        if self._is_abbreviation(word):
+            effective_length = 20
+        elif length == 3:
+            effective_length = 10
+        elif length == 4:
+            effective_length = 8
+        else:
+            effective_length = length
+
+        # Calculate penalty based on effective length
+        excess = max(0, effective_length - target_length)
+        return max(0.0, 1.0 - penalty_factor * excess / target_length)
+
     def get_random_words_with_digraphs(
         self, digraphs: list[str], count: int, language: str | None = None
     ) -> list[str]:
         """Get random words containing the specified digraphs.
 
-        Uses weighted selection where longer words have lower probability.
-        Target average word length is approximately 5 characters.
+        Uses weighted selection where:
+        - Short words (3-4 letters) are penalized
+        - Long words are penalized
+        - Abbreviations (>2 capital letters) are heavily penalized
+        Target average word length is approximately 6.5 characters.
 
         Args:
             digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
@@ -621,12 +668,12 @@ class Storage:
         # Calculate weights using length penalty
         # Formula: weight = max(0, 1 - penalty_factor * (length - target_length) / target_length)
         # When penalty_factor=1.0, words longer than 2*target have zero weight
-        # Target average word length is approximately 5
-        target_length = 5
+        # Target average word length is approximately 6.5
+        target_length = 6.5
         penalty_factor = self.config.get_float("length_penalty_factor")
 
         weights = [
-            max(0.0, 1.0 - penalty_factor * max(0, len(word) - target_length) / target_length)
+            self._calculate_length_penalty(word, target_length, penalty_factor)
             for word in matching_words
         ]
 
@@ -684,7 +731,7 @@ class Storage:
 
         # Select words from each digraph's pool with weighted random selection
         selected_words = []
-        target_length = 5
+        target_length = 6.5
         penalty_factor = self.config.get_float("length_penalty_factor")
 
         for digraph in digraphs:
@@ -698,7 +745,7 @@ class Storage:
 
             # Calculate weights using length penalty
             weights = [
-                max(0.0, 1.0 - penalty_factor * max(0, len(word) - target_length) / target_length)
+                self._calculate_length_penalty(word, target_length, penalty_factor)
                 for word in word_pool
             ]
 

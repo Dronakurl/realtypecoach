@@ -2,7 +2,7 @@
 """Calibration script for length penalty factor.
 
 Tests different penalty_factor values to find the optimal value
-that produces target average word length of approximately 5.
+that produces target average word length of approximately 6.5.
 """
 import argparse
 import sys
@@ -16,6 +16,30 @@ from core.storage import Storage
 from utils.config import Config
 
 
+def _is_abbreviation(word: str) -> bool:
+    """Check if word is an abbreviation (>2 capital letters)."""
+    return sum(1 for c in word if c.isupper()) > 2
+
+
+def _calculate_length_penalty(word: str, target_length: float, penalty_factor: float) -> float:
+    """Calculate length penalty for weighted word selection."""
+    length = len(word)
+
+    # Heavily penalize abbreviations
+    if _is_abbreviation(word):
+        effective_length = 20
+    elif length == 3:
+        effective_length = 10
+    elif length == 4:
+        effective_length = 8
+    else:
+        effective_length = length
+
+    # Calculate penalty based on effective length
+    excess = max(0, effective_length - target_length)
+    return max(0.0, 1.0 - penalty_factor * excess / target_length)
+
+
 def test_penalty_factor(storage, penalty_factor: float, word_count: int = 50, simulations: int = 100):
     """Test a penalty factor and return average word lengths per digraph."""
     import random
@@ -27,7 +51,7 @@ def test_penalty_factor(storage, penalty_factor: float, word_count: int = 50, si
         (['er'], 'er'),
     ]
 
-    target_length = 5
+    target_length = 6.5
     results = {}
 
     for digraph_list, digraph_name in test_digraphs:
@@ -36,9 +60,9 @@ def test_penalty_factor(storage, penalty_factor: float, word_count: int = 50, si
         if not words:
             continue
 
-        # Calculate weights using linear penalty
+        # Calculate weights using new penalty formula
         weights = [
-            max(0.0, 1.0 - penalty_factor * max(0, len(word) - target_length) / target_length)
+            _calculate_length_penalty(word, target_length, penalty_factor)
             for word in words
         ]
 
@@ -100,7 +124,7 @@ def main():
     current_results = test_penalty_factor(storage, current_value)
     if current_results:
         avg_length = sum(current_results.values()) / len(current_results)
-        deviation = abs(avg_length - 5.0)
+        deviation = abs(avg_length - 6.5)
         print(f"penalty_factor={current_value:.2f}: avg_length={avg_length:.2f} (deviation: {deviation:.2f})")
 
     # Test other values
@@ -111,7 +135,7 @@ def main():
             results = test_penalty_factor(storage, value)
             if results:
                 avg_length = sum(results.values()) / len(results)
-                deviation = abs(avg_length - 5.0)
+                deviation = abs(avg_length - 6.5)
                 print(f"penalty_factor={value:.2f}: avg_length={avg_length:.2f} (deviation: {deviation:.2f})")
 
     # Set new value if requested
@@ -128,7 +152,7 @@ def main():
         else:
             print(f"Warning: Value not updated correctly (expected {args.set_value:.2f}, got {new_value:.2f})")
 
-    print("\nTarget: Average length ~5.0")
+    print("\nTarget: Average length ~6.5")
     return 0
 
 
