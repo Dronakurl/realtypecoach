@@ -98,6 +98,7 @@ class Application(QObject):
     signal_text_generated = Signal(str)  # For Ollama text generation
     signal_text_generation_failed = Signal(str)  # For Ollama errors
     signal_ollama_available = Signal(bool)  # Ollama availability status
+    signal_practice_with_highlighting = Signal(str, dict)  # For practice with word highlighting
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -395,7 +396,10 @@ class Application(QObject):
         )
         self.stats_panel.set_mixed_words_clipboard_callback(self.fetch_mixed_words_for_clipboard)
         self.stats_panel.set_digraph_data_callback(self.provide_digraph_data)
-        self.stats_panel.set_text_generation_callback(self.generate_text_with_ollama)
+        # Unified controls callbacks
+        self.stats_panel.set_words_by_mode_clipboard_callback(self.fetch_words_by_mode)
+        self.stats_panel.set_words_by_mode_practice_callback(self.fetch_word_highlight_list)
+        self.stats_panel.set_text_generation_by_mode_callback(self.generate_text_with_ollama)
 
         self.signal_clipboard_words_ready.connect(
             self.stats_panel._on_clipboard_words_ready,
@@ -409,6 +413,12 @@ class Application(QObject):
 
         self.signal_clipboard_mixed_words_ready.connect(
             self.stats_panel._on_mixed_words_ready,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+        # Connect practice with highlighting signal
+        self.signal_practice_with_highlighting.connect(
+            self.stats_panel.launch_practice_with_highlighting,
             Qt.ConnectionType.QueuedConnection,
         )
 
@@ -884,20 +894,167 @@ class Application(QObject):
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_in_thread)
 
-    def generate_text_with_ollama(self, count: int) -> None:
-        """Generate text using Ollama in background thread.
+    def check_ollama_availability(self) -> None:
+        """Check Ollama availability and update UI (called periodically)."""
+
+        def check_in_thread():
+            available = self.ollama_client.check_server_available()
+            # Thread-safe UI update via signal
+            self.signal_ollama_available.emit(available)
+
+        self._executor.submit(check_in_thread)
+
+    def fetch_words_by_mode(self, mode: str, count: int) -> None:
+        """Fetch words by mode in background thread and emit signal.
 
         Args:
+            mode: WordSelectionMode value ("hardest", "fastest", or "mixed")
+            count: Number of words to fetch
+        """
+
+        def fetch_in_thread():
+            try:
+                words = []
+                if mode == "hardest":
+                    words = self.analyzer.get_slowest_words(
+                        limit=count, layout=self.get_current_layout()
+                    )
+                    self.signal_clipboard_words_ready.emit(words)
+                elif mode == "fastest":
+                    words = self.analyzer.get_fastest_words(
+                        limit=count, layout=self.get_current_layout()
+                    )
+                    self.signal_clipboard_fastest_words_ready.emit(words)
+                elif mode == "mixed":
+                    import random
+
+                    half = count // 2
+                    fastest = self.analyzer.get_fastest_words(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    hardest = self.analyzer.get_slowest_words(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    combined = fastest + hardest
+                    random.shuffle(combined)
+                    words = combined
+                    self.signal_clipboard_mixed_words_ready.emit(words)
+                else:
+                    log.error(f"Unknown mode: {mode}")
+                    self.signal_clipboard_words_ready.emit([])
+            except Exception as e:
+                log.error(f"Error fetching words by mode: {e}")
+                self.signal_clipboard_words_ready.emit([])
+
+        self._executor.submit(fetch_in_thread)
+
+    def fetch_word_highlight_list(self, mode: str, count: int, text: str | None) -> None:
+        """Fetch word list for highlighting and launch practice.
+
+        Args:
+            mode: WordSelectionMode value ("hardest", "fastest", or "mixed")
+            count: Number of words to fetch
+            text: Text to practice (None to auto-fetch)
+        """
+        from PySide6.QtGui import QClipboard
+
+        def fetch_and_launch():
+            try:
+                highlight_words = {}
+
+                if mode == "hardest":
+                    words = self.analyzer.get_slowest_words(
+                        limit=count, layout=self.get_current_layout()
+                    )
+                    highlight_words["hardest"] = [w.word for w in words]
+                elif mode == "fastest":
+                    words = self.analyzer.get_fastest_words(
+                        limit=count, layout=self.get_current_layout()
+                    )
+                    highlight_words["fastest"] = [w.word for w in words]
+                elif mode == "mixed":
+                    half = count // 2
+                    fastest = self.analyzer.get_fastest_words(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    hardest = self.analyzer.get_slowest_words(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    highlight_words["hardest"] = [w.word for w in hardest]
+                    highlight_words["fastest"] = [w.word for w in fastest]
+
+                # If no text provided, auto-fetch words and copy to clipboard
+                if text is None:
+                    if mode == "hardest":
+                        words = self.analyzer.get_slowest_words(
+                            limit=count, layout=self.get_current_layout()
+                        )
+                        text = " ".join([w.word for w in words])
+                    elif mode == "fastest":
+                        words = self.analyzer.get_fastest_words(
+                            limit=count, layout=self.get_current_layout()
+                        )
+                        text = " ".join([w.word for w in words])
+                    elif mode == "mixed":
+                        import random
+
+                        half = count // 2
+                        fastest = self.analyzer.get_fastest_words(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        hardest = self.analyzer.get_slowest_words(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        combined = fastest + hardest
+                        random.shuffle(combined)
+                        text = " ".join([w.word for w in combined])
+
+                    # Copy to clipboard
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(text, QClipboard.Mode.Selection)
+                    clipboard.setText(text, QClipboard.Mode.Clipboard)
+
+                # Launch practice with highlighting
+                self.signal_practice_with_highlighting.emit(text, highlight_words)
+
+            except Exception as e:
+                log.error(f"Error fetching word highlight list: {e}")
+
+        self._executor.submit(fetch_and_launch)
+
+    def generate_text_with_ollama(self, mode: str, count: int) -> None:
+        """Generate text using Ollama in background thread based on mode.
+
+        Args:
+            mode: WordSelectionMode value ("hardest", "fastest", or "mixed")
             count: Number of words to generate
         """
 
         def generate_in_thread():
             try:
-                # Fetch hardest words
-                words = self.analyzer.get_slowest_words(
-                    limit=min(count, 100),  # Cap at 100 words
-                    layout=self.get_current_layout(),
-                )
+                words = []
+
+                if mode == "hardest":
+                    words = self.analyzer.get_slowest_words(
+                        limit=min(count, 100), layout=self.get_current_layout()
+                    )
+                elif mode == "fastest":
+                    words = self.analyzer.get_fastest_words(
+                        limit=min(count, 100), layout=self.get_current_layout()
+                    )
+                elif mode == "mixed":
+                    import random
+
+                    half = (min(count, 100)) // 2
+                    fastest = self.analyzer.get_fastest_words(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    hardest = self.analyzer.get_slowest_words(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    combined = fastest + hardest
+                    random.shuffle(combined)
+                    words = combined
 
                 if not words:
                     log.warning("No words available for generation")
@@ -924,30 +1081,19 @@ class Application(QObject):
                     # Use fallback prompt
                     prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
 
-                # Format prompt
-                hardest_words = [w.word for w in words[: min(count, 50)]]
-                hardest_words_str = ", ".join(hardest_words)
-                prompt = prompt_template.format(word_count=count, hardest_words=hardest_words_str)
+                # Format prompt with selected words
+                selected_words = [w.word for w in words[: min(count, 50)]]
+                selected_words_str = ", ".join(selected_words)
+                prompt = prompt_template.format(word_count=count, hardest_words=selected_words_str)
 
                 # Generate text (OllamaClient handles threading)
-                self.ollama_client.generate_text(prompt, hardest_words)
+                self.ollama_client.generate_text(prompt, selected_words)
 
             except Exception as e:
                 log.error(f"Error in text generation: {e}")
                 self.signal_text_generation_failed.emit(str(e))
 
-        # Submit to thread pool
         self._executor.submit(generate_in_thread)
-
-    def check_ollama_availability(self) -> None:
-        """Check Ollama availability and update UI (called periodically)."""
-
-        def check_in_thread():
-            available = self.ollama_client.check_server_available()
-            # Thread-safe UI update via signal
-            self.signal_ollama_available.emit(available)
-
-        self._executor.submit(check_in_thread)
 
     def start_ollama_monitoring(self) -> None:
         """Start periodic Ollama availability checks."""
