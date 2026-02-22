@@ -870,9 +870,12 @@ class StatsPanel(QWidget):
 
             # Add trend if available
             if self._trend_wpm_per_day is not None:
-                self.avg_wpm_subtitle_label.setText(f"{base_text} • trend: {self._trend_wpm_per_day:+.2f} WPM/day")
+                subtitle = f"{base_text} • trend: {self._trend_wpm_per_day:+.2f} WPM/day"
+                self.avg_wpm_subtitle_label.setText(subtitle)
+                log.info(f"update_wpm() set subtitle with trend: {subtitle}")
             else:
                 self.avg_wpm_subtitle_label.setText(base_text)
+                log.info(f"update_wpm() set subtitle without trend: {base_text}")
 
     def update_slowest_keys(self, slowest_keys: list[KeyPerformance]) -> None:
         """Update slowest keys display.
@@ -1197,7 +1200,9 @@ class StatsPanel(QWidget):
         Args:
             data: List of TypingTimeDataPoint models
         """
+        log.info(f"update_typing_time_graph() called with {len(data)} data points")
         slope = self.typing_time_graph.update_graph(data)
+        log.info(f"update_typing_time_graph() got slope: {slope}")
         self.update_trend_parameter(slope)
 
     def update_trend_parameter(self, wpm_per_day: float | None) -> None:
@@ -1206,10 +1211,12 @@ class StatsPanel(QWidget):
         Args:
             wpm_per_day: WPM increase per day (positive or negative), or None if unavailable
         """
+        log.info(f"update_trend_parameter() called with wpm_per_day={wpm_per_day}")
         # Store the trend value
         self._trend_wpm_per_day = wpm_per_day
 
         if not hasattr(self, "avg_wpm_subtitle_label"):
+            log.warning("avg_wpm_subtitle_label not found")
             return
 
         # Build subtitle with trend
@@ -1220,9 +1227,13 @@ class StatsPanel(QWidget):
             base_text = "all-time best: --"
 
         if wpm_per_day is not None:
-            self.avg_wpm_subtitle_label.setText(f"{base_text} • trend: {wpm_per_day:+.2f} WPM/day")
+            subtitle = f"{base_text} • trend: {wpm_per_day:+.2f} WPM/day"
+            self.avg_wpm_subtitle_label.setText(subtitle)
+            log.info(f"Set subtitle to: {subtitle}")
         else:
-            self.avg_wpm_subtitle_label.setText(base_text)
+            subtitle = base_text
+            self.avg_wpm_subtitle_label.setText(subtitle)
+            log.info(f"Set subtitle to (no trend): {subtitle}")
 
     def set_histogram_data_callback(self, callback) -> None:
         """Set callback for requesting histogram data.
