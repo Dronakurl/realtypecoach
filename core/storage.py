@@ -590,7 +590,11 @@ class Storage:
                 # Check if word contains any of the digraphs
                 for digraph in digraphs:
                     if digraph.lower() in word_lower:
-                        matching_words.add(word)
+                        # Apply capitalization for German nouns
+                        capitalized = self.dictionary.get_capitalized_form(
+                            word_lower, "de" if lang == "de" else None
+                        )
+                        matching_words.add(capitalized)
                         break
 
         return list(matching_words)
@@ -1173,7 +1177,7 @@ class Storage:
 
             # Log the sync result
             try:
-                self.log_sync_result(result, user.username)
+                self.log_sync_result(result)
             except Exception as e:
                 log.error(f"Failed to log sync result: {e}")
 
@@ -1295,12 +1299,10 @@ class Storage:
         import json
         import time
 
-        from core.user_manager import UserManager
-
         if not machine_name:
-            user_manager = UserManager(self.db_path, self.config)
-            user = user_manager.get_or_create_current_user()
-            machine_name = user.username
+            from utils.hostname import get_hostname
+
+            machine_name = get_hostname()
 
         # Build table_breakdown dict
         table_breakdown = {}

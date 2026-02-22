@@ -25,6 +25,9 @@ class Dictionary:
         """
         self.words: dict[str, set[str]] = {}  # language_code -> word set
         self.loaded_paths: dict[str, str] = {}  # language_code -> file path
+        self._capitalized_words: dict[
+            str, dict[str, str]
+        ] = {}  # language_code -> lowercase->capitalized mapping
         self._config: DictionaryConfig = config
         self._ignored_words: set[str] = set()
         self._storage = storage
@@ -259,7 +262,22 @@ class Dictionary:
         # Load dictionary
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
-                self.words[language_code] = set(line.strip().lower() for line in f if line.strip())
+                # Store both lowercase for validation and original case for capitalization
+                word_set = set()
+                capitalized_mapping = {}
+                for line in f:
+                    original_word = line.strip()
+                    if not original_word:
+                        continue
+                    lowercase_word = original_word.lower()
+                    word_set.add(lowercase_word)
+                    # Store the first (typically proper) capitalization for each lowercase form
+                    # German dictionaries like ngerman have nouns capitalized (Haus, Aal, etc.)
+                    if lowercase_word not in capitalized_mapping:
+                        capitalized_mapping[lowercase_word] = original_word
+
+                self.words[language_code] = word_set
+                self._capitalized_words[language_code] = capitalized_mapping
             self.loaded_paths[language_code] = path
             log.info(f"Loaded {len(self.words[language_code])} {language_code} words from {path}")
             return True
@@ -345,6 +363,44 @@ class Dictionary:
         """
         return self.accept_all_mode or len(self.words) > 0
 
+    def get_capitalized_form(self, word: str, language_code: str | None = None) -> str:
+        """Get properly capitalized form of word from dictionary.
+
+        For German nouns, returns the capitalized form (e.g., 'haus' -> 'Haus').
+        For words not in dictionary or non-German languages, returns original word.
+
+        Args:
+            word: The word to look up (case-insensitive)
+            language_code: Specific language to check ('de' for German), or None for all loaded
+
+        Returns:
+            Capitalized form if found in dictionary, original word otherwise
+        """
+        if not word:
+            return word
+
+        # In accept-all mode, we don't have capitalization info
+        if self.accept_all_mode:
+            return word
+
+        word_lower = word.lower()
+
+        # If specific language requested, only check that language
+        if language_code:
+            if language_code in self._capitalized_words:
+                if word_lower in self._capitalized_words[language_code]:
+                    return self._capitalized_words[language_code][word_lower]
+            # Not found in specific language, return original
+            return word
+
+        # Otherwise check all loaded dictionaries
+        for lang_code, mapping in self._capitalized_words.items():
+            if word_lower in mapping:
+                return mapping[word_lower]
+
+        # Not found in any dictionary, return original
+        return word
+
     def reload_languages(self, config: DictionaryConfig) -> None:
         """Reload dictionaries with new configuration.
 
@@ -354,6 +410,7 @@ class Dictionary:
         # Clear existing dictionaries
         self.words.clear()
         self.loaded_paths.clear()
+        self._capitalized_words.clear()
         self._config = config
         self._exclude_names = config.exclude_names_enabled
 

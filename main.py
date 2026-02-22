@@ -243,10 +243,6 @@ class Application(QObject):
             if deleted_names > 0:
                 log.info(f"Cleaned {deleted_names} common name entries from database")
 
-        # Hide digraph practice controls if no dictionaries are configured
-        # (in accept_all_mode, there's no word list to search for matching digraphs)
-        self.stats_panel.set_digraph_controls_enabled(not accept_all_mode)
-
         current_layout = get_current_layout()
         print(f"Detected keyboard layout: {current_layout}")
 
@@ -293,6 +289,10 @@ class Application(QObject):
         )
 
         self.stats_panel = StatsPanel(icon_path=str(self.icon_path))
+
+        # Hide digraph practice controls if no dictionaries are configured
+        # (in accept_all_mode, there's no word list to search for matching digraphs)
+        self.stats_panel.set_digraph_controls_enabled(not accept_all_mode)
 
         # Initialize Ollama client with model from config
         model = self.config.get("llm_model", "gemma2:2b")
@@ -980,18 +980,32 @@ class Application(QObject):
 
         def fetch_and_launch():
             try:
+                # Get loaded languages to check if German is loaded
+                loaded_languages = self.storage.dictionary.get_loaded_languages()
+                use_german_capitalization = "de" in loaded_languages
+
                 highlight_words = {}
 
                 if mode == "hardest":
                     words = self.analyzer.get_slowest_words(
                         limit=count, layout=self.get_current_layout()
                     )
-                    highlight_words["hardest"] = [w.word for w in words]
+                    highlight_words["hardest"] = [
+                        self.storage.dictionary.get_capitalized_form(
+                            w.word, "de" if use_german_capitalization else None
+                        )
+                        for w in words
+                    ]
                 elif mode == "fastest":
                     words = self.analyzer.get_fastest_words(
                         limit=count, layout=self.get_current_layout()
                     )
-                    highlight_words["fastest"] = [w.word for w in words]
+                    highlight_words["fastest"] = [
+                        self.storage.dictionary.get_capitalized_form(
+                            w.word, "de" if use_german_capitalization else None
+                        )
+                        for w in words
+                    ]
                 elif mode == "mixed":
                     half = count // 2
                     fastest = self.analyzer.get_fastest_words(
@@ -1000,8 +1014,18 @@ class Application(QObject):
                     hardest = self.analyzer.get_slowest_words(
                         limit=half, layout=self.get_current_layout()
                     )
-                    highlight_words["hardest"] = [w.word for w in hardest]
-                    highlight_words["fastest"] = [w.word for w in fastest]
+                    highlight_words["hardest"] = [
+                        self.storage.dictionary.get_capitalized_form(
+                            w.word, "de" if use_german_capitalization else None
+                        )
+                        for w in hardest
+                    ]
+                    highlight_words["fastest"] = [
+                        self.storage.dictionary.get_capitalized_form(
+                            w.word, "de" if use_german_capitalization else None
+                        )
+                        for w in fastest
+                    ]
 
                 # If no text provided, auto-fetch words and copy to clipboard
                 if text is None:
@@ -1009,12 +1033,26 @@ class Application(QObject):
                         words = self.analyzer.get_slowest_words(
                             limit=count, layout=self.get_current_layout()
                         )
-                        text = " ".join([w.word for w in words])
+                        text = " ".join(
+                            [
+                                self.storage.dictionary.get_capitalized_form(
+                                    w.word, "de" if use_german_capitalization else None
+                                )
+                                for w in words
+                            ]
+                        )
                     elif mode == "fastest":
                         words = self.analyzer.get_fastest_words(
                             limit=count, layout=self.get_current_layout()
                         )
-                        text = " ".join([w.word for w in words])
+                        text = " ".join(
+                            [
+                                self.storage.dictionary.get_capitalized_form(
+                                    w.word, "de" if use_german_capitalization else None
+                                )
+                                for w in words
+                            ]
+                        )
                     elif mode == "mixed":
                         import random
 
@@ -1027,7 +1065,14 @@ class Application(QObject):
                         )
                         combined = fastest + hardest
                         random.shuffle(combined)
-                        text = " ".join([w.word for w in combined])
+                        text = " ".join(
+                            [
+                                self.storage.dictionary.get_capitalized_form(
+                                    w.word, "de" if use_german_capitalization else None
+                                )
+                                for w in combined
+                            ]
+                        )
 
                     # Copy to clipboard
                     clipboard = QApplication.clipboard()
@@ -1052,6 +1097,10 @@ class Application(QObject):
 
         def generate_in_thread():
             try:
+                # Get loaded languages to check if German is loaded
+                loaded_languages = self.storage.dictionary.get_loaded_languages()
+                use_german_capitalization = "de" in loaded_languages
+
                 words = []
 
                 if mode == "hardest":
@@ -1101,8 +1150,13 @@ class Application(QObject):
                     # Use fallback prompt
                     prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
 
-                # Format prompt with selected words
-                selected_words = [w.word for w in words[: min(count, 50)]]
+                # Format prompt with selected words (capitalized for German)
+                selected_words = [
+                    self.storage.dictionary.get_capitalized_form(
+                        w.word, "de" if use_german_capitalization else None
+                    )
+                    for w in words[: min(count, 50)]
+                ]
                 selected_words_str = ", ".join(selected_words)
                 prompt = prompt_template.format(word_count=count, hardest_words=selected_words_str)
 
@@ -1205,6 +1259,10 @@ class Application(QObject):
 
         def fetch_and_launch():
             try:
+                # Get loaded languages to check if German is loaded
+                loaded_languages = self.storage.dictionary.get_loaded_languages()
+                use_german_capitalization = "de" in loaded_languages
+
                 # Get digraphs based on mode
                 digraphs = []
                 if mode == "hardest":
@@ -1244,7 +1302,14 @@ class Application(QObject):
                     words = self.storage.get_random_words_with_digraphs(
                         digraphs=digraphs, count=word_count
                     )
-                    practice_text = " ".join(words)
+                    # Apply capitalization for German nouns
+                    capitalized_words = [
+                        self.storage.dictionary.get_capitalized_form(
+                            w, "de" if use_german_capitalization else None
+                        )
+                        for w in words
+                    ]
+                    practice_text = " ".join(capitalized_words)
 
                     # Copy to clipboard
                     clipboard = QApplication.clipboard()
@@ -1312,6 +1377,10 @@ class Application(QObject):
                     )
                     return
 
+                # Get loaded languages to check if German is loaded
+                loaded_languages = self.storage.dictionary.get_loaded_languages()
+                use_german_capitalization = "de" in loaded_languages
+
                 # Load prompt template from database
                 try:
                     active_prompt_id = self.config.get_int("llm_active_prompt_id", -1)
@@ -1330,8 +1399,13 @@ class Application(QObject):
                     # Use fallback prompt
                     prompt_template = "Generate a simple typing practice text of approximately {word_count} words using these words: {hardest_words}\n\nCreate a coherent text that includes as many of these words as possible in their natural context. Keep it simple and direct."
 
-                # Format prompt
-                hardest_words = [w.word for w in words[:hardest_word_count]]
+                # Format prompt with capitalized words for German
+                hardest_words = [
+                    self.storage.dictionary.get_capitalized_form(
+                        w.word, "de" if use_german_capitalization else None
+                    )
+                    for w in words[:hardest_word_count]
+                ]
                 hardest_words_str = ", ".join(hardest_words)
                 prompt = prompt_template.format(
                     word_count=word_count, hardest_words=hardest_words_str
@@ -1381,11 +1455,10 @@ class Application(QObject):
                     f.write(generated_text)
                     temp_file = f.name
 
-                hardest_words_list = [w.word for w in words[:hardest_word_count]]
-                hardest_words_str = ",".join(hardest_words_list)
+                hardest_words_str = ",".join(hardest_words)
 
                 log.info(
-                    f"Opening typing practice with: {actual_word_count} words, {len(hardest_words_list)} highlighted"
+                    f"Opening typing practice with: {actual_word_count} words, {len(hardest_words)} highlighted"
                 )
 
                 # Run the practice script with hardest words

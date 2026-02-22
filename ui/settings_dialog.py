@@ -760,23 +760,17 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout()
 
-        # Remote sync checkbox
-        sync_group = QGroupBox("Remote Sync")
-        sync_layout = QVBoxLayout()
+        # PostgreSQL connection settings
+        postgres_group = QGroupBox("PostgreSQL Connection")
+        postgres_layout = QFormLayout()
 
+        # Enable sync checkbox
         self.postgres_sync_enabled_check = QCheckBox("Enable PostgreSQL sync")
         self.postgres_sync_enabled_check.setToolTip(
             "Sync typing data with a remote PostgreSQL database for multi-device support.\n\n"
             "Your data is always stored locally in SQLite. PostgreSQL is only used for syncing."
         )
-        sync_layout.addWidget(self.postgres_sync_enabled_check)
-
-        sync_group.setLayout(sync_layout)
-        layout.addWidget(sync_group)
-
-        # PostgreSQL connection settings
-        postgres_group = QGroupBox("PostgreSQL Connection")
-        postgres_layout = QFormLayout()
+        postgres_layout.addRow(self.postgres_sync_enabled_check)
 
         self.postgres_host_edit = ""
         self.postgres_host_input = QLineEdit()
