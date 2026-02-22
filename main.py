@@ -554,6 +554,7 @@ class Application(QObject):
         Note: key_count should already be net_key_count (with backspaces subtracted).
         """
         from core.wpm_calculator import calculate_wpm
+
         return calculate_wpm(key_count, duration_ms)
 
     def show_daily_notification(self, summary) -> None:
@@ -967,13 +968,22 @@ class Application(QObject):
 
         self._executor.submit(fetch_in_thread)
 
-    def fetch_word_highlight_list(self, mode: str, count: int, text: str | None) -> None:
+    def fetch_word_highlight_list(
+        self,
+        mode: str,
+        count: int,
+        text: str | None,
+        special_chars: bool = False,
+        numbers: bool = False,
+    ) -> None:
         """Fetch word list for highlighting and launch practice.
 
         Args:
             mode: WordSelectionMode value ("hardest", "fastest", or "mixed")
             count: Number of words to fetch
             text: Text to practice (None to auto-fetch)
+            special_chars: Whether to add special characters to text
+            numbers: Whether to add random numbers to text
         """
         from PySide6.QtGui import QClipboard
 
@@ -990,16 +1000,14 @@ class Application(QObject):
                         limit=count, layout=self.get_current_layout()
                     )
                     highlight_words["hardest"] = [
-                        self.storage.dictionary.get_capitalized_form(w.word, None)
-                        for w in words
+                        self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
                     ]
                 elif mode == "fastest":
                     words = self.analyzer.get_fastest_words(
                         limit=count, layout=self.get_current_layout()
                     )
                     highlight_words["fastest"] = [
-                        self.storage.dictionary.get_capitalized_form(w.word, None)
-                        for w in words
+                        self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
                     ]
                 elif mode == "mixed":
                     half = count // 2
@@ -1010,12 +1018,10 @@ class Application(QObject):
                         limit=half, layout=self.get_current_layout()
                     )
                     highlight_words["hardest"] = [
-                        self.storage.dictionary.get_capitalized_form(w.word, None)
-                        for w in hardest
+                        self.storage.dictionary.get_capitalized_form(w.word, None) for w in hardest
                     ]
                     highlight_words["fastest"] = [
-                        self.storage.dictionary.get_capitalized_form(w.word, None)
-                        for w in fastest
+                        self.storage.dictionary.get_capitalized_form(w.word, None) for w in fastest
                     ]
 
                 # If no text provided, auto-fetch words and copy to clipboard
@@ -1024,16 +1030,18 @@ class Application(QObject):
                         words = self.analyzer.get_slowest_words(
                             limit=count, layout=self.get_current_layout()
                         )
-                        text = " ".join(
-                            [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
-                        )
+                        word_list = [
+                            self.storage.dictionary.get_capitalized_form(w.word, None)
+                            for w in words
+                        ]
                     elif mode == "fastest":
                         words = self.analyzer.get_fastest_words(
                             limit=count, layout=self.get_current_layout()
                         )
-                        text = " ".join(
-                            [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
-                        )
+                        word_list = [
+                            self.storage.dictionary.get_capitalized_form(w.word, None)
+                            for w in words
+                        ]
                     elif mode == "mixed":
                         import random
 
@@ -1046,14 +1054,24 @@ class Application(QObject):
                         )
                         combined = fastest + hardest
                         random.shuffle(combined)
-                        text = " ".join(
-                            [self.storage.dictionary.get_capitalized_form(w.word, None) for w in combined]
-                        )
+                        word_list = [
+                            self.storage.dictionary.get_capitalized_form(w.word, None)
+                            for w in combined
+                        ]
+
+                    # Apply text enhancements
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    text = " ".join(word_list)
 
                     # Copy to clipboard
                     clipboard = QApplication.clipboard()
                     clipboard.setText(text, QClipboard.Mode.Selection)
                     clipboard.setText(text, QClipboard.Mode.Clipboard)
+                else:
+                    # Apply enhancements to existing text
+                    word_list = text.split()
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    text = " ".join(word_list)
 
                 # Launch practice with highlighting
                 self.signal_practice_with_highlighting.emit(text, highlight_words)
@@ -1200,8 +1218,7 @@ class Application(QObject):
 
                 # Apply capitalization for German nouns
                 capitalized_words = [
-                    self.storage.dictionary.get_capitalized_form(w, None)
-                    for w in words
+                    self.storage.dictionary.get_capitalized_form(w, None) for w in words
                 ]
 
                 # Convert to WordStatisticsLite format for clipboard
@@ -1229,7 +1246,13 @@ class Application(QObject):
         self._executor.submit(fetch_in_thread)
 
     def fetch_digraph_practice(
-        self, mode: str, digraph_count: int, word_count: int, text: str | None
+        self,
+        mode: str,
+        digraph_count: int,
+        word_count: int,
+        text: str | None,
+        special_chars: bool = False,
+        numbers: bool = False,
     ) -> None:
         """Fetch digraphs and words for practice session.
 
@@ -1238,6 +1261,8 @@ class Application(QObject):
             digraph_count: Number of digraphs to select
             word_count: Number of words to return
             text: Text to practice (None to auto-fetch)
+            special_chars: Whether to add special characters to text
+            numbers: Whether to add random numbers to text
         """
         from PySide6.QtGui import QClipboard
 
@@ -1287,16 +1312,23 @@ class Application(QObject):
                         digraphs=digraphs, count=word_count
                     )
                     # Apply capitalization for German nouns
-                    capitalized_words = [
-                        self.storage.dictionary.get_capitalized_form(w, None)
-                        for w in words
+                    word_list = [
+                        self.storage.dictionary.get_capitalized_form(w, None) for w in words
                     ]
-                    practice_text = " ".join(capitalized_words)
+
+                    # Apply text enhancements
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    practice_text = " ".join(word_list)
 
                     # Copy to clipboard
                     clipboard = QApplication.clipboard()
                     clipboard.setText(practice_text, QClipboard.Mode.Selection)
                     clipboard.setText(practice_text, QClipboard.Mode.Clipboard)
+                else:
+                    # Apply enhancements to existing text
+                    word_list = practice_text.split()
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    practice_text = " ".join(word_list)
 
                 # Launch practice with digraph highlighting
                 self.signal_digraph_practice_ready.emit(practice_text, digraphs)
@@ -1305,6 +1337,115 @@ class Application(QObject):
                 log.error(f"Error fetching digraph practice: {e}")
 
         self._executor.submit(fetch_and_launch)
+
+    def _apply_text_enhancements(
+        self, words: list[str], special_chars: bool, numbers: bool
+    ) -> list[str]:
+        """Apply special characters and numbers to word list.
+
+        Args:
+            words: List of words to enhance
+            special_chars: Whether to add special characters (30% probability)
+            numbers: Whether to insert numbers (15% probability between words)
+
+        Returns:
+            Enhanced list of words (with hyphens joining adjacent words where applied)
+        """
+
+        if not special_chars and not numbers:
+            return words
+
+        result = words.copy()
+
+        # Apply special characters first (may add hyphens that join words)
+        if special_chars:
+            result = self._apply_special_characters_to_list(result)
+
+        # Apply numbers (insert between words)
+        if numbers:
+            result = self._insert_numbers(result)
+
+        return result
+
+    def _apply_special_characters_to_list(self, words: list[str]) -> list[str]:
+        """Apply special character modifications to a list of words.
+
+        Special characters with 30% probability per modification type:
+        - Single tick: 'word'
+        - Double tick: "word"
+        - Hyphen: joins adjacent words (word-word)
+        - Trailing punctuation: word, word; word! word? word.
+
+        Args:
+            words: List of words to modify
+
+        Returns:
+            Modified list of words (some may be joined with hyphens)
+        """
+        import random
+
+        if not words:
+            return words
+
+        result = []
+        i = 0
+
+        while i < len(words):
+            word = words[i]
+
+            # Check for hyphen (joins with next word)
+            # 30% chance if there's a next word
+            if i < len(words) - 1 and random.random() < 0.30:
+                # Join this word with next word using hyphen
+                hyphenated = f"{word}-{words[i + 1]}"
+                result.append(hyphenated)
+                i += 2  # Skip the next word since we joined it
+                continue
+
+            # 30% chance for tick marks
+            if random.random() < 0.30:
+                tick_type = random.choice(["'", '"'])
+                result.append(f"{tick_type}{word}{tick_type}")
+                i += 1
+                continue
+
+            # 30% chance for trailing punctuation
+            if random.random() < 0.30:
+                punctuation = random.choice([",", ";", "!", "?", "."])
+                result.append(f"{word}{punctuation}")
+                i += 1
+                continue
+
+            # No modification (10% chance when reaching here)
+            result.append(word)
+            i += 1
+
+        return result
+
+    def _insert_numbers(self, words: list[str]) -> list[str]:
+        """Insert random numbers between words.
+
+        Args:
+            words: List of words
+
+        Returns:
+            List with random numbers (1-1000) inserted between words (15% probability per gap)
+        """
+        import random
+
+        if not words:
+            return words
+
+        result = []
+
+        for i, word in enumerate(words):
+            result.append(word)
+
+            # Insert number after this word (except after last word)
+            if i < len(words) - 1 and random.random() < 0.15:
+                result.append(str(random.randint(1, 1000)))
+
+        return result
 
     def start_ollama_monitoring(self) -> None:
         """Start periodic Ollama availability checks."""
