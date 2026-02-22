@@ -3023,7 +3023,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 f"""SELECT id, timestamp, machine_name, pushed, pulled, merged,
                           duration_ms, error, table_breakdown
                    FROM sync_log
-                   WHERE{where_sql}
+                   WHERE {where_sql}
                    ORDER BY timestamp DESC LIMIT %s""",
                 params,
             )
