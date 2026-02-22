@@ -99,6 +99,8 @@ class Application(QObject):
     signal_text_generation_failed = Signal(str)  # For Ollama errors
     signal_ollama_available = Signal(bool)  # Ollama availability status
     signal_practice_with_highlighting = Signal(str, dict)  # For practice with word highlighting
+    signal_digraph_words_ready = Signal(list)  # For digraph words clipboard copy
+    signal_digraph_practice_ready = Signal(str, list)  # For digraph practice (text, digraphs)
 
     def __init__(self) -> None:
         """Initialize application."""
@@ -240,6 +242,10 @@ class Application(QObject):
             deleted_names = self.storage.delete_all_names_from_database()
             if deleted_names > 0:
                 log.info(f"Cleaned {deleted_names} common name entries from database")
+
+        # Hide digraph practice controls if no dictionaries are configured
+        # (in accept_all_mode, there's no word list to search for matching digraphs)
+        self.stats_panel.set_digraph_controls_enabled(not accept_all_mode)
 
         current_layout = get_current_layout()
         print(f"Detected keyboard layout: {current_layout}")
@@ -400,6 +406,9 @@ class Application(QObject):
         self.stats_panel.set_words_by_mode_clipboard_callback(self.fetch_words_by_mode)
         self.stats_panel.set_words_by_mode_practice_callback(self.fetch_word_highlight_list)
         self.stats_panel.set_text_generation_by_mode_callback(self.generate_text_with_ollama)
+        # Digraph controls callbacks
+        self.stats_panel.set_digraph_words_clipboard_callback(self.fetch_digraph_words)
+        self.stats_panel.set_digraph_practice_callback(self.fetch_digraph_practice)
 
         self.signal_clipboard_words_ready.connect(
             self.stats_panel._on_clipboard_words_ready,
@@ -413,6 +422,17 @@ class Application(QObject):
 
         self.signal_clipboard_mixed_words_ready.connect(
             self.stats_panel._on_mixed_words_ready,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+        # Connect digraph signals
+        self.signal_digraph_words_ready.connect(
+            self.stats_panel._on_clipboard_words_ready,
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+        self.signal_digraph_practice_ready.connect(
+            self.stats_panel.launch_practice_with_digraph_highlighting,
             Qt.ConnectionType.QueuedConnection,
         )
 
@@ -1094,6 +1114,150 @@ class Application(QObject):
                 self.signal_text_generation_failed.emit(str(e))
 
         self._executor.submit(generate_in_thread)
+
+    def fetch_digraph_words(self, mode: str, digraph_count: int, word_count: int) -> None:
+        """Fetch words containing selected digraphs for clipboard.
+
+        Args:
+            mode: Digraph mode ("hardest", "fastest", or "mixed")
+            digraph_count: Number of digraphs to select
+            word_count: Number of words to return
+        """
+
+        def fetch_in_thread():
+            try:
+                # Get digraphs based on mode
+                digraphs = []
+                if mode == "hardest":
+                    digraph_stats = self.storage.get_slowest_digraphs(
+                        limit=digraph_count, layout=self.get_current_layout()
+                    )
+                elif mode == "fastest":
+                    digraph_stats = self.storage.get_fastest_digraphs(
+                        limit=digraph_count, layout=self.get_current_layout()
+                    )
+                elif mode == "mixed":
+                    import random
+
+                    half = digraph_count // 2
+                    fastest = self.storage.get_fastest_digraphs(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    slowest = self.storage.get_slowest_digraphs(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    digraph_stats = fastest + slowest
+                    random.shuffle(digraph_stats)
+                else:
+                    log.error(f"Unknown digraph mode: {mode}")
+                    self.signal_digraph_words_ready.emit([])
+                    return
+
+                # Extract digraph strings
+                digraphs = [f"{d.first_key}{d.second_key}" for d in digraph_stats]
+
+                if not digraphs:
+                    log.warning("No digraphs available")
+                    self.signal_digraph_words_ready.emit([])
+                    return
+
+                # Find words containing these digraphs
+                words = self.storage.get_random_words_with_digraphs(
+                    digraphs=digraphs, count=word_count
+                )
+
+                # Convert to WordStatisticsLite format for clipboard
+                from core.models import WordStatisticsLite
+
+                word_stats = []
+                for word in words:
+                    # Create simple WordStatisticsLite objects
+                    word_stats.append(
+                        WordStatisticsLite(
+                            word=word,
+                            avg_speed_ms_per_letter=100.0,  # Placeholder value
+                            total_duration_ms=len(word) * 100,
+                            total_letters=len(word),
+                            rank=0,
+                        )
+                    )
+
+                self.signal_digraph_words_ready.emit(word_stats)
+
+            except Exception as e:
+                log.error(f"Error fetching digraph words: {e}")
+                self.signal_digraph_words_ready.emit([])
+
+        self._executor.submit(fetch_in_thread)
+
+    def fetch_digraph_practice(
+        self, mode: str, digraph_count: int, word_count: int, text: str | None
+    ) -> None:
+        """Fetch digraphs and words for practice session.
+
+        Args:
+            mode: Digraph mode ("hardest", "fastest", or "mixed")
+            digraph_count: Number of digraphs to select
+            word_count: Number of words to return
+            text: Text to practice (None to auto-fetch)
+        """
+        from PySide6.QtGui import QClipboard
+
+        def fetch_and_launch():
+            try:
+                # Get digraphs based on mode
+                digraphs = []
+                if mode == "hardest":
+                    digraph_stats = self.storage.get_slowest_digraphs(
+                        limit=digraph_count, layout=self.get_current_layout()
+                    )
+                elif mode == "fastest":
+                    digraph_stats = self.storage.get_fastest_digraphs(
+                        limit=digraph_count, layout=self.get_current_layout()
+                    )
+                elif mode == "mixed":
+                    import random
+
+                    half = digraph_count // 2
+                    fastest = self.storage.get_fastest_digraphs(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    slowest = self.storage.get_slowest_digraphs(
+                        limit=half, layout=self.get_current_layout()
+                    )
+                    digraph_stats = fastest + slowest
+                    random.shuffle(digraph_stats)
+                else:
+                    log.error(f"Unknown digraph mode: {mode}")
+                    return
+
+                # Extract digraph strings
+                digraphs = [f"{d.first_key}{d.second_key}" for d in digraph_stats]
+
+                if not digraphs:
+                    log.warning("No digraphs available")
+                    return
+
+                # If no text provided, auto-fetch words containing these digraphs
+                practice_text = text
+                if practice_text is None:
+                    words = self.storage.get_random_words_with_digraphs(
+                        digraphs=digraphs, count=word_count
+                    )
+                    practice_text = " ".join(words)
+
+                    # Copy to clipboard
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(practice_text, QClipboard.Mode.Selection)
+                    clipboard.setText(practice_text, QClipboard.Mode.Clipboard)
+
+                # Launch practice with digraph highlighting
+                self.signal_digraph_practice_ready.emit(practice_text, digraphs)
+
+            except Exception as e:
+                log.error(f"Error fetching digraph practice: {e}")
+
+        self._executor.submit(fetch_and_launch)
 
     def start_ollama_monitoring(self) -> None:
         """Start periodic Ollama availability checks."""

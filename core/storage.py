@@ -563,6 +563,62 @@ class Storage:
         """
         return self.adapter.get_fastest_digraphs(limit, layout)
 
+    def find_words_with_digraphs(
+        self, digraphs: list[str], language: str | None = None
+    ) -> list[str]:
+        """Find all words containing the specified digraphs.
+
+        Args:
+            digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
+            language: Optional language code filter (e.g., 'en', 'de')
+
+        Returns:
+            List of words containing any of the specified digraphs
+        """
+        matching_words = set()
+
+        # Get all loaded languages or specific language
+        if language:
+            languages_to_search = [language] if language in self.dictionary.words else []
+        else:
+            languages_to_search = list(self.dictionary.words.keys())
+
+        for lang in languages_to_search:
+            word_set = self.dictionary.words[lang]
+            for word in word_set:
+                word_lower = word.lower()
+                # Check if word contains any of the digraphs
+                for digraph in digraphs:
+                    if digraph.lower() in word_lower:
+                        matching_words.add(word)
+                        break
+
+        return list(matching_words)
+
+    def get_random_words_with_digraphs(
+        self, digraphs: list[str], count: int, language: str | None = None
+    ) -> list[str]:
+        """Get random words containing the specified digraphs.
+
+        Args:
+            digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
+            count: Maximum number of words to return
+            language: Optional language code filter (e.g., 'en', 'de')
+
+        Returns:
+            List of random words containing any of the specified digraphs
+        """
+        import random
+
+        matching_words = self.find_words_with_digraphs(digraphs, language)
+
+        if not matching_words:
+            return []
+
+        # Return random selection up to count
+        random.shuffle(matching_words)
+        return matching_words[:count]
+
     # Word Statistics Operations
 
     def update_word_statistics(

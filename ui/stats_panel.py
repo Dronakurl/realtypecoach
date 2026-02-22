@@ -513,7 +513,10 @@ class StatsPanel(QWidget):
 
         # Tab 4: Digraphs
         digraphs_tab = QWidget()
-        digraphs_layout = QHBoxLayout(digraphs_tab)
+        digraphs_layout = QVBoxLayout(digraphs_tab)
+
+        # Tables section (side by side)
+        tables_layout = QHBoxLayout()
 
         # Fastest Digraphs (Left)
         fastest_digraphs_widget = QWidget()
@@ -535,7 +538,7 @@ class StatsPanel(QWidget):
             self.fastest_digraphs_table.setItem(i, 2, QTableWidgetItem("--"))
         fastest_digraphs_layout.addWidget(self.fastest_digraphs_table)
 
-        digraphs_layout.addWidget(fastest_digraphs_widget)
+        tables_layout.addWidget(fastest_digraphs_widget)
 
         # Slowest Digraphs (Right)
         slowest_digraphs_widget = QWidget()
@@ -557,7 +560,74 @@ class StatsPanel(QWidget):
             self.slowest_digraphs_table.setItem(i, 2, QTableWidgetItem("--"))
         slowest_digraphs_layout.addWidget(self.slowest_digraphs_table)
 
-        digraphs_layout.addWidget(slowest_digraphs_widget)
+        tables_layout.addWidget(slowest_digraphs_widget)
+
+        digraphs_layout.addLayout(tables_layout)
+
+        # Unified controls section (below both tables)
+        digraph_controls_layout = QHBoxLayout()
+
+        # Mode dropdown
+        digraph_mode_label = QLabel("Mode:")
+        digraph_mode_label.setStyleSheet("font-size: 12px; color: #666;")
+        digraph_controls_layout.addWidget(digraph_mode_label)
+
+        self.digraph_mode_combo = QComboBox()
+        self.digraph_mode_combo.addItem("Hardest", "hardest")
+        self.digraph_mode_combo.addItem("Fastest", "fastest")
+        self.digraph_mode_combo.addItem("Mixed", "mixed")
+        self.digraph_mode_combo.setCurrentIndex(0)  # Default to Hardest
+        self.digraph_mode_combo.setMaximumWidth(100)
+        digraph_controls_layout.addWidget(self.digraph_mode_combo)
+
+        # Digraph count dropdown
+        digraph_count_label = QLabel("Digraphs:")
+        digraph_count_label.setStyleSheet("font-size: 12px; color: #666;")
+        digraph_controls_layout.addWidget(digraph_count_label)
+
+        self.digraph_count_combo = QComboBox()
+        self.digraph_count_combo.addItem("5", 5)
+        self.digraph_count_combo.addItem("10", 10)
+        self.digraph_count_combo.addItem("20", 20)
+        self.digraph_count_combo.addItem("50", 50)
+        self.digraph_count_combo.setCurrentIndex(0)  # Default to 5
+        self.digraph_count_combo.setMaximumWidth(80)
+        digraph_controls_layout.addWidget(self.digraph_count_combo)
+
+        # Word count dropdown
+        digraph_word_count_label = QLabel("Words:")
+        digraph_word_count_label.setStyleSheet("font-size: 12px; color: #666;")
+        digraph_controls_layout.addWidget(digraph_word_count_label)
+
+        self.digraph_word_count_combo = QComboBox()
+        self.digraph_word_count_combo.addItem("10", 10)
+        self.digraph_word_count_combo.addItem("25", 25)
+        self.digraph_word_count_combo.addItem("50", 50)
+        self.digraph_word_count_combo.addItem("75", 75)
+        self.digraph_word_count_combo.addItem("100", 100)
+        self.digraph_word_count_combo.addItem("200", 200)
+        self.digraph_word_count_combo.addItem("500", 500)
+        self.digraph_word_count_combo.addItem("1000", 1000)
+        self.digraph_word_count_combo.setCurrentIndex(0)  # Default to 10
+        self.digraph_word_count_combo.setMaximumWidth(80)
+        digraph_controls_layout.addWidget(self.digraph_word_count_combo)
+
+        # Action buttons
+        self.digraph_copy_btn = QPushButton("📋 Copy")
+        self.digraph_copy_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.digraph_copy_btn.clicked.connect(self.copy_digraphs_by_mode)
+        digraph_controls_layout.addWidget(self.digraph_copy_btn)
+
+        self.digraph_practice_btn = QPushButton("⌨️ Practice")
+        self.digraph_practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.digraph_practice_btn.setToolTip(
+            "Open words containing selected digraphs for typing practice"
+        )
+        self.digraph_practice_btn.clicked.connect(self.practice_digraphs_by_mode)
+        digraph_controls_layout.addWidget(self.digraph_practice_btn)
+
+        digraph_controls_layout.addStretch()
+        digraphs_layout.addLayout(digraph_controls_layout)
 
         tab_widget.addTab(
             digraphs_tab, self._create_palette_aware_icon("format-text-underline"), "Digraphs"
@@ -1564,3 +1634,128 @@ class StatsPanel(QWidget):
             callback: Function to call with (mode, count) parameters
         """
         self._request_text_generation_by_mode_callback = callback
+
+    # Digraph controls methods
+
+    def copy_digraphs_by_mode(self) -> None:
+        """Copy words containing selected digraphs to clipboard."""
+        digraph_count = self.digraph_count_combo.currentData()
+        word_count = self.digraph_word_count_combo.currentData()
+        mode = self.digraph_mode_combo.currentData()
+
+        if hasattr(self, "_request_digraph_words_callback"):
+            self._clipboard_callback = self._on_words_fetched_for_copy
+            self._request_digraph_words_callback(mode, digraph_count, word_count)
+
+    def practice_digraphs_by_mode(self) -> None:
+        """Launch practice with words containing selected digraphs."""
+        from PySide6.QtGui import QClipboard
+
+        # Get text from clipboard
+        clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
+
+        digraph_count = self.digraph_count_combo.currentData()
+        word_count = self.digraph_word_count_combo.currentData()
+        mode = self.digraph_mode_combo.currentData()
+
+        if not clipboard_text or not clipboard_text.strip():
+            # Auto-fetch words based on mode if clipboard is empty
+            if hasattr(self, "_request_digraph_practice_callback"):
+                self._request_digraph_practice_callback(mode, digraph_count, word_count, None)
+            return
+
+        # If clipboard has text, use it for practice with digraph-based highlighting
+        if hasattr(self, "_request_digraph_practice_callback"):
+            self._request_digraph_practice_callback(mode, digraph_count, word_count, clipboard_text)
+
+    def set_digraph_words_clipboard_callback(self, callback) -> None:
+        """Set callback for fetching words containing digraphs for clipboard.
+
+        Args:
+            callback: Function to call with (mode, digraph_count, word_count) parameters
+        """
+        self._request_digraph_words_callback = callback
+
+    def set_digraph_practice_callback(self, callback) -> None:
+        """Set callback for launching practice with digraph-based word highlighting.
+
+        Args:
+            callback: Function to call with (mode, digraph_count, word_count, text) parameters
+        """
+        self._request_digraph_practice_callback = callback
+
+    def launch_practice_with_digraph_highlighting(self, text: str, digraphs: list) -> None:
+        """Launch typing practice with digraph-based word highlighting.
+
+        Args:
+            text: Text to practice
+            digraphs: List of digraph strings (e.g., ['th', 'he', 'in'])
+        """
+        import subprocess
+        from pathlib import Path
+
+        script_path = Path(__file__).parent.parent / "scripts" / "practice.py"
+
+        if not script_path.exists():
+            log.error(f"practice.py not found at {script_path}")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification("Practice Error", "practice.py script not found")
+            return
+
+        try:
+            # Build command arguments
+            cmd = ["python3", str(script_path), "--file", "-"]
+
+            # Add digraphs for highlighting
+            if digraphs:
+                cmd.extend(["--digraphs", ",".join(digraphs)])
+
+            log.info(f"Opening typing practice with digraphs: {digraphs}")
+            result = subprocess.run(
+                cmd,
+                input=text,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if result.returncode != 0:
+                log.error(f"Practice script failed: {result.stderr}")
+                app = QApplication.instance()
+                if app and hasattr(app, "tray_icon"):
+                    app.tray_icon.show_notification(
+                        "Practice Error", f"Failed to open practice: {result.stderr}"
+                    )
+
+        except Exception as e:
+            log.error(f"Error launching practice: {e}")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+
+    def set_digraph_controls_enabled(self, enabled: bool) -> None:
+        """Enable or disable digraph controls based on dictionary availability.
+
+        When no dictionaries are configured (accept_all_mode), the digraph
+        practice controls should be hidden since there's no word list to
+        search for matching digraphs.
+
+        Args:
+            enabled: True to show controls, False to hide them
+        """
+        if hasattr(self, "digraph_mode_combo"):
+            self.digraph_mode_combo.setVisible(enabled)
+            self.digraph_count_combo.setVisible(enabled)
+            self.digraph_word_count_combo.setVisible(enabled)
+            self.digraph_copy_btn.setVisible(enabled)
+            self.digraph_practice_btn.setVisible(enabled)
+
+            # Also hide the labels if we're hiding the controls
+            # Find the labels by their text content
+            if hasattr(self, "digraph_mode_combo"):
+                parent = self.digraph_mode_combo.parent()
+                if parent:
+                    for child in parent.findChildren(QLabel):
+                        if child.text() in ["Mode:", "Digraphs:", "Words:"]:
+                            child.setVisible(enabled)
