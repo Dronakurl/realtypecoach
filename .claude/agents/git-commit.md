@@ -33,7 +33,8 @@ Your task is to create clean, organized commits grouped by logical topic.
        ```
        <type>(<scope>): <description>
 
-       Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+       Optionally some details about the commit. Be brief. 
+
        ```
 
 5. **Push**: Run `git push` after all commits
