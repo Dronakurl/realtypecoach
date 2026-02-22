@@ -143,8 +143,7 @@ class TypingTimeGraph(QWidget):
         self.plot_wpm.setLabel("bottom", "Time Period")
         self.plot_wpm.showGrid(x=True, y=True, alpha=0.3)
         self.plot_wpm.showButtons()
-        # Y-axis starts at 0 for WPM as well
-        self.plot_wpm.setYRange(0, 100, padding=0.1)
+        # Enable auto-range for WPM Y-axis (will be properly set when data loads)
 
         # Link X-axes
         self.plot_wpm.setXLink(self.plot_time)
