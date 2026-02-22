@@ -1,50 +1,61 @@
-"""Smoothing algorithms for time series data."""
+"""Smoothing algorithms for time series data.
+
+Matches keybr.com exponential smoothing algorithm.
+"""
 
 
-def apply_moving_average(wpm_values: list[float], smoothness: int) -> tuple[list[float], list[int]]:
-    """Apply centered moving average smoothing to time series.
+def smoothness_to_alpha(smoothness: int) -> float:
+    """Convert smoothness slider value (0-100) to exponential smoothing alpha.
 
-    Uses a centered moving average that keeps all data points while
-    smoothing the curve. The window size is adaptive to data length.
+    Matches keybr.com formula: alpha = 1 / 10^(smoothness * 3)
+    where smoothness is normalized to 0-1 range.
+
+    Mapping:
+        0   -> alpha=1.0     (no smoothing, raw data)
+        50  -> alpha≈0.0316  (moderate smoothing)
+        100 -> alpha=0.001   (maximum smoothing)
+
+    Args:
+        smoothness: Smoothing level (0-100)
+
+    Returns:
+        Alpha value for exponential smoothing (0.001-1.0)
+    """
+    if smoothness <= 0:
+        return 1.0
+    normalized = smoothness / 100.0
+    return 1.0 / (10.0 ** (normalized * 3))
+
+
+def apply_exponential_smoothing(
+    wpm_values: list[float],
+    smoothness: int
+) -> tuple[list[float], list[int]]:
+    """Apply exponential smoothing to time series.
+
+    Uses simple exponential smoothing: value_new = alpha * input_value + (1 - alpha) * value_previous
+    Matches keybr.com algorithm for consistent behavior.
 
     Args:
         wpm_values: List of WPM values per burst
-        smoothness: Smoothing level (1-100)
-                     1 = raw data (window_size=1)
-                     100 = maximum smoothing (window_size ~5% of data)
+        smoothness: Smoothing level (0-100)
+                     0 = raw data (alpha=1.0)
+                     100 = maximum smoothing (alpha=0.001)
 
     Returns:
         Tuple of (smoothed_wpm_values, x_positions)
         - x_positions are the burst numbers for each point (1-indexed)
     """
-    if not wpm_values or smoothness <= 1:
+    if not wpm_values or smoothness <= 0:
         return wpm_values[:], list(range(1, len(wpm_values) + 1))
 
-    n = len(wpm_values)
+    alpha = smoothness_to_alpha(smoothness)
 
-    # Adaptive window size: max 20% of data length, minimum 5
-    # smoothness 1 -> window_size=1 (no smoothing)
-    # smoothness 100 -> window_size=max(5, n * 0.20)
-    max_window = max(5, int(n * 0.20))
-    window_size = 1 + int((smoothness - 1) / 99 * (max_window - 1))
+    smoothed = []
+    for i, value in enumerate(wpm_values):
+        if i == 0:
+            smoothed.append(value)
+        else:
+            smoothed.append(alpha * value + (1 - alpha) * smoothed[-1])
 
-    # Ensure window_size is odd for centered moving average
-    if window_size % 2 == 0:
-        window_size += 1
-
-    # Apply centered moving average
-    half_window = window_size // 2
-    result = []
-    x_positions = []
-
-    for i in range(n):
-        # Calculate window bounds
-        start = max(0, i - half_window)
-        end = min(n, i + half_window + 1)
-
-        # Get window and calculate mean
-        window = wpm_values[start:end]
-        result.append(sum(window) / len(window))
-        x_positions.append(i + 1)  # 1-indexed burst number
-
-    return result, x_positions
+    return smoothed, list(range(1, len(wpm_values) + 1))

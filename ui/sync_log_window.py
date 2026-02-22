@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -38,6 +39,7 @@ class SyncLogWindow(QDialog):
         super().__init__(parent)
         self.storage = storage
         self.available_machines = []
+        self.date_filter_ms = None
         self.init_ui()
         self.populate_machine_filter()
         self.load_logs()
@@ -82,56 +84,38 @@ class SyncLogWindow(QDialog):
         widget = QWidget()
         layout = QVBoxLayout()
 
-        # Filter controls
+        # Filter controls - single row layout
         filter_group = QGroupBox("Filters")
         filter_layout = QHBoxLayout()
 
         # Machine name filter
-        machine_layout = QVBoxLayout()
-        machine_label = QLabel("Machine:")
-        machine_label.setStyleSheet("font-size: 11px;")
+        filter_layout.addWidget(QLabel("Machine:"))
         self.machine_combo = QComboBox()
         self.machine_combo.setMinimumWidth(150)
-        machine_layout.addWidget(machine_label)
-        machine_layout.addWidget(self.machine_combo)
-        filter_layout.addLayout(machine_layout)
+        self.machine_combo.currentTextChanged.connect(self.apply_filters)
+        filter_layout.addWidget(self.machine_combo)
 
-        # Date to filter (show entries on or before this date)
-        date_to_layout = QVBoxLayout()
-        date_to_label = QLabel("Show entries on or before:")
-        date_to_label.setStyleSheet("font-size: 11px;")
-        self.date_to_edit = QDateEdit()
-        self.date_to_edit.setCalendarPopup(True)
-        self.date_to_edit.setClearButtonEnabled(True)
+        # Date to filter
+        filter_layout.addWidget(QLabel("Entries before:"))
+        self.date_to_edit = QLineEdit()
+        self.date_to_edit.setPlaceholderText("No filter")
+        self.date_to_edit.setReadOnly(True)
         self.date_to_edit.setMinimumWidth(120)
-        date_to_layout.addWidget(date_to_label)
-        date_to_layout.addWidget(self.date_to_edit)
-        filter_layout.addLayout(date_to_layout)
+        self.date_to_edit.mousePressEvent = self.on_date_edit_clicked
+        filter_layout.addWidget(self.date_to_edit)
 
         # Hide empty checkbox
-        empty_layout = QVBoxLayout()
-        empty_label = QLabel("Options:")
-        empty_label.setStyleSheet("font-size: 11px;")
-        self.hide_empty_checkbox = QCheckBox("Hide empty syncs")
-        empty_layout.addWidget(empty_label)
-        empty_layout.addWidget(self.hide_empty_checkbox)
-        empty_layout.addStretch()
-        filter_layout.addLayout(empty_layout)
+        self.hide_empty_checkbox = QCheckBox("Hide empty")
+        self.hide_empty_checkbox.stateChanged.connect(self.apply_filters)
+        filter_layout.addWidget(self.hide_empty_checkbox)
 
-        # Filter buttons
-        button_layout = QVBoxLayout()
-        button_layout.addStretch()
+        filter_layout.addStretch()
 
-        apply_btn = QPushButton("Apply Filters")
-        apply_btn.clicked.connect(self.apply_filters)
-        button_layout.addWidget(apply_btn)
-
-        clear_btn = QPushButton("Clear Filters")
+        # Clear button
+        clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self.clear_filters)
-        button_layout.addWidget(clear_btn)
-        button_layout.addStretch()
+        filter_layout.addWidget(clear_btn)
 
-        filter_layout.addLayout(button_layout)
         filter_group.setLayout(filter_layout)
         layout.addWidget(filter_group)
 
@@ -179,21 +163,63 @@ class SyncLogWindow(QDialog):
         except Exception as e:
             log.error(f"Failed to populate machine filter: {e}")
 
+    def on_date_edit_clicked(self, event):
+        """Handle date edit click - show date picker dialog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        dialog.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        dialog.setModal(True)
+
+        layout = QVBoxLayout()
+
+        date_edit = QDateEdit()
+        date_edit.setCalendarPopup(True)
+        date_edit.setDate(QDate.currentDate())
+        date_edit.setMinimumWidth(250)
+        layout.addWidget(date_edit)
+
+        button_layout = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        cancel_btn = QPushButton("Cancel")
+
+        ok_btn.clicked.connect(lambda: self.date_selected(dialog, date_edit.date()))
+        cancel_btn.clicked.connect(dialog.reject)
+
+        button_layout.addWidget(ok_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+        dialog.setLayout(layout)
+
+        # Position dialog below the date edit field
+        pos = self.date_to_edit.mapToGlobal(self.date_to_edit.rect().bottomLeft())
+        dialog.move(pos)
+
+        dialog.exec()
+
+    def date_selected(self, dialog, qdate):
+        """Handle date selection from picker."""
+        if qdate.isValid():
+            # End of the selected day (23:59:59)
+            dt = datetime(qdate.year(), qdate.month(), qdate.day(), 23, 59, 59, tzinfo=UTC)
+            self.date_filter_ms = int(dt.timestamp() * 1000)
+            self.date_to_edit.setText(qdate.toString("yyyy-MM-dd"))
+            self.apply_filters()
+        dialog.accept()
+
     def apply_filters(self):
         """Apply filters and reload logs."""
         try:
+            # Block signals to prevent recursive calls
+            self.machine_combo.blockSignals(True)
+            self.hide_empty_checkbox.blockSignals(True)
+
             # Get filter values
             machine_name = None
             if self.machine_combo.currentIndex() > 0:
                 machine_name = self.machine_combo.currentText()
 
-            date_to = None
-            if self.date_to_edit.date().isValid():
-                qdate = self.date_to_edit.date()
-                # End of the selected day (23:59:59)
-                dt = datetime(qdate.year(), qdate.month(), qdate.day(), 23, 59, 59, tzinfo=UTC)
-                date_to = int(dt.timestamp() * 1000)
-
+            date_to = self.date_filter_ms
             hide_empty = self.hide_empty_checkbox.isChecked()
 
             # Load logs with filters
@@ -206,13 +232,17 @@ class SyncLogWindow(QDialog):
             self.populate_logs_table(logs)
         except Exception as e:
             log.error(f"Failed to apply filters: {e}")
+        finally:
+            # Unblock signals
+            self.machine_combo.blockSignals(False)
+            self.hide_empty_checkbox.blockSignals(False)
 
     def clear_filters(self):
         """Clear all filters and reload logs."""
         self.machine_combo.setCurrentIndex(0)
         self.date_to_edit.clear()
+        self.date_filter_ms = None
         self.hide_empty_checkbox.setChecked(False)
-        self.load_logs()
 
     def create_stats_tab(self):
         """Create statistics tab.

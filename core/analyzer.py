@@ -15,7 +15,6 @@ from core.models import (
     WordStatisticsLite,
     WorstLetterChange,
 )
-from core.smoothing import apply_moving_average
 from core.storage import Storage
 from utils.keycodes import is_letter_key
 
@@ -535,15 +534,14 @@ class Analyzer:
         return self.storage.db.get_daily_summary(date)
 
     def get_wpm_burst_sequence(self, smoothness: int = 1) -> tuple[list[float], list[int]]:
-        """Get WPM values over burst sequence with moving average smoothing.
+        """Get WPM values over burst sequence with exponential smoothing.
 
         Args:
-            smoothness: Smoothing level (1-100)
-                        1 = raw data (no smoothing)
-                        100 = maximum smoothing (adaptive window size)
+            smoothness: Smoothing level (1-100) - NOTE: Parameter kept for API compatibility
+                        but smoothing is now done client-side for instant response.
 
         Returns:
-            Tuple of (wpm_values, x_positions) where x_positions are burst numbers
+            Tuple of (raw_wpm_values, x_positions) where x_positions are burst numbers
         """
         # Get all bursts ordered by time from Storage facade
         raw_wpm = self.storage.db.get_all_burst_wpms_ordered()
@@ -551,7 +549,8 @@ class Analyzer:
         if not raw_wpm:
             return [], []
 
-        return apply_moving_average(raw_wpm, smoothness)
+        # Return raw data - UI handles smoothing for instant slider response
+        return raw_wpm, list(range(1, len(raw_wpm) + 1))
 
     def get_typing_time_data(
         self,

@@ -239,7 +239,7 @@ class TestAnalyzer:
         assert summary.total_typing_sec == 10  # 10 seconds, not 10000
 
     def test_wpm_burst_sequence_no_smoothing(self, analyzer):
-        """Test that smoothness=1 returns raw data with same number of points."""
+        """Test that smoothness=0 returns raw data with same number of points."""
         # Create test data with varying WPM values
         base = get_today_timestamp_ms()
         wpm_values = [40.0, 60.0, 35.0, 70.0, 45.0, 80.0, 50.0, 65.0, 30.0, 75.0]
@@ -257,8 +257,8 @@ class TestAnalyzer:
             )
             analyzer.process_burst(burst)
 
-        # Get raw data (smoothness=1)
-        result_wpm, result_x = analyzer.get_wpm_burst_sequence(smoothness=1)
+        # Get raw data (smoothness=0)
+        result_wpm, result_x = analyzer.get_wpm_burst_sequence(smoothness=0)
 
         # Should have same number of points as input
         assert len(result_wpm) == len(wpm_values)
@@ -268,8 +268,8 @@ class TestAnalyzer:
         for actual, expected in zip(result_wpm, wpm_values, strict=False):
             assert abs(actual - expected) < 5.0  # Allow 5 WPM tolerance
 
-    def test_wpm_burst_sequence_moving_average(self, analyzer):
-        """Test that moving average smooths while keeping all points."""
+    def test_wpm_burst_sequence_returns_raw_data(self, analyzer):
+        """Test that get_wpm_burst_sequence returns raw data for client-side smoothing."""
         # Create test data with 100 bursts
         base = get_today_timestamp_ms()
         wpm_values = []
@@ -287,14 +287,18 @@ class TestAnalyzer:
             )
             analyzer.process_burst(burst)
 
-        # Get smoothed data with maximum smoothness
-        result_wpm, result_x = analyzer.get_wpm_burst_sequence(smoothness=100)
+        # Backend should always return raw data regardless of smoothness parameter
+        result_wpm_0, result_x = analyzer.get_wpm_burst_sequence(smoothness=0)
+        result_wpm_50, _ = analyzer.get_wpm_burst_sequence(smoothness=50)
+        result_wpm_100, _ = analyzer.get_wpm_burst_sequence(smoothness=100)
 
-        # Should keep all 100 points
-        assert len(result_wpm) == 100
+        # All should return same raw data
+        assert len(result_wpm_0) == 100
+        assert len(result_wpm_50) == 100
+        assert len(result_wpm_100) == 100
+
         # X positions should be 1-100
         assert result_x == list(range(1, 101))
-        # Calculate variance - smoothed should have less variance
-        raw_variance = np.var(wpm_values)
-        smoothed_variance = np.var(result_wpm)
-        assert smoothed_variance < raw_variance
+
+        # All results should be identical (raw data)
+        assert result_wpm_0 == result_wpm_50 == result_wpm_100

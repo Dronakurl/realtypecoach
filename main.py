@@ -2248,6 +2248,9 @@ def main():
     log.info("Creating Application instance...")
     application = Application()
 
+    # Store the Application instance on the QApplication object for easy access
+    app.application = application
+
     # Set application icon
     app.setWindowIcon(QIcon(str(application.icon_path)))
 
