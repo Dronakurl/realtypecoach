@@ -54,8 +54,9 @@ class StatsPanel(QWidget):
         # Unified controls state
         self._current_mode = "hardest"  # Default mode
         self._word_count = 10  # Default word count
-        # Store all_time_best for trend display
+        # Store all_time_best and trend for display
         self._all_time_best: float | None = None
+        self._trend_wpm_per_day: float | None = None
         self.init_ui()
 
     @staticmethod
@@ -861,10 +862,17 @@ class StatsPanel(QWidget):
             # Store all_time_best for trend display
             self._all_time_best = all_time_best
 
+            # Build subtitle with trend if available
             if all_time_best is not None and all_time_best > 0:
-                self.avg_wpm_subtitle_label.setText(f"all-time best: {all_time_best:.1f}")
+                base_text = f"all-time best: {all_time_best:.1f}"
             else:
-                self.avg_wpm_subtitle_label.setText("all-time best: --")
+                base_text = "all-time best: --"
+
+            # Add trend if available
+            if self._trend_wpm_per_day is not None:
+                self.avg_wpm_subtitle_label.setText(f"{base_text} • trend: {self._trend_wpm_per_day:+.2f} WPM/day")
+            else:
+                self.avg_wpm_subtitle_label.setText(base_text)
 
     def update_slowest_keys(self, slowest_keys: list[KeyPerformance]) -> None:
         """Update slowest keys display.
@@ -1198,30 +1206,14 @@ class StatsPanel(QWidget):
         Args:
             wpm_per_day: WPM increase per day (positive or negative), or None if unavailable
         """
+        # Store the trend value
+        self._trend_wpm_per_day = wpm_per_day
+
         if not hasattr(self, "avg_wpm_subtitle_label"):
             return
 
-        # Get current subtitle text to extract all-time best value
-        current_text = self.avg_wpm_subtitle_label.text()
-        all_time_best = None
-
-        # Try to extract all-time best from current text
-        if "all-time best:" in current_text:
-            parts = current_text.split("all-time best:")
-            if len(parts) > 1:
-                # Extract the value (could be like "95.5" or "--")
-                value_part = parts[1].strip().split()[0]
-                if value_part != "--":
-                    try:
-                        all_time_best = float(value_part)
-                    except ValueError:
-                        pass
-
-        # Fall back to stored value
-        if all_time_best is None and self._all_time_best is not None:
-            all_time_best = self._all_time_best
-
-        # Reconstruct the subtitle with trend information
+        # Build subtitle with trend
+        all_time_best = self._all_time_best
         if all_time_best is not None and all_time_best > 0:
             base_text = f"all-time best: {all_time_best:.1f}"
         else:
