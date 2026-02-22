@@ -534,6 +534,15 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_all_bursts_with_timestamps(self) -> list[BurstTimeSeries]:
+        """Get all bursts with timestamps ordered by start_time.
+
+        Returns:
+            List of BurstTimeSeries models ordered by start_time
+        """
+        pass
+
+    @abstractmethod
     def get_burst_wpm_percentile(self, percentile: float) -> float | None:
         """Get WPM value at a given percentile across all bursts.
 

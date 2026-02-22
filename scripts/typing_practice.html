@@ -114,9 +114,21 @@
 
                 // Check if this position is part of a highlighted digraph
                 let inDigraph = false;
-                if (digraphSet.size > 0 && i < targetText.length - 1) {
-                    const twoChar = targetText.slice(i, i + 2).toLowerCase();
-                    inDigraph = digraphSet.has(twoChar);
+                if (digraphSet.size > 0) {
+                    // Check if this position is the first character of a digraph
+                    if (i < targetText.length - 1) {
+                        const twoChar = targetText.slice(i, i + 2).toLowerCase();
+                        if (digraphSet.has(twoChar)) {
+                            inDigraph = true;
+                        }
+                    }
+                    // Check if this position is the second character of a digraph
+                    if (!inDigraph && i > 0) {
+                        const twoChar = targetText.slice(i - 1, i + 1).toLowerCase();
+                        if (digraphSet.has(twoChar)) {
+                            inDigraph = true;
+                        }
+                    }
                 }
 
                 let className = '';

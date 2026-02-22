@@ -8,6 +8,49 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
 
+def calculate_linear_regression(timestamps_ms: list[int], wpm_values: list[float]) -> tuple[float | None, float | None, float | None]:
+    """Calculate linear regression (y = mx + b) for WPM over time.
+
+    Args:
+        timestamps_ms: List of timestamps in milliseconds
+        wpm_values: List of WPM values
+
+    Returns:
+        Tuple of (slope_wpm_per_day, intercept, r_squared) or (None, None, None) if insufficient data
+    """
+    if len(timestamps_ms) < 2:
+        return None, None, None
+
+    # Convert timestamps to days since first timestamp
+    first_ts = timestamps_ms[0]
+    days = [(ts - first_ts) / (1000 * 60 * 60 * 24) for ts in timestamps_ms]
+
+    # Calculate slope and intercept using least squares
+    n = len(days)
+    sum_x = sum(days)
+    sum_y = sum(wpm_values)
+    sum_xy = sum(x * y for x, y in zip(days, wpm_values))
+    sum_x2 = sum(x * x for x in days)
+
+    denominator = n * sum_x2 - sum_x * sum_x
+    if denominator == 0:
+        return None, None, None
+
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    intercept = (sum_y - slope * sum_x) / n
+
+    # Calculate R² for trend quality
+    y_mean = sum_y / n
+    ss_tot = sum((y - y_mean) ** 2 for y in wpm_values)
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(days, wpm_values))
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+
+    # Convert slope from WPM/ms to WPM/day
+    slope_wpm_per_day = slope * (1000 * 60 * 60 * 24)
+
+    return slope_wpm_per_day, intercept, r_squared
+
+
 def smoothness_to_alpha(smoothness: int) -> float:
     """Convert smoothness slider value (0-100) to exponential smoothing alpha.
 
@@ -60,9 +103,12 @@ class WPMTimeSeriesGraph(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.raw_wpm: list[float] = []  # Cache raw WPM data for instant smoothing
+        self.raw_timestamps: list[int] = []  # Cache raw timestamps for trend calculation
         self.current_smoothness = 0  # Default to raw data (no smoothing)
         self._data_callback: Callable[[int], None] | None = None
         self.plot_item = None
+        self.trend_plot_item = None  # Will hold the trend line plot item
+        self.current_slope = None  # Store current slope for display
 
         self.init_ui()
 
@@ -92,6 +138,11 @@ class WPMTimeSeriesGraph(QWidget):
         # Create plot item with line and markers
         self.plot_item = self.plot.plot(
             pen=pg.mkPen(color=(50, 150, 200), width=2), symbol="o", symbolSize=5
+        )
+
+        # Create trend line plot item (initially empty)
+        self.trend_plot_item = self.plot.plot(
+            pen=pg.mkPen(color=(255, 140, 0), width=2, style=Qt.PenStyle.DashLine)
         )
 
         layout.addWidget(self.plot_widget)
@@ -149,10 +200,43 @@ class WPMTimeSeriesGraph(QWidget):
 
         if not smoothed:
             self.plot_item.setData([], [])
+            self.trend_plot_item.setData([], [])
             self.info_label.setText("Showing: No data")
+            self.current_slope = None
             return
 
-        # Auto-scale y-axis based on current smoothed data
+        # Calculate trend line from RAW data (not smoothed)
+        if self.raw_timestamps and len(self.raw_timestamps) >= 2:
+            slope_wpm_per_day, intercept, r_squared = calculate_linear_regression(
+                self.raw_timestamps, self.raw_wpm
+            )
+            self.current_slope = slope_wpm_per_day
+
+            if slope_wpm_per_day is not None:
+                # Generate trend line points (start and end of time range)
+                first_ts = self.raw_timestamps[0]
+                last_ts = self.raw_timestamps[-1]
+                first_day = 0
+                last_day = (last_ts - first_ts) / (1000 * 60 * 60 * 24)
+
+                # Calculate WPM at start and end using the regression equation
+                # WPM = slope * days + intercept
+                start_wpm = intercept
+                end_wpm = slope_wpm_per_day / (1000 * 60 * 60 * 24) * last_day + intercept
+
+                # Convert back to burst numbers for display
+                x_trend = [1, len(x_positions)]
+                y_trend = [start_wpm, end_wpm]
+
+                self.trend_plot_item.setData(x_trend, y_trend)
+            else:
+                self.trend_plot_item.setData([], [])
+                self.current_slope = None
+        else:
+            self.trend_plot_item.setData([], [])
+            self.current_slope = None
+
+        # Auto-scale y-axis based on current smoothed data and trend line
         y_min = min(smoothed)
         y_max = max(smoothed)
         # Add some padding (10% on each side, minimum 1 WPM)
@@ -166,7 +250,10 @@ class WPMTimeSeriesGraph(QWidget):
         self.plot.setYRange(y_range[0], y_range[1], padding=0)
 
         # Update info label
-        self.info_label.setText(f"Showing: {len(smoothed)} data points")
+        trend_info = ""
+        if self.current_slope is not None:
+            trend_info = f" • Trend: {self.current_slope:+.2f} WPM/day"
+        self.info_label.setText(f"Showing: {len(smoothed)} data points{trend_info}")
 
     def set_data_callback(
         self, callback: Callable[[int], None], load_immediately: bool = False
@@ -182,16 +269,25 @@ class WPMTimeSeriesGraph(QWidget):
         if load_immediately and self._data_callback:
             self._data_callback(self.current_smoothness)
 
-    def update_graph(self, data: tuple[list[float], list[int]]) -> None:
+    def update_graph(self, data: list[tuple[int, float]]) -> float | None:
         """Update graph with WPM values over burst sequence.
 
         Args:
-            data: Tuple of (raw_wpm_values, x_positions) - backend always returns raw data now
-        """
-        raw_wpm, x_positions = data
+            data: List of (timestamp_ms, avg_wpm) tuples
 
-        # Cache raw data for instant smoothing
-        self.raw_wpm = raw_wpm[:]
+        Returns:
+            Slope in WPM/day, or None if insufficient data
+        """
+        # Extract timestamps and WPM values
+        if not data:
+            self.raw_wpm = []
+            self.raw_timestamps = []
+            self._update_with_cached_data()
+            return None
+
+        self.raw_timestamps = [ts for ts, _ in data]
+        self.raw_wpm = [wpm for _, wpm in data]
 
         # Apply current smoothing level and update display
         self._update_with_cached_data()
+        return self.current_slope

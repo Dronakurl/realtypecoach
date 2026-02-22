@@ -1020,6 +1020,14 @@ class Storage:
         """
         return self.adapter.get_all_burst_wpms_ordered()
 
+    def get_all_bursts_with_timestamps(self) -> list[BurstTimeSeries]:
+        """Get all bursts with timestamps ordered by start_time.
+
+        Returns:
+            List of BurstTimeSeries models ordered by start_time
+        """
+        return self.adapter.get_all_bursts_with_timestamps()
+
     def get_burst_wpm_percentile(self, percentile: float) -> float | None:
         """Get WPM value at a given percentile across all bursts.
 

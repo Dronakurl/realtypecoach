@@ -8,6 +8,7 @@ from typing import Any
 
 from core.burst_detector import Burst
 from core.models import (
+    BurstTimeSeries,
     DailySummaryDB,
     DigraphPerformance,
     KeyPerformance,
@@ -532,6 +533,14 @@ class Analyzer:
             DailySummaryDB model or None
         """
         return self.storage.db.get_daily_summary(date)
+
+    def get_wpm_time_series(self) -> list[BurstTimeSeries]:
+        """Get WPM time series with timestamps for trend calculation.
+
+        Returns:
+            List of BurstTimeSeries models ordered by start_time
+        """
+        return self.storage.db.get_all_bursts_with_timestamps()
 
     def get_wpm_burst_sequence(self, smoothness: int = 1) -> tuple[list[float], list[int]]:
         """Get WPM values over burst sequence with exponential smoothing.

@@ -54,6 +54,8 @@ class StatsPanel(QWidget):
         # Unified controls state
         self._current_mode = "hardest"  # Default mode
         self._word_count = 10  # Default word count
+        # Store all_time_best for trend display
+        self._all_time_best: float | None = None
         self.init_ui()
 
     @staticmethod
@@ -856,6 +858,9 @@ class StatsPanel(QWidget):
             else:
                 self.avg_wpm_value_label.setText("--")
 
+            # Store all_time_best for trend display
+            self._all_time_best = all_time_best
+
             if all_time_best is not None and all_time_best > 0:
                 self.avg_wpm_subtitle_label.setText(f"all-time best: {all_time_best:.1f}")
             else:
@@ -1166,7 +1171,29 @@ class StatsPanel(QWidget):
         Args:
             data: List of (timestamp_ms, avg_wpm) tuples
         """
-        self.wpm_graph.update_graph(data)
+        slope = self.wpm_graph.update_graph(data)
+        self.update_trend_parameter(slope)
+
+    def update_trend_parameter(self, wpm_per_day: float | None) -> None:
+        """Update the trend parameter display in Overview tab.
+
+        Args:
+            wpm_per_day: WPM increase per day (positive or negative), or None if unavailable
+        """
+        if not hasattr(self, "avg_wpm_subtitle_label"):
+            return
+
+        # Reconstruct the subtitle with trend information
+        all_time_best = self._all_time_best
+        if all_time_best is not None and all_time_best > 0:
+            base_text = f"all-time best: {all_time_best:.1f}"
+        else:
+            base_text = "all-time best: --"
+
+        if wpm_per_day is not None:
+            self.avg_wpm_subtitle_label.setText(f"{base_text} • trend: {wpm_per_day:+.2f} WPM/day")
+        else:
+            self.avg_wpm_subtitle_label.setText(base_text)
 
     def set_typing_time_data_callback(self, callback) -> None:
         """Set callback for requesting typing time data.

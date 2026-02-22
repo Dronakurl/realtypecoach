@@ -2867,6 +2867,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             return [row[0] for row in cursor.fetchall() if row[0] is not None]
 
+    def get_all_bursts_with_timestamps(self) -> list[BurstTimeSeries]:
+        """Get all bursts with timestamps ordered by start_time."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT start_time, avg_wpm FROM bursts WHERE user_id = %s ORDER BY start_time",
+                (self.user_id,),
+            )
+            return [BurstTimeSeries(timestamp_ms=row[0], avg_wpm=row[1]) for row in cursor.fetchall() if row[1] is not None]
+
     def get_burst_wpm_percentile(self, percentile: float) -> float | None:
         """Get WPM value at a given percentile across all bursts."""
         with self.get_connection() as conn:
