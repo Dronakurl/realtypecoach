@@ -5,6 +5,7 @@ Tests different penalty_factor values to find the optimal value
 that produces target average word length of approximately 6.5.
 """
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -21,12 +22,31 @@ def _is_abbreviation(word: str) -> bool:
     return sum(1 for c in word if c.isupper()) > 2
 
 
+def _is_roman_numeral(word: str) -> bool:
+    """Check if word is a Roman numeral (e.g., iii, vii, xii, xvii)."""
+    # Skip very short words that might be regular words
+    if len(word) <= 2:
+        return False
+
+    # Check if word only contains Roman numeral letters
+    roman_pattern = re.compile(r'^[ivxlcdm]+$', re.IGNORECASE)
+    if not roman_pattern.match(word):
+        return False
+
+    # Common words that match roman numeral pattern but aren't
+    common_words = {'civic', 'mid', 'did', 'lid', 'mix'}
+    if word.lower() in common_words:
+        return False
+
+    return True
+
+
 def _calculate_length_penalty(word: str, target_length: float, penalty_factor: float) -> float:
     """Calculate length penalty for weighted word selection."""
     length = len(word)
 
-    # Heavily penalize abbreviations
-    if _is_abbreviation(word):
+    # Heavily penalize abbreviations and Roman numerals
+    if _is_abbreviation(word) or _is_roman_numeral(word):
         effective_length = 20
     elif length == 3:
         effective_length = 10
