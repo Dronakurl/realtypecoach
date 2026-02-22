@@ -1,5 +1,7 @@
 """Pydantic models for RealTypeCoach data structures."""
 
+from enum import Enum
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -171,3 +173,11 @@ class DigraphPerformance(BaseModel):
     rank: int = Field(default=0, description="Frequency rank (1=most frequent)")
 
     model_config = ConfigDict(extra="ignore")
+
+
+class WordSelectionMode(Enum):
+    """Mode selection for word operations in the stats panel."""
+
+    HARDEST = "hardest"
+    FASTEST = "fastest"
+    MIXED = "mixed"
