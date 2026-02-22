@@ -545,19 +545,18 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sync_log (
                 id SERIAL PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-                sync_type TEXT NOT NULL,
-                started_at BIGINT NOT NULL,
-                completed_at BIGINT,
-                records_pushed INTEGER DEFAULT 0,
-                records_pulled INTEGER DEFAULT 0,
-                merged INTEGER DEFAULT 0,
-                status TEXT NOT NULL,
-                error_message TEXT,
-                metadata TEXT
+                user_id UUID NOT NULL,
+                timestamp BIGINT NOT NULL,
+                machine_name TEXT NOT NULL,
+                pushed INTEGER NOT NULL DEFAULT 0,
+                pulled INTEGER NOT NULL DEFAULT 0,
+                merged INTEGER NOT NULL DEFAULT 0,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                table_breakdown TEXT
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sync_log_user_id ON sync_log(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sync_log_user_timestamp ON sync_log(user_id, timestamp DESC)")
 
     def _migrate_table_if_needed(self, cursor, table: str) -> None:
         """Migrate table to add user_id and encrypted_data columns if not present.

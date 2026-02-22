@@ -1167,15 +1167,47 @@ class Storage:
             # Update last sync timestamp
             user_manager.update_last_sync()
 
+            # Log sync result to remote database before closing
+            try:
+                import json
+                import time
+                from utils.hostname import get_hostname
+
+                # Build table_breakdown dict
+                table_breakdown = {}
+                if hasattr(result, "table_breakdown") and result.table_breakdown:
+                    for table, stats in result.table_breakdown.items():
+                        table_breakdown[table] = {
+                            "pushed": stats.pushed,
+                            "pulled": stats.pulled,
+                            "merged": stats.merged,
+                        }
+
+                machine_name = get_hostname()
+                sync_log_entry = {
+                    "timestamp": int(time.time() * 1000),
+                    "machine_name": machine_name,
+                    "pushed": result.pushed,
+                    "pulled": result.pulled,
+                    "merged": result.merged,
+                    "duration_ms": result.duration_ms,
+                    "error": result.error,
+                    "table_breakdown": json.dumps(table_breakdown),
+                }
+                remote_adapter.insert_sync_log(sync_log_entry)
+                log.info("Sync result logged to remote database")
+            except Exception as e:
+                log.error(f"Failed to log sync result to remote: {e}")
+
             # Close adapters
             local_adapter.close()
             remote_adapter.close()
 
-            # Log the sync result
+            # Also log to local database
             try:
                 self.log_sync_result(result)
             except Exception as e:
-                log.error(f"Failed to log sync result: {e}")
+                log.error(f"Failed to log sync result locally: {e}")
 
             return {
                 "success": result.success,
