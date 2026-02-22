@@ -27,13 +27,19 @@ def get_text_from_file(filepath: str) -> str:
     return path.read_text()
 
 
-def launch_practice(text: str, hardest_words: list[str] | None = None):
+def launch_practice(
+    text: str,
+    hardest_words: list[str] | None = None,
+    fastest_words: list[str] | None = None,
+):
     """Launch typing practice in default browser."""
     # Create file URL with encoded text parameter
     file_url = HTML_FILE.as_uri()
     params = {"text": text}
     if hardest_words:
         params["hardest"] = ",".join(hardest_words)
+    if fastest_words:
+        params["fastest"] = ",".join(fastest_words)
     query_string = urllib.parse.urlencode(params, safe="")
     full_url = f"{file_url}?{query_string}"
 
@@ -51,6 +57,7 @@ def main():
         sys.exit(1)
 
     hardest_words: list[str] | None = None
+    fastest_words: list[str] | None = None
 
     if sys.argv[1] == "--file":
         if len(sys.argv) < 3:
@@ -63,11 +70,17 @@ def main():
             sys.exit(1)
         text = get_text_from_file(sys.argv[2])
         hardest_words = sys.argv[3].split(",")
+    elif sys.argv[1] == "--fastest":
+        if len(sys.argv) < 4:
+            print("Error: --fastest requires a filepath and comma-separated words")
+            sys.exit(1)
+        text = get_text_from_file(sys.argv[2])
+        fastest_words = sys.argv[3].split(",")
     else:
         # Treat all arguments as the practice text
         text = " ".join(sys.argv[1:])
 
-    launch_practice(text, hardest_words)
+    launch_practice(text, hardest_words, fastest_words)
 
 
 if __name__ == "__main__":
