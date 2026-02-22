@@ -1291,7 +1291,7 @@ class Storage:
 
         Args:
             result: SyncResult from sync_manager
-            machine_name: Machine name (auto-detected from UserManager if empty)
+            machine_name: Machine name (auto-detected as hostname if empty)
 
         Returns:
             Inserted record ID
