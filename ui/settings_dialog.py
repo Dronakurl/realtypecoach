@@ -465,6 +465,38 @@ class SettingsDialog(QDialog):
         display_group.setLayout(display_layout)
         layout.addWidget(display_group)
 
+        # Practice Text Settings
+        practice_group = QGroupBox("Practice Text")
+        practice_layout = QFormLayout()
+
+        self.special_char_probability_spin = QSpinBox()
+        self.special_char_probability_spin.setRange(0, 100)
+        self.special_char_probability_spin.setSuffix(" %")
+        self.special_char_probability_spin.setValue(20)
+        practice_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Special character probability:",
+                "Probability that a word gets special characters (quotes, hyphens, punctuation).\n"
+                "20% = 1 in 5 words, 50% = every other word",
+            ),
+            self.special_char_probability_spin,
+        )
+
+        self.number_probability_spin = QSpinBox()
+        self.number_probability_spin.setRange(0, 100)
+        self.number_probability_spin.setSuffix(" %")
+        self.number_probability_spin.setValue(15)
+        practice_layout.addRow(
+            self._create_labeled_icon_widget(
+                "Number insertion probability:",
+                "Probability that a random number (1-1000) is inserted between words.",
+            ),
+            self.number_probability_spin,
+        )
+
+        practice_group.setLayout(practice_layout)
+        layout.addWidget(practice_group)
+
         # Data Management Group (moved from Data tab)
         data_group = QGroupBox("Data Management")
         data_layout = QFormLayout()
@@ -1980,6 +2012,14 @@ class SettingsDialog(QDialog):
         # Load prompts from database
         self._load_llm_prompts()
 
+        # Load practice text settings
+        self.special_char_probability_spin.setValue(
+            int(self.current_settings.get("special_char_probability", 20) or 20)
+        )
+        self.number_probability_spin.setValue(
+            int(self.current_settings.get("number_probability", 15) or 15)
+        )
+
     def get_settings(self) -> dict[str, Any]:
         """Get settings from UI.
 
@@ -2055,6 +2095,9 @@ class SettingsDialog(QDialog):
             "llm_model": self.llm_model_combo.currentData() or "gemma2:2b",
             "llm_active_prompt_id": self.llm_prompt_combo.currentData() or -1,
             "llm_word_count": str(self.llm_word_count_spin.value()),
+            # Practice text settings
+            "special_char_probability": str(self.special_char_probability_spin.value()),
+            "number_probability": str(self.number_probability_spin.value()),
         }
 
     def accept(self) -> None:
