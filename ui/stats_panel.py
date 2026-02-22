@@ -48,6 +48,9 @@ class StatsPanel(QWidget):
         self._trend_data_callback = None
         self._typing_time_data_callback = None
         self._histogram_data_callback = None
+        # Unified controls state
+        self._current_mode = "hardest"  # Default mode
+        self._word_count = 10  # Default word count
         self.init_ui()
 
     @staticmethod
@@ -396,7 +399,10 @@ class StatsPanel(QWidget):
 
         # Tab 3: Words
         words_tab = QWidget()
-        words_layout = QHBoxLayout(words_tab)
+        words_layout = QVBoxLayout(words_tab)
+
+        # Top section: Tables side by side
+        tables_layout = QHBoxLayout()
 
         # Fastest Words (Left)
         fastest_words_widget = QWidget()
@@ -418,39 +424,7 @@ class StatsPanel(QWidget):
             self.fastest_words_table.setItem(i, 2, QTableWidgetItem("--"))
         fastest_words_layout.addWidget(self.fastest_words_table)
 
-        # Controls area for fastest words
-        fastest_controls_layout = QHBoxLayout()
-
-        fastest_count_label = QLabel("Copy:")
-        fastest_count_label.setStyleSheet("font-size: 12px; color: #666;")
-        fastest_controls_layout.addWidget(fastest_count_label)
-
-        self.fastest_words_count_combo = QComboBox()
-        self.fastest_words_count_combo.addItem("10", 10)
-        self.fastest_words_count_combo.addItem("25", 25)
-        self.fastest_words_count_combo.addItem("50", 50)
-        self.fastest_words_count_combo.addItem("75", 75)
-        self.fastest_words_count_combo.addItem("100", 100)
-        self.fastest_words_count_combo.addItem("500", 500)
-        self.fastest_words_count_combo.addItem("1000", 1000)
-        self.fastest_words_count_combo.setCurrentIndex(0)  # Default to 10
-        self.fastest_words_count_combo.setMaximumWidth(80)
-        fastest_controls_layout.addWidget(self.fastest_words_count_combo)
-
-        self.copy_fastest_words_btn = QPushButton("📋 Fastest")
-        self.copy_fastest_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
-        self.copy_fastest_words_btn.clicked.connect(self.copy_fastest_words_to_clipboard)
-        fastest_controls_layout.addWidget(self.copy_fastest_words_btn)
-
-        self.copy_mixed_words_btn = QPushButton("🎲 Mixed")
-        self.copy_mixed_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
-        self.copy_mixed_words_btn.clicked.connect(self.copy_mixed_words_to_clipboard)
-        fastest_controls_layout.addWidget(self.copy_mixed_words_btn)
-
-        fastest_controls_layout.addStretch()
-        fastest_words_layout.addLayout(fastest_controls_layout)
-
-        words_layout.addWidget(fastest_words_widget)
+        tables_layout.addWidget(fastest_words_widget)
 
         # Hardest Words (Right)
         hardest_words_widget = QWidget()
@@ -472,62 +446,68 @@ class StatsPanel(QWidget):
             self.hardest_words_table.setItem(i, 2, QTableWidgetItem("--"))
         hardest_words_layout.addWidget(self.hardest_words_table)
 
-        # Controls area for clipboard functionality (2 rows)
-        controls_layout = QVBoxLayout()
-        controls_layout.setSpacing(8)  # Space between rows
+        tables_layout.addWidget(hardest_words_widget)
 
-        # Row 1: Copy controls
-        copy_row = QHBoxLayout()
+        words_layout.addLayout(tables_layout)
 
-        count_label = QLabel("Copy:")
+        # Unified controls section (below both tables)
+        unified_controls_layout = QHBoxLayout()
+
+        # Mode dropdown
+        mode_label = QLabel("Mode:")
+        mode_label.setStyleSheet("font-size: 12px; color: #666;")
+        unified_controls_layout.addWidget(mode_label)
+
+        self.word_mode_combo = QComboBox()
+        self.word_mode_combo.addItem("Hardest", "hardest")
+        self.word_mode_combo.addItem("Fastest", "fastest")
+        self.word_mode_combo.addItem("Mixed", "mixed")
+        self.word_mode_combo.setCurrentIndex(0)  # Default to Hardest
+        self.word_mode_combo.setMaximumWidth(100)
+        self.word_mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        unified_controls_layout.addWidget(self.word_mode_combo)
+
+        # Count dropdown
+        count_label = QLabel("Count:")
         count_label.setStyleSheet("font-size: 12px; color: #666;")
-        copy_row.addWidget(count_label)
+        unified_controls_layout.addWidget(count_label)
 
-        self.hardest_words_count_combo = QComboBox()
-        self.hardest_words_count_combo.addItem("10", 10)
-        self.hardest_words_count_combo.addItem("25", 25)
-        self.hardest_words_count_combo.addItem("50", 50)
-        self.hardest_words_count_combo.addItem("75", 75)
-        self.hardest_words_count_combo.addItem("100", 100)
-        self.hardest_words_count_combo.addItem("500", 500)
-        self.hardest_words_count_combo.addItem("1000", 1000)
-        self.hardest_words_count_combo.setCurrentIndex(0)  # Default to 10
-        self.hardest_words_count_combo.setMaximumWidth(80)
-        copy_row.addWidget(self.hardest_words_count_combo)
+        self.unified_word_count_combo = QComboBox()
+        self.unified_word_count_combo.addItem("10", 10)
+        self.unified_word_count_combo.addItem("25", 25)
+        self.unified_word_count_combo.addItem("50", 50)
+        self.unified_word_count_combo.addItem("75", 75)
+        self.unified_word_count_combo.addItem("100", 100)
+        self.unified_word_count_combo.addItem("500", 500)
+        self.unified_word_count_combo.addItem("1000", 1000)
+        self.unified_word_count_combo.setCurrentIndex(0)  # Default to 10
+        self.unified_word_count_combo.setMaximumWidth(80)
+        unified_controls_layout.addWidget(self.unified_word_count_combo)
 
-        self.copy_hardest_words_btn = QPushButton("📋 Copy Words")
-        self.copy_hardest_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
-        self.copy_hardest_words_btn.clicked.connect(self.copy_hardest_words_to_clipboard)
-        copy_row.addWidget(self.copy_hardest_words_btn)
+        # Action buttons
+        self.unified_copy_btn = QPushButton("📋 Copy")
+        self.unified_copy_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.unified_copy_btn.clicked.connect(self.copy_words_by_mode)
+        unified_controls_layout.addWidget(self.unified_copy_btn)
 
-        copy_row.addStretch()
-        controls_layout.addLayout(copy_row)
-
-        # Row 2: Practice and Generate Text buttons
-        action_row = QHBoxLayout()
-
-        self.practice_btn = QPushButton("⌨️ Practice")
-        self.practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
-        self.practice_btn.clicked.connect(self.practice_text)
-        self.practice_btn.setToolTip("Open clipboard text for typing practice")
-        action_row.addWidget(self.practice_btn)
-
-        self.generate_text_btn = QPushButton("✨ Generate Text")
-        self.generate_text_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
-        self.generate_text_btn.setVisible(False)  # Hidden until Ollama detected
-        self.generate_text_btn.setToolTip(
-            "Generate practice text using Ollama (uses word count from LLM settings)"
+        self.unified_practice_btn = QPushButton("⌨️ Practice")
+        self.unified_practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.unified_practice_btn.clicked.connect(self.practice_text_by_mode)
+        self.unified_practice_btn.setToolTip(
+            "Open clipboard text for typing practice with word highlighting"
         )
-        self.generate_text_btn.clicked.connect(self.generate_text_with_ollama)
+        unified_controls_layout.addWidget(self.unified_practice_btn)
+
+        self.unified_generate_btn = QPushButton("✨ Generate Text")
+        self.unified_generate_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.unified_generate_btn.setVisible(False)  # Hidden until Ollama detected
+        self.unified_generate_btn.setToolTip("Generate practice text using Ollama")
+        self.unified_generate_btn.clicked.connect(self.generate_text_by_mode)
         self._original_button_text = "✨ Generate Text"  # Store original text for restoration
-        action_row.addWidget(self.generate_text_btn)
+        unified_controls_layout.addWidget(self.unified_generate_btn)
 
-        action_row.addStretch()
-        controls_layout.addLayout(action_row)
-
-        hardest_words_layout.addLayout(controls_layout)
-
-        words_layout.addWidget(hardest_words_widget)
+        unified_controls_layout.addStretch()
+        words_layout.addLayout(unified_controls_layout)
 
         tab_widget.addTab(words_tab, self._create_palette_aware_icon("text-x-generic"), "Words")
 
@@ -1251,7 +1231,11 @@ class StatsPanel(QWidget):
         Args:
             available: True if Ollama server is running
         """
-        self.generate_text_btn.setVisible(available)
+        # Use unified button if it exists, otherwise fall back to old button
+        if hasattr(self, "unified_generate_btn"):
+            self.unified_generate_btn.setVisible(available)
+        elif hasattr(self, "generate_text_btn"):
+            self.generate_text_btn.setVisible(available)
 
     def generate_text_with_ollama(self) -> None:
         """Generate text using Ollama with configured word count from settings."""
@@ -1293,13 +1277,17 @@ class StatsPanel(QWidget):
         self._clipboard.setText(text, QClipboard.Mode.Selection)
         self._clipboard.setText(text, QClipboard.Mode.Clipboard)
 
-        # Restore button state
-        self.generate_text_btn.setEnabled(True)
+        # Restore button state (use unified button if it exists, otherwise fall back to old)
+        if hasattr(self, "unified_generate_btn"):
+            btn = self.unified_generate_btn
+        else:
+            btn = self.generate_text_btn
+        btn.setEnabled(True)
         word_count = len(text.split())
-        self.generate_text_btn.setText(f"✓ {word_count} words copied!")
+        btn.setText(f"✓ {word_count} words copied!")
 
         # Reset button text after 2 seconds
-        QTimer.singleShot(2000, lambda: self.generate_text_btn.setText(self._original_button_text))
+        QTimer.singleShot(2000, lambda: btn.setText(self._original_button_text))
 
         # Show notification
         app = QApplication.instance()
@@ -1443,3 +1431,136 @@ class StatsPanel(QWidget):
         """Override to emit visibility signal when hidden."""
         super().hideEvent(event)
         self.visibility_changed.emit(False)
+
+    # Unified controls methods
+
+    def _on_mode_changed(self, index: int) -> None:
+        """Handle mode dropdown change.
+
+        Args:
+            index: Index of the selected item
+        """
+        mode = self.word_mode_combo.currentData()
+        self._current_mode = mode
+
+    def copy_words_by_mode(self) -> None:
+        """Copy words based on selected mode."""
+        count = self.unified_word_count_combo.currentData()
+        mode = self.word_mode_combo.currentData()
+
+        if hasattr(self, "_request_words_by_mode_callback"):
+            self._clipboard_callback = self._on_words_fetched_for_copy
+            self._request_words_by_mode_callback(mode, count)
+
+    def practice_text_by_mode(self) -> None:
+        """Open clipboard text for typing practice with word highlighting."""
+        from PySide6.QtGui import QClipboard
+
+        # Get text from clipboard
+        clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
+
+        count = self.unified_word_count_combo.currentData()
+        mode = self.word_mode_combo.currentData()
+
+        if not clipboard_text or not clipboard_text.strip():
+            # Auto-fetch words based on mode if clipboard is empty
+            if hasattr(self, "_request_word_highlight_list_callback"):
+                self._request_word_highlight_list_callback(mode, count, None)
+            return
+
+        # If clipboard has text, fetch word list for highlighting
+        if hasattr(self, "_request_word_highlight_list_callback"):
+            self._request_word_highlight_list_callback(mode, count, clipboard_text)
+
+    def generate_text_by_mode(self) -> None:
+        """Generate text using Ollama based on selected mode."""
+        count = self.unified_word_count_combo.currentData()
+        mode = self.word_mode_combo.currentData()
+
+        if hasattr(self, "_request_text_generation_by_mode_callback"):
+            # Disable button and show loading state
+            self.unified_generate_btn.setEnabled(False)
+            self.unified_generate_btn.setText("⏳ Generating...")
+            self._request_text_generation_by_mode_callback(mode, count)
+        else:
+            log.error("_request_text_generation_by_mode_callback not set - cannot generate text")
+            # Show error immediately
+            self.on_text_generation_failed(
+                "Text generation callback not initialized. Please restart the application."
+            )
+
+    def launch_practice_with_highlighting(self, text: str, highlight_words: dict) -> None:
+        """Launch typing practice with word highlighting.
+
+        Args:
+            text: Text to practice
+            highlight_words: Dict with 'hardest' and/or 'fastest' keys containing word lists
+        """
+        import subprocess
+        from pathlib import Path
+
+        script_path = Path(__file__).parent.parent / "scripts" / "practice.py"
+
+        if not script_path.exists():
+            log.error(f"practice.py not found at {script_path}")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification("Practice Error", "practice.py script not found")
+            return
+
+        try:
+            # Build command arguments
+            cmd = ["python3", str(script_path), "--file", "-"]
+
+            # Add word lists for highlighting
+            if highlight_words.get("hardest"):
+                cmd.extend(["--hardest", ",".join(highlight_words["hardest"])])
+            if highlight_words.get("fastest"):
+                cmd.extend(["--fastest", ",".join(highlight_words["fastest"])])
+
+            log.info(f"Opening typing practice with mode {self._current_mode}")
+            result = subprocess.run(
+                cmd,
+                input=text,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if result.returncode != 0:
+                log.error(f"Practice script failed: {result.stderr}")
+                app = QApplication.instance()
+                if app and hasattr(app, "tray_icon"):
+                    app.tray_icon.show_notification(
+                        "Practice Error", f"Failed to open practice: {result.stderr}"
+                    )
+
+        except Exception as e:
+            log.error(f"Error launching practice: {e}")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+
+    def set_words_by_mode_clipboard_callback(self, callback) -> None:
+        """Set callback for fetching words by mode for clipboard.
+
+        Args:
+            callback: Function to call with (mode, count) parameters
+        """
+        self._request_words_by_mode_callback = callback
+
+    def set_words_by_mode_practice_callback(self, callback) -> None:
+        """Set callback for fetching word highlight list by mode for practice.
+
+        Args:
+            callback: Function to call with (mode, count, text) parameters
+        """
+        self._request_word_highlight_list_callback = callback
+
+    def set_text_generation_by_mode_callback(self, callback) -> None:
+        """Set callback for Ollama text generation by mode.
+
+        Args:
+            callback: Function to call with (mode, count) parameters
+        """
+        self._request_text_generation_by_mode_callback = callback
