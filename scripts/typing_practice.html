@@ -36,6 +36,7 @@
         .incorrect { color: #f44336; text-decoration: underline; }
         .current { background: #FFC107; color: #000; border-radius: 2px; }
         .hardest-word { background: #ff6b3533; border-radius: 3px; }
+        .fastest-word { background: #4CAF5033; border-radius: 3px; }
         #hiddenInput {
             position: absolute; opacity: 0; top: -1000px;
         }
@@ -64,7 +65,9 @@
         const params = new URLSearchParams(window.location.search);
         const textParam = params.get('text');
         const hardestParam = params.get('hardest');
+        const fastestParam = params.get('fastest');
         const hardestWords = hardestParam ? hardestParam.split(',') : [];
+        const fastestWords = fastestParam ? fastestParam.split(',') : [];
         const defaultText = "The quick brown fox jumps over the lazy dog. " +
             "Pack my box with five dozen liquor jugs. " +
             "How vexingly quick daft zebras jump!";
@@ -84,25 +87,26 @@
             const typed = input.value;
             let html = '';
 
-            // Build a set for O(1) lookup of hardest words (case-insensitive)
+            // Build sets for O(1) lookup of words (case-insensitive)
             const hardestSet = new Set(hardestWords.map(w => w.toLowerCase()));
+            const fastestSet = new Set(fastestWords.map(w => w.toLowerCase()));
 
             // Helper to check if a character is part of a word (Unicode-aware)
             // Matches any character that's NOT whitespace, punctuation, or symbols
             const isWordChar = (c) => !/[\s\p{P}\p{S}]/u.test(c);
 
             for (let i = 0; i < targetText.length; i++) {
-                // Check if this position is within a hardest word
-                let inHardestWord = false;
-                if (hardestSet.size > 0) {
-                    // Find the word boundaries around position i (Unicode-aware)
-                    let start = i;
-                    while (start > 0 && isWordChar(targetText[start - 1])) start--;
-                    let end = i;
-                    while (end < targetText.length && isWordChar(targetText[end])) end++;
-                    const word = targetText.slice(start, end).toLowerCase();
-                    inHardestWord = hardestSet.has(word);
-                }
+                // Find the word boundaries around position i (Unicode-aware)
+                let start = i;
+                while (start > 0 && isWordChar(targetText[start - 1])) start--;
+                let end = i;
+                while (end < targetText.length && isWordChar(targetText[end])) end++;
+                const word = targetText.slice(start, end).toLowerCase();
+
+                // Check if this position is within a fastest or hardest word
+                // Fastest takes priority if word appears in both lists
+                let inFastestWord = fastestSet.size > 0 && fastestSet.has(word);
+                let inHardestWord = !inFastestWord && hardestSet.size > 0 && hardestSet.has(word);
 
                 let className = '';
                 let style = '';
@@ -118,7 +122,9 @@
                     className = 'current';
                 }
 
-                if (inHardestWord && className !== 'current') {
+                if (inFastestWord && className !== 'current') {
+                    className = className ? `${className} fastest-word` : 'fastest-word';
+                } else if (inHardestWord && className !== 'current') {
                     className = className ? `${className} hardest-word` : 'hardest-word';
                 }
 
