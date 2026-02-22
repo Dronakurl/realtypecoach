@@ -4,9 +4,12 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QDialog,
+    QDateEdit,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -34,7 +37,9 @@ class SyncLogWindow(QDialog):
         """
         super().__init__(parent)
         self.storage = storage
+        self.available_machines = []
         self.init_ui()
+        self.populate_machine_filter()
         self.load_logs()
 
     def init_ui(self):
@@ -77,6 +82,59 @@ class SyncLogWindow(QDialog):
         widget = QWidget()
         layout = QVBoxLayout()
 
+        # Filter controls
+        filter_group = QGroupBox("Filters")
+        filter_layout = QHBoxLayout()
+
+        # Machine name filter
+        machine_layout = QVBoxLayout()
+        machine_label = QLabel("Machine:")
+        machine_label.setStyleSheet("font-size: 11px;")
+        self.machine_combo = QComboBox()
+        self.machine_combo.setMinimumWidth(150)
+        machine_layout.addWidget(machine_label)
+        machine_layout.addWidget(self.machine_combo)
+        filter_layout.addLayout(machine_layout)
+
+        # Date to filter (show entries on or before this date)
+        date_to_layout = QVBoxLayout()
+        date_to_label = QLabel("Show entries on or before:")
+        date_to_label.setStyleSheet("font-size: 11px;")
+        self.date_to_edit = QDateEdit()
+        self.date_to_edit.setCalendarPopup(True)
+        self.date_to_edit.setClearButtonEnabled(True)
+        self.date_to_edit.setMinimumWidth(120)
+        date_to_layout.addWidget(date_to_label)
+        date_to_layout.addWidget(self.date_to_edit)
+        filter_layout.addLayout(date_to_layout)
+
+        # Hide empty checkbox
+        empty_layout = QVBoxLayout()
+        empty_label = QLabel("Options:")
+        empty_label.setStyleSheet("font-size: 11px;")
+        self.hide_empty_checkbox = QCheckBox("Hide empty syncs")
+        empty_layout.addWidget(empty_label)
+        empty_layout.addWidget(self.hide_empty_checkbox)
+        empty_layout.addStretch()
+        filter_layout.addLayout(empty_layout)
+
+        # Filter buttons
+        button_layout = QVBoxLayout()
+        button_layout.addStretch()
+
+        apply_btn = QPushButton("Apply Filters")
+        apply_btn.clicked.connect(self.apply_filters)
+        button_layout.addWidget(apply_btn)
+
+        clear_btn = QPushButton("Clear Filters")
+        clear_btn.clicked.connect(self.clear_filters)
+        button_layout.addWidget(clear_btn)
+        button_layout.addStretch()
+
+        filter_layout.addLayout(button_layout)
+        filter_group.setLayout(filter_layout)
+        layout.addWidget(filter_group)
+
         # Create table
         self.logs_table = QTableWidget()
         self.logs_table.setColumnCount(7)
@@ -106,6 +164,55 @@ class SyncLogWindow(QDialog):
         layout.addWidget(hint_label)
 
         return widget
+
+    def populate_machine_filter(self):
+        """Populate machine name filter from available sync logs."""
+        try:
+            # Get unique machine names from sync logs
+            logs = self.storage.get_sync_logs(limit=10000)
+            machines = sorted(set(log.get("machine_name", "unknown") for log in logs))
+            self.available_machines = machines
+
+            self.machine_combo.clear()
+            self.machine_combo.addItem("All Machines")
+            self.machine_combo.addItems(machines)
+        except Exception as e:
+            log.error(f"Failed to populate machine filter: {e}")
+
+    def apply_filters(self):
+        """Apply filters and reload logs."""
+        try:
+            # Get filter values
+            machine_name = None
+            if self.machine_combo.currentIndex() > 0:
+                machine_name = self.machine_combo.currentText()
+
+            date_to = None
+            if self.date_to_edit.date().isValid():
+                qdate = self.date_to_edit.date()
+                # End of the selected day (23:59:59)
+                dt = datetime(qdate.year(), qdate.month(), qdate.day(), 23, 59, 59, tzinfo=UTC)
+                date_to = int(dt.timestamp() * 1000)
+
+            hide_empty = self.hide_empty_checkbox.isChecked()
+
+            # Load logs with filters
+            logs = self.storage.get_sync_logs(
+                limit=10000,
+                machine_name=machine_name,
+                date_to=date_to,
+                hide_empty=hide_empty,
+            )
+            self.populate_logs_table(logs)
+        except Exception as e:
+            log.error(f"Failed to apply filters: {e}")
+
+    def clear_filters(self):
+        """Clear all filters and reload logs."""
+        self.machine_combo.setCurrentIndex(0)
+        self.date_to_edit.clear()
+        self.hide_empty_checkbox.setChecked(False)
+        self.load_logs()
 
     def create_stats_tab(self):
         """Create statistics tab.

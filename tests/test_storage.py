@@ -549,3 +549,343 @@ class TestEqualDigraphSelection:
         # Due to shuffling, we should see different digraphs at the start
         # (This is probabilistic, but very likely with 10 runs)
         assert found_th_first or found_er_first, "Should see mixed digraphs"
+
+
+class TestSyncLogCleanupAndFiltering:
+    """Tests for sync log cleanup and filtering functionality."""
+
+    def test_cleanup_old_sync_logs_deletes_oldest_entries(self, storage):
+        """Test that cleanup deletes oldest entries when count exceeds max."""
+        import time
+
+        # Insert 150 sync log entries
+        for i in range(150):
+            entry = {
+                "timestamp": int(time.time() * 1000) - i * 1000,  # Descending timestamps
+                "machine_name": "test-machine",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Verify we have 150 entries
+        stats = storage.adapter.get_sync_log_stats()
+        assert stats["total_syncs"] == 150
+
+        # Cleanup to max 100 entries
+        deleted = storage.adapter.cleanup_old_sync_logs(max_entries=100)
+        assert deleted == 50
+
+        # Verify we now have 100 entries
+        stats = storage.adapter.get_sync_log_stats()
+        assert stats["total_syncs"] == 100
+
+        # Verify the remaining entries are the most recent ones
+        logs = storage.adapter.get_sync_logs(limit=100)
+        assert len(logs) == 100
+        # First log should be the most recent (highest timestamp)
+        assert logs[0]["pushed"] == 0  # First entry inserted (most recent timestamp)
+        # Last log should be the 100th most recent
+        assert logs[-1]["pushed"] == 99
+
+    def test_cleanup_old_sync_logs_noop_when_under_limit(self, storage):
+        """Test that cleanup does nothing when count is under max_entries."""
+        import time
+
+        # Insert only 50 entries
+        for i in range(50):
+            entry = {
+                "timestamp": int(time.time() * 1000) - i * 1000,
+                "machine_name": "test-machine",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Cleanup with max 100 - should delete nothing
+        deleted = storage.adapter.cleanup_old_sync_logs(max_entries=100)
+        assert deleted == 0
+
+        # All entries should still be there
+        stats = storage.adapter.get_sync_log_stats()
+        assert stats["total_syncs"] == 50
+
+    def test_cleanup_old_sync_logs_exact_limit(self, storage):
+        """Test cleanup when count exactly equals max_entries."""
+        import time
+
+        # Insert exactly 100 entries
+        for i in range(100):
+            entry = {
+                "timestamp": int(time.time() * 1000) - i * 1000,
+                "machine_name": "test-machine",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Cleanup with max 100 - should delete nothing
+        deleted = storage.adapter.cleanup_old_sync_logs(max_entries=100)
+        assert deleted == 0
+
+        stats = storage.adapter.get_sync_log_stats()
+        assert stats["total_syncs"] == 100
+
+    def test_get_sync_logs_filters_by_machine_name(self, storage):
+        """Test filtering sync logs by machine name."""
+        import time
+
+        # Insert logs from different machines
+        for i in range(10):
+            entry = {
+                "timestamp": int(time.time() * 1000) - i * 1000,
+                "machine_name": "machine-a" if i % 2 == 0 else "machine-b",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Filter by machine-a
+        logs_a = storage.adapter.get_sync_logs(limit=100, machine_name="machine-a")
+        assert len(logs_a) == 5
+        assert all(log["machine_name"] == "machine-a" for log in logs_a)
+
+        # Filter by machine-b
+        logs_b = storage.adapter.get_sync_logs(limit=100, machine_name="machine-b")
+        assert len(logs_b) == 5
+        assert all(log["machine_name"] == "machine-b" for log in logs_b)
+
+    def test_get_sync_logs_filters_by_date_to(self, storage):
+        """Test filtering sync logs by date_to (entries on or before date)."""
+        import time
+        from datetime import datetime, timezone, timedelta
+
+        now = int(time.time() * 1000)
+        one_hour_ago = now - (60 * 60 * 1000)
+        two_hours_ago = now - (2 * 60 * 60 * 1000)
+
+        # Insert logs at different times
+        timestamps = [now, one_hour_ago, two_hours_ago]
+        for i, ts in enumerate(timestamps):
+            entry = {
+                "timestamp": ts,
+                "machine_name": "test-machine",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Filter to entries on or before one hour ago
+        logs = storage.adapter.get_sync_logs(limit=100, date_to=one_hour_ago)
+        assert len(logs) == 2  # one_hour_ago and two_hours_ago
+        assert all(log["timestamp"] <= one_hour_ago for log in logs)
+
+    def test_get_sync_logs_hides_empty_entries(self, storage):
+        """Test hiding empty sync entries (where pushed=pulled=merged=0)."""
+        import time
+
+        # Insert mix of empty and non-empty logs
+        for i in range(10):
+            entry = {
+                "timestamp": int(time.time() * 1000) - i * 1000,
+                "machine_name": "test-machine",
+                "pushed": 0 if i % 2 == 0 else i,  # Even indices are empty
+                "pulled": 0 if i % 2 == 0 else i,
+                "merged": 0 if i % 2 == 0 else i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Without hide_empty filter
+        all_logs = storage.adapter.get_sync_logs(limit=100)
+        assert len(all_logs) == 10
+
+        # With hide_empty filter
+        non_empty_logs = storage.adapter.get_sync_logs(limit=100, hide_empty=True)
+        assert len(non_empty_logs) == 5  # Only odd indices (non-zero values)
+        assert all(
+            log["pushed"] > 0 or log["pulled"] > 0 or log["merged"] > 0
+            for log in non_empty_logs
+        )
+
+    def test_get_sync_logs_combined_filters(self, storage):
+        """Test combining multiple filters."""
+        import time
+
+        now = int(time.time() * 1000)
+
+        # Insert logs from different machines at different times, some empty
+        for i in range(20):
+            entry = {
+                "timestamp": now - i * 1000,
+                "machine_name": "machine-a" if i % 3 == 0 else "machine-b",
+                "pushed": 0 if i % 5 == 0 else i,
+                "pulled": 0 if i % 5 == 0 else i,
+                "merged": 0 if i % 5 == 0 else i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Combine filters: machine-a, hide empty, date limit
+        cutoff_time = now - 10 * 1000  # First 10 entries
+        logs = storage.adapter.get_sync_logs(
+            limit=100,
+            machine_name="machine-a",
+            date_to=cutoff_time,
+            hide_empty=True,
+        )
+
+        # Should only have non-empty machine-a entries within date range
+        assert all(log["machine_name"] == "machine-a" for log in logs)
+        assert all(log["timestamp"] <= cutoff_time for log in logs)
+        assert all(
+            log["pushed"] > 0 or log["pulled"] > 0 or log["merged"] > 0 for log in logs
+        )
+
+    def test_storage_cleanup_called_after_log_sync_result(self, storage, caplog):
+        """Test that cleanup is called after logging sync result."""
+        import logging
+        import time
+        from core.sync_manager import SyncResult
+
+        # Insert enough logs to trigger cleanup with a lower max_entries for testing
+        # Use a small limit to make the test faster
+        test_max_entries = 100
+        for i in range(test_max_entries + 10):
+            entry = {
+                "timestamp": int(time.time() * 1000) - i * 1000,
+                "machine_name": "test-machine",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Verify we have entries
+        stats_before = storage.adapter.get_sync_log_stats()
+        assert stats_before["total_syncs"] == test_max_entries + 10
+
+        # Create a sync result
+        result = SyncResult(
+            success=True,
+            pushed=10,
+            pulled=20,
+            merged=5,
+            duration_ms=1000,
+            error=None,
+        )
+
+        # Mock the cleanup method to use a lower max_entries for testing
+        original_cleanup = storage.cleanup_old_sync_logs
+        cleanup_called = []
+
+        def mock_cleanup(max_entries=100000):
+            # Use our test limit instead
+            result = original_cleanup(max_entries=test_max_entries)
+            cleanup_called.append(result)
+            return result
+
+        storage.cleanup_old_sync_logs = mock_cleanup
+
+        # Log sync result (should trigger cleanup)
+        storage.log_sync_result(result, machine_name="test-machine")
+
+        # Verify cleanup was called
+        assert len(cleanup_called) == 1
+        assert cleanup_called[0] > 0  # Should have deleted 10 entries
+
+        # Verify the cleanup actually happened
+        stats_after = storage.adapter.get_sync_log_stats()
+        assert stats_after["total_syncs"] == test_max_entries  # Should be at limit now
+
+    def test_get_sync_logs_limit_parameter(self, storage):
+        """Test that limit parameter correctly restricts results."""
+        import time
+
+        # Insert 50 entries
+        for i in range(50):
+            entry = {
+                "timestamp": int(time.time() * 1000) - i * 1000,
+                "machine_name": "test-machine",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        # Request only 10
+        logs = storage.adapter.get_sync_logs(limit=10)
+        assert len(logs) == 10
+
+        # Request 25
+        logs = storage.adapter.get_sync_logs(limit=25)
+        assert len(logs) == 25
+
+    def test_get_sync_logs_returns_most_recent_first(self, storage):
+        """Test that logs are ordered by timestamp descending (most recent first)."""
+        import time
+
+        timestamps = []
+        for i in range(10):
+            ts = int(time.time() * 1000) - i * 1000
+            timestamps.append(ts)
+            entry = {
+                "timestamp": ts,
+                "machine_name": "test-machine",
+                "pushed": i,
+                "pulled": i,
+                "merged": i,
+                "duration_ms": 1000,
+                "error": None,
+                "table_breakdown": "{}",
+            }
+            storage.adapter.insert_sync_log(entry)
+
+        logs = storage.adapter.get_sync_logs(limit=100)
+
+        # Verify descending order (most recent timestamp first)
+        assert len(logs) == 10
+        for i in range(len(logs) - 1):
+            assert logs[i]["timestamp"] >= logs[i + 1]["timestamp"]
+
+    def test_get_sync_logs_with_empty_database(self, storage):
+        """Test getting sync logs from empty database."""
+        logs = storage.adapter.get_sync_logs(limit=100)
+        assert logs == []
+
+        # Also test with filters on empty database
+        logs = storage.adapter.get_sync_logs(
+            limit=100, machine_name="nonexistent", hide_empty=True
+        )
+        assert logs == []
+

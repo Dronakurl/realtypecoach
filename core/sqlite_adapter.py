@@ -2744,15 +2744,58 @@ Create a coherent text that includes as many of these words as possible in their
             conn.commit()
             return cursor.lastrowid
 
-    def get_sync_logs(self, limit: int = 100) -> list[dict]:
-        """Get sync log entries (most recent first)."""
+    def get_sync_logs(
+        self,
+        limit: int = 100,
+        machine_name: str | None = None,
+        date_from: int | None = None,
+        date_to: int | None = None,
+        hide_empty: bool = False,
+    ) -> list[dict]:
+        """Get sync log entries (most recent first).
+
+        Args:
+            limit: Maximum number of entries to return
+            machine_name: Filter by machine name
+            date_from: Filter to entries on or after this timestamp (ms)
+            date_to: Filter to entries on or before this timestamp (ms)
+            hide_empty: Hide entries where pushed=pulled=merged=0
+
+        Returns:
+            List of sync log dictionaries
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Build query with filters
+            where_clauses = []
+            params = []
+
+            if machine_name:
+                where_clauses.append("machine_name = ?")
+                params.append(machine_name)
+
+            if date_from is not None:
+                where_clauses.append("timestamp >= ?")
+                params.append(date_from)
+
+            if date_to is not None:
+                where_clauses.append("timestamp <= ?")
+                params.append(date_to)
+
+            if hide_empty:
+                where_clauses.append("NOT (pushed = 0 AND pulled = 0 AND merged = 0)")
+
+            where_sql = " AND " + " AND ".join(where_clauses) if where_clauses else ""
+            params.append(limit)
+
             cursor.execute(
-                """SELECT id, timestamp, machine_name, pushed, pulled, merged,
+                f"""SELECT id, timestamp, machine_name, pushed, pulled, merged,
                           duration_ms, error, table_breakdown
-                   FROM sync_log ORDER BY timestamp DESC LIMIT ?""",
-                (limit,),
+                   FROM sync_log
+                   WHERE 1=1{where_sql}
+                   ORDER BY timestamp DESC LIMIT ?""",
+                params,
             )
             logs = []
             for row in cursor.fetchall():
@@ -2825,4 +2868,3 @@ Create a coherent text that includes as many of these words as possible in their
             )
             conn.commit()
             return cursor.rowcount
-            }

@@ -1559,18 +1559,56 @@ class Storage:
             "error": result.error,
             "table_breakdown": json.dumps(table_breakdown),
         }
-        return self.adapter.insert_sync_log(entry)
+        record_id = self.adapter.insert_sync_log(entry)
 
-    def get_sync_logs(self, limit: int = 100) -> list[dict]:
+        # Cleanup old sync log entries
+        try:
+            deleted = self.cleanup_old_sync_logs(max_entries=100000)
+            if deleted > 0:
+                log.info(f"Cleaned up {deleted} old sync log entries")
+        except Exception as e:
+            log.error(f"Failed to cleanup old sync log entries: {e}")
+
+        return record_id
+
+    def get_sync_logs(
+        self,
+        limit: int = 100,
+        machine_name: str | None = None,
+        date_from: int | None = None,
+        date_to: int | None = None,
+        hide_empty: bool = False,
+    ) -> list[dict]:
         """Get sync log entries (most recent first).
 
         Args:
             limit: Maximum number of entries to return
+            machine_name: Filter by machine name
+            date_from: Filter to entries on or after this timestamp (ms)
+            date_to: Filter to entries on or before this timestamp (ms)
+            hide_empty: Hide entries where pushed=pulled=merged=0
 
         Returns:
             List of sync log dictionaries
         """
-        return self.adapter.get_sync_logs(limit)
+        return self.adapter.get_sync_logs(
+            limit=limit,
+            machine_name=machine_name,
+            date_from=date_from,
+            date_to=date_to,
+            hide_empty=hide_empty,
+        )
+
+    def cleanup_old_sync_logs(self, max_entries: int = 100000) -> int:
+        """Delete oldest sync log entries when count exceeds max_entries.
+
+        Args:
+            max_entries: Maximum number of sync log entries to keep
+
+        Returns:
+            Number of entries deleted
+        """
+        return self.adapter.cleanup_old_sync_logs(max_entries)
 
     def get_sync_log_stats(self) -> dict:
         """Get aggregate sync log statistics.
