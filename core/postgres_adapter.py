@@ -3016,7 +3016,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             if hide_empty:
                 where_clauses.append("NOT (pushed = 0 AND pulled = 0 AND merged = 0)")
 
-            where_sql = " AND " + " AND ".join(where_clauses)
+            where_sql = " AND ".join(where_clauses)
             params.append(limit)
 
             cursor.execute(
