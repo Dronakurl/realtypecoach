@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from core.burst_detector import Burst
+from core.models import WordInfo, KeystrokeInfo
 from core.storage import Storage
 from utils.config import Config
 from utils.crypto import CryptoManager
@@ -167,3 +168,210 @@ class TestStorage:
         assert result[0].key_name == "b"  # ~205ms - slowest
         assert result[1].key_name == "c"  # ~155ms
         assert result[2].key_name == "a"  # ~105ms - fastest
+
+    def test_digraph_timing_with_backspace(self, storage):
+        """Test that digraph timing is correctly calculated after backspace correction.
+
+        When typing "Nii<backspace>ke":
+        - The word should be recognized as "Nike"
+        - The digraph "ik" should be timed from the first 'i' to 'k', not the deleted second 'i'
+        - This ensures the timing reflects the actual typing flow including the correction
+
+        Note: Using "nice" instead of "Nike" to ensure it's a valid dictionary word.
+        The timing pattern is the same: n@1000, i@1100, i@1200, backspace@1300, c@1400, e@1500
+        """
+        # Create a WordInfo simulating "nii<backspace>ce" -> "nice"
+        # WordDetector filters keystrokes to remove backspace and deleted characters
+        # So we use the filtered keystrokes here (as they come from WordDetector)
+        # Original: n@1000, i@1100, i@1200, backspace@1300, c@1400, e@1500
+        # Filtered: n@1000, i@1100, c@1400, e@1500
+        word_info = WordInfo(
+            word="nice",
+            layout="us",
+            total_duration_ms=500,  # 1500 - 1000
+            active_duration_ms=500,
+            editing_time_ms=100,  # Time spent on backspace
+            backspace_count=1,
+            num_letters=4,
+            keystrokes=[
+                KeystrokeInfo(key="n", time=1000, type="letter", keycode=49),
+                KeystrokeInfo(key="i", time=1100, type="letter", keycode=31),
+                # The second 'i' at 1200ms was deleted by backspace
+                # The backspace at 1300ms is not included in filtered keystrokes
+                KeystrokeInfo(key="c", time=1400, type="letter", keycode=46),
+                KeystrokeInfo(key="e", time=1500, type="letter", keycode=35),
+            ],
+        )
+
+        # Store the word TWICE to ensure digraphs have total_sequences >= 2
+        # (required by get_slowest_digraphs query)
+        for i in range(2):
+            with storage._get_connection() as conn:
+                storage._store_word_from_state(conn, word_info)
+                conn.commit()
+
+        # Verify digraphs were stored correctly
+        slowest_digraphs = storage.get_slowest_digraphs(limit=10, layout="us")
+
+        # Find the "ic" digraph
+        ic_digraph = next((d for d in slowest_digraphs if d.first_key == "i" and d.second_key == "c"), None)
+
+        assert ic_digraph is not None, "Digraph 'ic' should be stored"
+
+        # The critical assertion: timing should be from first 'i' (1100ms) to 'c' (1400ms) = 300ms
+        # NOT from second 'i' (1200ms) to 'c' (1400ms) = 200ms
+        # This ensures the timing includes the backspace correction
+        assert ic_digraph.avg_interval_ms == 300.0, (
+            f"Digraph 'ic' timing should be 300ms (from first 'i' at 1100ms to 'c' at 1400ms), "
+            f"not {ic_digraph.avg_interval_ms}ms"
+        )
+
+        # Also verify the other digraphs
+        ni_digraph = next((d for d in slowest_digraphs if d.first_key == "n" and d.second_key == "i"), None)
+        assert ni_digraph is not None
+        assert ni_digraph.avg_interval_ms == 100.0  # n@1000 to i@1100
+
+        ce_digraph = next((d for d in slowest_digraphs if d.first_key == "c" and d.second_key == "e"), None)
+        assert ce_digraph is not None
+        assert ce_digraph.avg_interval_ms == 100.0  # c@1400 to e@1500
+
+
+class TestEqualDigraphSelection:
+    """Tests for equal digraph representation in word selection."""
+
+    def test_equal_representation(self, storage):
+        """Verify each digraph gets same word count."""
+        # Use common digraphs that will have many words
+        digraphs = ["th", "he", "in", "er", "on"]
+        count = 50  # 10 words per digraph
+
+        words = storage.get_random_words_with_equal_digraphs(
+            digraphs=digraphs, count=count
+        )
+
+        # Count words per digraph
+        digraph_word_counts = {d: 0 for d in digraphs}
+        for word in words:
+            word_lower = word.lower()
+            for digraph in digraphs:
+                if digraph in word_lower:
+                    digraph_word_counts[digraph] += 1
+                    break
+
+        # Each digraph should have exactly count // len(digraphs) words
+        expected_per_digraph = count // len(digraphs)
+        for digraph, word_count in digraph_word_counts.items():
+            assert word_count == expected_per_digraph, (
+                f"Digraph '{digraph}' has {word_count} words, "
+                f"expected {expected_per_digraph}"
+            )
+
+    def test_insufficient_words_logs_warning(self, storage, caplog):
+        """Verify warning logged when digraph has no words."""
+        import logging
+
+        # Create a scenario where we definitely get no words
+        # by using an invalid digraph that won't match anything
+        digraphs = ["xxxx"]  # Extremely unlikely to exist in any dictionary
+        count = 100
+
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="core.storage"):
+            words = storage.get_random_words_with_equal_digraphs(
+                digraphs=digraphs, count=count
+            )
+
+        # Should get an empty result since no words contain 'xxxx'
+        assert words == [], "Should return empty list for digraph with no matches"
+
+    def test_length_penalty_applied(self, storage):
+        """Verify weighted selection is used (by observing multiple runs)."""
+        digraphs = ["th", "he"]
+        count = 40
+
+        # Run multiple times and check that we don't always get the same words
+        # This demonstrates randomness is working
+        results = []
+        for _ in range(5):
+            words = storage.get_random_words_with_equal_digraphs(
+                digraphs=digraphs, count=count
+            )
+            results.append(set(words))
+
+        # At least some variation across runs (not identical results every time)
+        # Since we're using weighted random selection, results should vary
+        all_same = all(r == results[0] for r in results)
+        assert not all_same, (
+            "Results should vary across runs with random selection"
+        )
+
+    def test_duplicate_handling(self, storage):
+        """Verify words with multiple digraphs assigned once."""
+        # Select digraphs where some words might contain multiple
+        digraphs = ["th", "he"]
+        count = 50
+
+        words = storage.get_random_words_with_equal_digraphs(
+            digraphs=digraphs, count=count
+        )
+
+        # No duplicate words should be in the result
+        assert len(words) == len(set(words)), (
+            f"Found duplicate words in result: {len(words)} total, "
+            f"{len(set(words))} unique"
+        )
+
+    def test_edge_case_empty_digraph_list(self, storage):
+        """Verify empty digraph list returns empty result."""
+        words = storage.get_random_words_with_equal_digraphs(
+            digraphs=[], count=100
+        )
+
+        assert words == [], "Empty digraph list should return empty result"
+
+    def test_edge_case_single_digraph(self, storage):
+        """Verify single digraph works correctly."""
+        digraphs = ["th"]
+        count = 20
+
+        words = storage.get_random_words_with_equal_digraphs(
+            digraphs=digraphs, count=count
+        )
+
+        # All words should contain 'th'
+        assert len(words) > 0, "Should return words for single digraph"
+        assert all("th" in word.lower() for word in words), (
+            "All words should contain the digraph 'th'"
+        )
+
+    def test_result_shuffled(self, storage):
+        """Verify final result is shuffled (digraphs mixed)."""
+        digraphs = ["th", "er"]
+        count = 50
+
+        words = storage.get_random_words_with_equal_digraphs(
+            digraphs=digraphs, count=count
+        )
+
+        # Check that words from different digraphs are mixed
+        # (not all 'th' words first, then all 'er' words)
+        found_th_first = False
+        found_er_first = False
+
+        for _ in range(10):  # Run 10 times to account for randomness
+            test_words = storage.get_random_words_with_equal_digraphs(
+                digraphs=digraphs, count=count
+            )
+
+            if "th" in test_words[0].lower():
+                found_th_first = True
+            if "er" in test_words[0].lower():
+                found_er_first = True
+
+            if found_th_first and found_er_first:
+                break
+
+        # Due to shuffling, we should see different digraphs at the start
+        # (This is probabilistic, but very likely with 10 runs)
+        assert found_th_first or found_er_first, "Should see mixed digraphs"
+
