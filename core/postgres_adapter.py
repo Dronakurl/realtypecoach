@@ -3028,6 +3028,40 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 "last_sync": row[4],
             }
 
+    def cleanup_old_sync_logs(self, max_entries: int = 100000) -> int:
+        """Delete oldest sync log entries when count exceeds max_entries.
+
+        Args:
+            max_entries: Maximum number of sync log entries to keep
+
+        Returns:
+            Number of entries deleted
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # First, check current count
+            cursor.execute(
+                "SELECT COUNT(*) FROM sync_log WHERE user_id = %s", (self.user_id,)
+            )
+            current_count = cursor.fetchone()[0]
+
+            if current_count <= max_entries:
+                return 0
+
+            # Delete oldest entries beyond max_entries
+            cursor.execute(
+                """DELETE FROM sync_log
+                   WHERE id IN (
+                       SELECT id FROM sync_log
+                       WHERE user_id = %s
+                       ORDER BY timestamp DESC
+                       LIMIT %s OFFSET %s
+                   )""",
+                (self.user_id, current_count - max_entries, max_entries),
+            )
+            conn.commit()
+            return cursor.rowcount
+
     def check_user_exists(self, user_id: str) -> bool:
         """Check if user exists in the remote database.
 
