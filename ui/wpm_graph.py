@@ -8,6 +8,45 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
 
+def calculate_linear_regression_burst(wpm_values: list[float]) -> tuple[float | None, float | None, float | None]:
+    """Calculate linear regression (y = mx + b) for WPM over burst sequence.
+
+    Args:
+        wpm_values: List of WPM values
+
+    Returns:
+        Tuple of (slope_wpm_per_burst, intercept, r_squared) or (None, None, None) if insufficient data
+    """
+    if len(wpm_values) < 2:
+        return None, None, None
+
+    # Use burst numbers as x-axis (1, 2, 3, ...)
+    burst_numbers = list(range(1, len(wpm_values) + 1))
+
+    # Calculate slope and intercept using least squares
+    n = len(burst_numbers)
+    sum_x = sum(burst_numbers)
+    sum_y = sum(wpm_values)
+    sum_xy = sum(x * y for x, y in zip(burst_numbers, wpm_values))
+    sum_x2 = sum(x * x for x in burst_numbers)
+
+    denominator = n * sum_x2 - sum_x * sum_x
+    if denominator == 0:
+        return None, None, None
+
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    intercept = (sum_y - slope * sum_x) / n
+
+    # Calculate R² for trend quality
+    y_mean = sum_y / n
+    ss_tot = sum((y - y_mean) ** 2 for y in wpm_values)
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(burst_numbers, wpm_values))
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+
+    # Slope is WPM per burst
+    return slope, intercept, r_squared
+
+
 def smoothness_to_alpha(smoothness: int) -> float:
     """Convert smoothness slider value (0-100) to exponential smoothing alpha.
 
@@ -63,6 +102,8 @@ class WPMTimeSeriesGraph(QWidget):
         self.current_smoothness = 0  # Default to raw data (no smoothing)
         self._data_callback: Callable[[int], None] | None = None
         self.plot_item = None
+        self.trend_plot_item = None  # Will hold the trend line plot item
+        self.current_slope_per_burst: float | None = None  # Store current slope for display
 
         self.init_ui()
 
@@ -92,6 +133,11 @@ class WPMTimeSeriesGraph(QWidget):
         # Create plot item with line and markers
         self.plot_item = self.plot.plot(
             pen=pg.mkPen(color=(50, 150, 200), width=2), symbol="o", symbolSize=5
+        )
+
+        # Create trend line plot item (initially empty)
+        self.trend_plot_item = self.plot.plot(
+            pen=pg.mkPen(color=(255, 140, 0), width=2, style=Qt.PenStyle.DashLine)
         )
 
         layout.addWidget(self.plot_widget)
@@ -149,10 +195,34 @@ class WPMTimeSeriesGraph(QWidget):
 
         if not smoothed:
             self.plot_item.setData([], [])
+            self.trend_plot_item.setData([], [])
             self.info_label.setText("Showing: No data")
+            self.current_slope_per_burst = None
             return
 
-        # Auto-scale y-axis based on current smoothed data
+        # Calculate trend line from RAW data (not smoothed)
+        slope_per_burst, intercept, r_squared = calculate_linear_regression_burst(self.raw_wpm)
+        self.current_slope_per_burst = slope_per_burst
+
+        if slope_per_burst is not None and len(self.raw_wpm) >= 2:
+            # Generate trend line points (start and end of burst sequence)
+            start_burst = 1
+            end_burst = len(x_positions)
+
+            # Calculate WPM at start and end using the regression equation
+            # WPM = slope * burst_number + intercept
+            start_wpm = slope_per_burst * start_burst + intercept
+            end_wpm = slope_per_burst * end_burst + intercept
+
+            x_trend = [start_burst, end_burst]
+            y_trend = [start_wpm, end_wpm]
+
+            self.trend_plot_item.setData(x_trend, y_trend)
+        else:
+            self.trend_plot_item.setData([], [])
+            self.current_slope_per_burst = None
+
+        # Auto-scale y-axis based on current smoothed data and trend line
         y_min = min(smoothed)
         y_max = max(smoothed)
         # Add some padding (10% on each side, minimum 1 WPM)
@@ -166,7 +236,10 @@ class WPMTimeSeriesGraph(QWidget):
         self.plot.setYRange(y_range[0], y_range[1], padding=0)
 
         # Update info label
-        self.info_label.setText(f"Showing: {len(smoothed)} data points")
+        trend_info = ""
+        if self.current_slope_per_burst is not None:
+            trend_info = f" • Trend: {self.current_slope_per_burst:+.3f} WPM/burst"
+        self.info_label.setText(f"Showing: {len(smoothed)} data points{trend_info}")
 
     def set_data_callback(
         self, callback: Callable[[int], None], load_immediately: bool = False

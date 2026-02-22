@@ -1201,8 +1201,27 @@ class StatsPanel(QWidget):
         if not hasattr(self, "avg_wpm_subtitle_label"):
             return
 
+        # Get current subtitle text to extract all-time best value
+        current_text = self.avg_wpm_subtitle_label.text()
+        all_time_best = None
+
+        # Try to extract all-time best from current text
+        if "all-time best:" in current_text:
+            parts = current_text.split("all-time best:")
+            if len(parts) > 1:
+                # Extract the value (could be like "95.5" or "--")
+                value_part = parts[1].strip().split()[0]
+                if value_part != "--":
+                    try:
+                        all_time_best = float(value_part)
+                    except ValueError:
+                        pass
+
+        # Fall back to stored value
+        if all_time_best is None and self._all_time_best is not None:
+            all_time_best = self._all_time_best
+
         # Reconstruct the subtitle with trend information
-        all_time_best = self._all_time_best
         if all_time_best is not None and all_time_best > 0:
             base_text = f"all-time best: {all_time_best:.1f}"
         else:
