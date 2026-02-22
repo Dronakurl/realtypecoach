@@ -36,6 +36,11 @@ def calculate_linear_regression(data_points: list[TypingTimeDataPoint]) -> tuple
     days = [(dp.period_start - first_ts) / (1000 * 60 * 60 * 24) for dp in data_points]
     wpm_values = [dp.avg_wpm for dp in data_points]
 
+    # Check if all data points are from the same time period (no time variation)
+    if max(days) - min(days) == 0:
+        # No time variation, cannot calculate trend
+        return None, None, None
+
     # Calculate slope and intercept using least squares
     n = len(days)
     sum_x = sum(days)

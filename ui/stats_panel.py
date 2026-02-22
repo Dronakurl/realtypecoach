@@ -869,13 +869,13 @@ class StatsPanel(QWidget):
                 base_text = "all-time best: --"
 
             # Add trend if available
-            if self._trend_wpm_per_day is not None:
+            if hasattr(self, "_trend_wpm_per_day") and self._trend_wpm_per_day is not None:
                 subtitle = f"{base_text} • trend: {self._trend_wpm_per_day:+.2f} WPM/day"
                 self.avg_wpm_subtitle_label.setText(subtitle)
                 log.info(f"update_wpm() set subtitle with trend: {subtitle}")
             else:
                 self.avg_wpm_subtitle_label.setText(base_text)
-                log.info(f"update_wpm() set subtitle without trend: {base_text}")
+                log.info(f"update_wpm() set subtitle without trend (hasattr={hasattr(self, '_trend_wpm_per_day')}): {base_text}")
 
     def update_slowest_keys(self, slowest_keys: list[KeyPerformance]) -> None:
         """Update slowest keys display.
