@@ -69,7 +69,7 @@ monitor-cpu:
 # Testing
 # Syntax check Python files
 check:
-    @python3 -m py_compile main.py
+    @.venv/bin/python3 -m py_compile main.py
     @echo "Syntax check passed"
 
 # Cleaning
@@ -107,19 +107,19 @@ seed-database days:
 # Name Management
 # Add a single name to the common names list
 add-name NAME:
-    @python3 core/add_names.py {{NAME}}
+    @.venv/bin/python3 core/add_names.py {{NAME}}
 
 # Add names from a file to the common names list
 add-names-from-file FILE:
-    @python3 core/add_names.py --file {{FILE}}
+    @.venv/bin/python3 core/add_names.py --file {{FILE}}
 
 # Sort and deduplicate names in names.txt
 sort-names:
-    @python3 core/add_names.py --sort-only
+    @.venv/bin/python3 core/add_names.py --sort-only
 
 # Check total count of names
 check-names:
-    @python3 -c "from core.common_names import COMMON_NAMES; print(f'Total names: {sum(len(s) for s in COMMON_NAMES.values())} (including genitive forms)')"
+    @.venv/bin/python3 -c "from core.common_names import COMMON_NAMES; print(f'Total names: {sum(len(s) for s in COMMON_NAMES.values())} (including genitive forms)')"
 
 # PostgreSQL Sync
 # Sync local SQLite with remote PostgreSQL
@@ -168,12 +168,12 @@ ruff-format:
 # Run all Python tests
 test-all: ruff-format
     @echo "=== Checking Python syntax ==="
-    @python3 -m py_compile main.py
-    @python3 -m py_compile ui/settings_dialog.py
-    @python3 -m py_compile ui/stats_panel.py
-    @python3 -m py_compile ui/tray_icon.py
-    @python3 -m py_compile ui/typing_time_graph.py
-    @python3 -m py_compile ui/wpm_graph.py
+    @.venv/bin/python3 -m py_compile main.py
+    @.venv/bin/python3 -m py_compile ui/settings_dialog.py
+    @.venv/bin/python3 -m py_compile ui/stats_panel.py
+    @.venv/bin/python3 -m py_compile ui/tray_icon.py
+    @.venv/bin/python3 -m py_compile ui/typing_time_graph.py
+    @.venv/bin/python3 -m py_compile ui/wpm_graph.py
     @echo "=== Running pytest ==="
     @.venv/bin/python3 -m pytest tests/ -v
 

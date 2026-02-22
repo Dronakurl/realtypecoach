@@ -15,6 +15,7 @@ Usage:
     python3 vivaldi_launch.py --file text.txt
 """
 
+import json
 import sys
 import webbrowser
 from pathlib import Path
@@ -110,7 +111,7 @@ window.location.href = 'https://monkeytype.com';
         time.sleep(5)
         try:
             Path(temp_path).unlink()
-        except:
+        except OSError:
             pass
 
 

@@ -93,7 +93,7 @@ class TestLLMPrompts:
         prompt = storage.get_prompt(prompt_id)
         assert prompt is not None
         assert prompt["name"] == "My Custom Prompt"
-        assert prompt["is_default"] == False
+        assert not prompt["is_default"]
 
     def test_update_prompt(self, storage):
         """Test updating prompt."""

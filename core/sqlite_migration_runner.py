@@ -53,10 +53,10 @@ class SQLiteMigrationRunner(MigrationRunner):
         Yields:
             SQLAlchemy Connection with sqlcipher3 backend
         """
+        import sqlcipher3 as sqlite3
         from sqlalchemy import create_engine
         from sqlalchemy.engine import Engine
         from sqlalchemy.pool import StaticPool
-        import sqlcipher3 as sqlite3
 
         # Check if database file exists (may be empty for fresh install)
         db_size = self.db_path.stat().st_size if self.db_path.exists() else 0

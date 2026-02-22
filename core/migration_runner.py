@@ -80,11 +80,10 @@ class MigrationRunner(ABC):
 
         with self._get_connection() as conn:
             context = MigrationContext.configure(conn)
-            with context.begin_transaction():
-                with self.config.attributes["connection"] as conn:
-                    command.upgrade(self.config, revision)
-                    new_version = context.get_current_revision()
-                    log.info(f"Migration complete. New version: {new_version}")
+            with context.begin_transaction(), self.config.attributes["connection"] as conn:
+                command.upgrade(self.config, revision)
+                new_version = context.get_current_revision()
+                log.info(f"Migration complete. New version: {new_version}")
 
     def downgrade(self, revision: str) -> None:
         """Downgrade database to target revision.
@@ -101,11 +100,10 @@ class MigrationRunner(ABC):
 
         with self._get_connection() as conn:
             context = MigrationContext.configure(conn)
-            with context.begin_transaction():
-                with self.config.attributes["connection"] as conn:
-                    command.downgrade(self.config, revision)
-                    new_version = context.get_current_revision()
-                    log.info(f"Downgrade complete. New version: {new_version}")
+            with context.begin_transaction(), self.config.attributes["connection"] as conn:
+                command.downgrade(self.config, revision)
+                new_version = context.get_current_revision()
+                log.info(f"Downgrade complete. New version: {new_version}")
 
     def check_needs_upgrade(self) -> bool:
         """Check if database needs to be upgraded.
