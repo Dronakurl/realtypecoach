@@ -1190,14 +1190,18 @@ class StatsPanel(QWidget):
         if hasattr(self, "_request_words_for_clipboard_callback"):
             self._request_words_for_clipboard_callback(count, hardest=True)
 
-    def copy_words_to_clipboard(self, words: list[WordStatisticsLite]) -> None:
+    def copy_words_to_clipboard(self, words) -> None:
         """Copy words to clipboard.
 
         Args:
-            words: List of WordStatisticsLite models
+            words: List of WordStatisticsLite models or list of strings (enhanced words)
         """
         if words:
-            word_list = [w.word for w in words]
+            # Handle both WordStatisticsLite objects and plain strings
+            if words and hasattr(words[0], 'word'):
+                word_list = [w.word for w in words]
+            else:
+                word_list = words
             clipboard_text = " ".join(word_list)
             # Use stored clipboard reference for Wayland compatibility
             from PySide6.QtGui import QClipboard
@@ -1563,9 +1567,11 @@ class StatsPanel(QWidget):
         """Copy words based on selected mode."""
         count = self.unified_word_count_combo.currentData()
         mode = self.word_mode_combo.currentData()
+        special_chars = self.words_special_chars_checkbox.isChecked()
+        numbers = self.words_numbers_checkbox.isChecked()
 
         if hasattr(self, "_request_words_by_mode_callback"):
-            self._request_words_by_mode_callback(mode, count)
+            self._request_words_by_mode_callback(mode, count, special_chars, numbers)
 
     def practice_text_by_mode(self) -> None:
         """Open clipboard text for typing practice with word highlighting."""
@@ -1668,7 +1674,7 @@ class StatsPanel(QWidget):
         """Set callback for fetching words by mode for clipboard.
 
         Args:
-            callback: Function to call with (mode, count) parameters
+            callback: Function to call with (mode, count, special_chars, numbers) parameters
         """
         self._request_words_by_mode_callback = callback
 

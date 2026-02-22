@@ -924,27 +924,35 @@ class Application(QObject):
 
         self._executor.submit(check_in_thread)
 
-    def fetch_words_by_mode(self, mode: str, count: int) -> None:
+    def fetch_words_by_mode(self, mode: str, count: int, special_chars: bool = False, numbers: bool = False) -> None:
         """Fetch words by mode in background thread and emit signal.
 
         Args:
             mode: WordSelectionMode value ("hardest", "fastest", or "mixed")
             count: Number of words to fetch
+            special_chars: Whether to add special characters to text
+            numbers: Whether to add random numbers to text
         """
 
         def fetch_in_thread():
             try:
-                words = []
+                word_list = []
                 if mode == "hardest":
                     words = self.analyzer.get_slowest_words(
                         limit=count, layout=self.get_current_layout()
                     )
-                    self.signal_clipboard_words_ready.emit(words)
+                    word_list = [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
+                    # Apply enhancements
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    self.signal_clipboard_words_ready.emit(word_list)
                 elif mode == "fastest":
                     words = self.analyzer.get_fastest_words(
                         limit=count, layout=self.get_current_layout()
                     )
-                    self.signal_clipboard_fastest_words_ready.emit(words)
+                    word_list = [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
+                    # Apply enhancements
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    self.signal_clipboard_fastest_words_ready.emit(word_list)
                 elif mode == "mixed":
                     import random
 
@@ -957,8 +965,10 @@ class Application(QObject):
                     )
                     combined = fastest + hardest
                     random.shuffle(combined)
-                    words = combined
-                    self.signal_clipboard_mixed_words_ready.emit(words)
+                    word_list = [self.storage.dictionary.get_capitalized_form(w.word, None) for w in combined]
+                    # Apply enhancements
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    self.signal_clipboard_mixed_words_ready.emit(word_list)
                 else:
                     log.error(f"Unknown mode: {mode}")
                     self.signal_clipboard_words_ready.emit([])
@@ -1061,20 +1071,20 @@ class Application(QObject):
 
                     # Apply text enhancements
                     word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
-                    text = " ".join(word_list)
+                    practice_text = " ".join(word_list)
 
                     # Copy to clipboard
                     clipboard = QApplication.clipboard()
-                    clipboard.setText(text, QClipboard.Mode.Selection)
-                    clipboard.setText(text, QClipboard.Mode.Clipboard)
+                    clipboard.setText(practice_text, QClipboard.Mode.Selection)
+                    clipboard.setText(practice_text, QClipboard.Mode.Clipboard)
                 else:
                     # Apply enhancements to existing text
                     word_list = text.split()
                     word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
-                    text = " ".join(word_list)
+                    practice_text = " ".join(word_list)
 
                 # Launch practice with highlighting
-                self.signal_practice_with_highlighting.emit(text, highlight_words)
+                self.signal_practice_with_highlighting.emit(practice_text, highlight_words)
 
             except Exception as e:
                 log.error(f"Error fetching word highlight list: {e}")
