@@ -778,9 +778,20 @@ class Storage:
                 for word in word_pool
             ]
 
-            # Select words from this digraph's pool
+            # Select words from this digraph's pool without duplicates
             pool_count = min(words_per_digraph, len(word_pool))
-            selected_from_digraph = random.choices(word_pool, weights=weights, k=pool_count)
+
+            # Use weighted random sample without replacement
+            # Algorithm: assign each word a random value scaled by its weight, pick top k
+            import random as _random
+            random_values = [_random.random() * w for w in weights]
+
+            # Get indices of top pool_count values
+            indexed_values = list(enumerate(random_values))
+            indexed_values.sort(key=lambda x: x[1], reverse=True)
+            selected_indices = [idx for idx, _ in indexed_values[:pool_count]]
+
+            selected_from_digraph = [word_pool[idx] for idx in selected_indices]
             selected_words.extend(selected_from_digraph)
 
             if pool_count < words_per_digraph:
