@@ -483,6 +483,29 @@ class StatsPanel(QWidget):
         self.unified_word_count_combo.addItem("1000", 1000)
         self.unified_word_count_combo.setCurrentIndex(0)  # Default to 10
         self.unified_word_count_combo.setMaximumWidth(80)
+        self.unified_word_count_combo.currentTextChanged.connect(
+            lambda: self._update_practice_config_int("practice_words_word_count", self.unified_word_count_combo.currentData())
+        )
+        unified_controls_layout.addWidget(self.unified_word_count_combo)
+
+        # Count dropdown
+        count_label = QLabel("Count:")
+        count_label.setStyleSheet("font-size: 12px; color: #666;")
+        unified_controls_layout.addWidget(count_label)
+
+        self.unified_word_count_combo = QComboBox()
+        self.unified_word_count_combo.addItem("10", 10)
+        self.unified_word_count_combo.addItem("25", 25)
+        self.unified_word_count_combo.addItem("50", 50)
+        self.unified_word_count_combo.addItem("75", 75)
+        self.unified_word_count_combo.addItem("100", 100)
+        self.unified_word_count_combo.addItem("500", 500)
+        self.unified_word_count_combo.addItem("1000", 1000)
+        self.unified_word_count_combo.setCurrentIndex(0)  # Default to 10
+        self.unified_word_count_combo.setMaximumWidth(80)
+        self.unified_word_count_combo.currentTextChanged.connect(
+            lambda: self._update_practice_config_int("practice_words_word_count", self.unified_word_count_combo.currentData())
+        )
         unified_controls_layout.addWidget(self.unified_word_count_combo)
 
         # Action buttons
@@ -595,6 +618,9 @@ class StatsPanel(QWidget):
         self.digraph_mode_combo.addItem("Mixed", "mixed")
         self.digraph_mode_combo.setCurrentIndex(0)  # Default to Hardest
         self.digraph_mode_combo.setMaximumWidth(100)
+        self.digraph_mode_combo.currentTextChanged.connect(
+            lambda: self._update_practice_config_str("practice_digraphs_mode", self.digraph_mode_combo.currentData())
+        )
         digraph_controls_layout.addWidget(self.digraph_mode_combo)
 
         # Digraph count dropdown
@@ -609,6 +635,9 @@ class StatsPanel(QWidget):
         self.digraph_count_combo.addItem("50", 50)
         self.digraph_count_combo.setCurrentIndex(0)  # Default to 5
         self.digraph_count_combo.setMaximumWidth(80)
+        self.digraph_count_combo.currentTextChanged.connect(
+            lambda: self._update_practice_config_int("practice_digraphs_digraph_count", self.digraph_count_combo.currentData())
+        )
         digraph_controls_layout.addWidget(self.digraph_count_combo)
 
         # Word count dropdown
@@ -627,6 +656,9 @@ class StatsPanel(QWidget):
         self.digraph_word_count_combo.addItem("1000", 1000)
         self.digraph_word_count_combo.setCurrentIndex(0)  # Default to 10
         self.digraph_word_count_combo.setMaximumWidth(80)
+        self.digraph_word_count_combo.currentTextChanged.connect(
+            lambda: self._update_practice_config_int("practice_digraphs_word_count", self.digraph_word_count_combo.currentData())
+        )
         digraph_controls_layout.addWidget(self.digraph_word_count_combo)
 
         # Action buttons
@@ -729,6 +761,43 @@ class StatsPanel(QWidget):
             self.digraphs_numbers_checkbox.setChecked(
                 app.config.get_bool("practice_digraphs_numbers_enabled", False)
             )
+
+            # Load saved combo box values
+            # Words mode
+            saved_word_mode = app.config.get("practice_words_mode", "hardest")
+            for i in range(self.word_mode_combo.count()):
+                if self.word_mode_combo.itemData(i) == saved_word_mode:
+                    self.word_mode_combo.setCurrentIndex(i)
+                    self._current_mode = saved_word_mode
+                    break
+
+            # Words count
+            saved_word_count = app.config.get_int("practice_words_word_count", 10)
+            for i in range(self.unified_word_count_combo.count()):
+                if self.unified_word_count_combo.itemData(i) == saved_word_count:
+                    self.unified_word_count_combo.setCurrentIndex(i)
+                    break
+
+            # Digraphs mode
+            saved_digraph_mode = app.config.get("practice_digraphs_mode", "hardest")
+            for i in range(self.digraph_mode_combo.count()):
+                if self.digraph_mode_combo.itemData(i) == saved_digraph_mode:
+                    self.digraph_mode_combo.setCurrentIndex(i)
+                    break
+
+            # Digraph count
+            saved_digraph_count = app.config.get_int("practice_digraphs_digraph_count", 5)
+            for i in range(self.digraph_count_combo.count()):
+                if self.digraph_count_combo.itemData(i) == saved_digraph_count:
+                    self.digraph_count_combo.setCurrentIndex(i)
+                    break
+
+            # Digraph word count
+            saved_digraph_word_count = app.config.get_int("practice_digraphs_word_count", 10)
+            for i in range(self.digraph_word_count_combo.count()):
+                if self.digraph_word_count_combo.itemData(i) == saved_digraph_word_count:
+                    self.digraph_word_count_combo.setCurrentIndex(i)
+                    break
 
         # Connect Words tab checkbox signals
         self.words_special_chars_checkbox.stateChanged.connect(
@@ -1562,6 +1631,8 @@ class StatsPanel(QWidget):
         """
         mode = self.word_mode_combo.currentData()
         self._current_mode = mode
+        # Persist the mode setting
+        self._update_practice_config_str("practice_words_mode", mode)
 
     def copy_words_by_mode(self) -> None:
         """Copy words based on selected mode."""
@@ -1839,3 +1910,25 @@ class StatsPanel(QWidget):
         if app and hasattr(app, "config"):
             is_checked = state == Qt.CheckState.Checked.value
             app.config.set(key, is_checked)
+
+    def _update_practice_config_int(self, key: str, value: int) -> None:
+        """Update practice config with integer value.
+
+        Args:
+            key: Config key to update
+            value: Integer value to set
+        """
+        app = QApplication.instance()
+        if app and hasattr(app, "config"):
+            app.config.set(key, value)
+
+    def _update_practice_config_str(self, key: str, value: str) -> None:
+        """Update practice config with string value.
+
+        Args:
+            key: Config key to update
+            value: String value to set
+        """
+        app = QApplication.instance()
+        if app and hasattr(app, "config"):
+            app.config.set(key, value)

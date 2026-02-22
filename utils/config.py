@@ -134,6 +134,32 @@ class AppSettings(BaseModel):
         default=False,
         description="Enable random numbers in digraphs practice text",
     )
+    practice_words_word_count: int = Field(
+        default=10,
+        ge=10,
+        le=1000,
+        description="Number of words to practice in words mode",
+    )
+    practice_words_mode: str = Field(
+        default="hardest",
+        description="Practice mode for words (hardest, fastest, mixed)",
+    )
+    practice_digraphs_digraph_count: int = Field(
+        default=5,
+        ge=5,
+        le=50,
+        description="Number of digraphs to practice",
+    )
+    practice_digraphs_word_count: int = Field(
+        default=10,
+        ge=10,
+        le=1000,
+        description="Number of words to practice in digraphs mode",
+    )
+    practice_digraphs_mode: str = Field(
+        default="hardest",
+        description="Practice mode for digraphs (hardest, fastest, mixed)",
+    )
 
     # UI settings
     stats_update_interval_sec: int = Field(

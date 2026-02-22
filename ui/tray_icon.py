@@ -16,7 +16,9 @@ class TrayIcon(QSystemTrayIcon):
     settings_requested = Signal()  # Emitted when settings dialog is requested
     stats_requested = Signal()  # Emitted when stats panel is requested
     about_requested = Signal()  # Emitted when about dialog is requested
-    practice_requested = Signal()  # Emitted when typing practice is requested
+    practice_requested = Signal()  # Emitted when AI typing practice is requested
+    digraphs_practice_requested = Signal()  # Emitted when digraph practice is requested
+    words_practice_requested = Signal()  # Emitted when word practice is requested
     dismiss_notification_requested = Signal()  # Emitted to dismiss current notification
 
     def __init__(
@@ -42,6 +44,7 @@ class TrayIcon(QSystemTrayIcon):
         self.icon_paused_path = icon_paused_path
         self.icon_stopping_path = icon_stopping_path
         self.monitoring_active = True
+        self.ollama_available = False
 
         self.setIcon(QIcon(str(icon_path)))
         self.setToolTip("RealTypeCoach - Monitoring Active")
@@ -49,6 +52,15 @@ class TrayIcon(QSystemTrayIcon):
         # Connect internal signals
         self.dismiss_notification_requested.connect(self._do_dismiss_notification)
 
+        self.create_menu()
+
+    def set_ollama_available(self, available: bool) -> None:
+        """Update Ollama availability and rebuild menu.
+
+        Args:
+            available: True if Ollama is available
+        """
+        self.ollama_available = available
         self.create_menu()
 
     def create_menu(self) -> None:
@@ -59,9 +71,21 @@ class TrayIcon(QSystemTrayIcon):
         show_stats_action.triggered.connect(self.show_stats)
         menu.addAction(show_stats_action)
 
-        practice_action = QAction("⌨️ Practice Hardest Words", self)
-        practice_action.triggered.connect(self.practice_hardest_words)
-        menu.addAction(practice_action)
+        # Always show Practice Digraphs
+        practice_digraphs_action = QAction("⌨️ Practice Digraphs", self)
+        practice_digraphs_action.triggered.connect(self.practice_digraphs)
+        menu.addAction(practice_digraphs_action)
+
+        # Always show Practice Words
+        practice_words_action = QAction("⌨️ Practice Words", self)
+        practice_words_action.triggered.connect(self.practice_words)
+        menu.addAction(practice_words_action)
+
+        # Only show AI Practice when Ollama is available
+        if self.ollama_available:
+            practice_ai_action = QAction("✨ AI Practice", self)
+            practice_ai_action.triggered.connect(self.practice_ai)
+            menu.addAction(practice_ai_action)
 
         settings_action = QAction("⚙️ Settings", self)
         settings_action.triggered.connect(self.show_settings_dialog)
@@ -92,8 +116,16 @@ class TrayIcon(QSystemTrayIcon):
         self.stats_panel.raise_()
         self.stats_panel.activateWindow()
 
-    def practice_hardest_words(self) -> None:
-        """Practice hardest words with generated text."""
+    def practice_digraphs(self) -> None:
+        """Practice digraphs with settings from statistics panel."""
+        self.digraphs_practice_requested.emit()
+
+    def practice_words(self) -> None:
+        """Practice words with settings from statistics panel."""
+        self.words_practice_requested.emit()
+
+    def practice_ai(self) -> None:
+        """Practice with AI-generated text using Ollama."""
         self.practice_requested.emit()
 
     def restore_tooltip(self) -> None:

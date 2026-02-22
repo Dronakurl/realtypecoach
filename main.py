@@ -391,6 +391,8 @@ class Application(QObject):
         self.tray_icon.stats_requested.connect(self.update_statistics)
         self.tray_icon.about_requested.connect(self.show_about_dialog)
         self.tray_icon.practice_requested.connect(self.practice_hardest_words)
+        self.tray_icon.digraphs_practice_requested.connect(self.practice_digraphs_from_tray)
+        self.tray_icon.words_practice_requested.connect(self.practice_words_from_tray)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
@@ -455,6 +457,10 @@ class Application(QObject):
 
         self.signal_ollama_available.connect(
             self.stats_panel.set_ollama_available,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.signal_ollama_available.connect(
+            self.tray_icon.set_ollama_available,
             Qt.ConnectionType.QueuedConnection,
         )
 
@@ -1632,6 +1638,152 @@ class Application(QObject):
 
         # Run in background thread
         self._executor.submit(generate_and_practice)
+
+    def practice_digraphs_from_tray(self) -> None:
+        """Practice digraphs using settings from statistics panel.
+
+        Reads config settings and launches digraph practice with auto-fetched words.
+        """
+        # Read config settings with defaults
+        mode = self.config.get("practice_digraphs_mode", "hardest")
+        digraph_count = self.config.get_int("practice_digraphs_digraph_count", 5)
+        word_count = self.config.get_int("practice_digraphs_word_count", 10)
+        special_chars = self.config.get_bool("practice_digraphs_special_chars_enabled", False)
+        numbers = self.config.get_bool("practice_digraphs_numbers_enabled", False)
+
+        log.info(
+            f"Tray icon: Starting digraph practice (mode={mode}, digraphs={digraph_count}, words={word_count})"
+        )
+
+        # Call existing fetch_digraph_practice with text=None for auto-fetch
+        self.fetch_digraph_practice(mode, digraph_count, word_count, None, special_chars, numbers)
+
+    def practice_words_from_tray(self) -> None:
+        """Practice words using settings from statistics panel.
+
+        When Ollama is available, uses statistics-based word selection.
+        When Ollama is unavailable, uses 50 random common words.
+        """
+        import random
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        def practice_with_words():
+            try:
+                # Check Ollama availability
+                ollama_available = self.ollama_client.check_server_available()
+
+                if not ollama_available:
+                    # Fallback: use 50 random common words from dictionary
+                    log.info("Tray icon: Ollama unavailable, using 50 random common words")
+
+                    # Get all words from loaded dictionaries
+                    all_words = []
+                    for word_set in self.storage.dictionary.words.values():
+                        all_words.extend(word_set)
+
+                    if not all_words:
+                        log.warning("No words available in dictionary")
+                        self.tray_icon.show_notification(
+                            "Typing Practice",
+                            "No words available in dictionary",
+                            "warning",
+                        )
+                        return
+
+                    # Select 50 random words
+                    word_count = min(50, len(all_words))
+                    random_words = random.sample(all_words, word_count)
+
+                    # Get config settings for enhancements
+                    special_chars = self.config.get_bool("practice_words_special_chars_enabled", False)
+                    numbers = self.config.get_bool("practice_words_numbers_enabled", False)
+
+                    # Apply capitalization
+                    word_list = [
+                        self.storage.dictionary.get_capitalized_form(w, None) for w in random_words
+                    ]
+
+                    # Apply text enhancements
+                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
+                    practice_text = " ".join(word_list)
+
+                    # Build highlight list (all words as "hardest" to enable highlighting)
+                    highlight_words = {"hardest": word_list}
+
+                    # Write text to temp file for practice script
+                    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+                        f.write(practice_text)
+                        temp_file = f.name
+
+                    # Get the script path
+                    script_path = Path(__file__).parent / "scripts" / "practice.py"
+
+                    if not script_path.exists():
+                        log.error(f"practice.py not found at {script_path}")
+                        self.tray_icon.show_notification(
+                            "Typing Practice Error", "practice.py script not found", "error"
+                        )
+                        return
+
+                    # Build hardest words string for highlighting
+                    hardest_words_str = ",".join(word_list)
+
+                    log.info(f"Opening typing practice with {len(word_list)} common words")
+
+                    # Run the practice script with hardest words flag
+                    result = subprocess.run(
+                        ["python3", str(script_path), "--hardest", temp_file, hardest_words_str],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+
+                    # Clean up temp file
+                    try:
+                        Path(temp_file).unlink()
+                    except OSError:
+                        pass
+
+                    if result.returncode == 0:
+                        log.info("Successfully opened typing practice with common words")
+                    else:
+                        log.error(f"Failed to open practice: {result.stderr}")
+                        self.tray_icon.show_notification(
+                            "Typing Practice Error",
+                            "Failed to open practice. See logs.",
+                            "error",
+                            timeout_ms=6000,
+                        )
+                else:
+                    # Ollama available - use statistics-based word selection
+                    log.info("Tray icon: Ollama available, using statistics-based words")
+
+                    # Read config settings with defaults
+                    mode = self.config.get("practice_words_mode", "hardest")
+                    count = self.config.get_int("practice_words_count", 50)
+                    special_chars = self.config.get_bool("practice_words_special_chars_enabled", False)
+                    numbers = self.config.get_bool("practice_words_numbers_enabled", False)
+
+                    log.info(f"Starting word practice (mode={mode}, count={count})")
+
+                    # Call existing fetch_word_highlight_list with text=None for auto-fetch
+                    self.fetch_word_highlight_list(mode, count, None, special_chars, numbers)
+
+            except subprocess.TimeoutExpired:
+                log.error("Practice operation timed out")
+                self.tray_icon.show_notification(
+                    "Typing Practice Error", "Operation timed out", "error", timeout_ms=6000
+                )
+            except Exception as e:
+                log.error(f"Error in practice_words_from_tray: {e}")
+                self.tray_icon.show_notification(
+                    "Typing Practice Error", f"Error: {str(e)}", "error"
+                )
+
+        # Run in background thread
+        self._executor.submit(practice_with_words)
 
     def process_event_queue(self) -> None:
         """Process events from queue."""

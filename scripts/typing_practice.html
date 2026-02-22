@@ -37,6 +37,7 @@
         .current { background: #FFC107; color: #000; border-radius: 2px; }
         .hardest-word { background: #ff6b3533; border-radius: 3px; }
         .fastest-word { background: #4CAF5033; border-radius: 3px; }
+        .digraph { background: #2196F333; border-radius: 2px; }
         #hiddenInput {
             position: absolute; opacity: 0; top: -1000px;
         }
@@ -66,8 +67,10 @@
         const textParam = params.get('text');
         const hardestParam = params.get('hardest');
         const fastestParam = params.get('fastest');
+        const digraphsParam = params.get('digraphs');
         const hardestWords = hardestParam ? hardestParam.split(',') : [];
         const fastestWords = fastestParam ? fastestParam.split(',') : [];
+        const digraphs = digraphsParam ? digraphsParam.split(',') : [];
         const defaultText = "The quick brown fox jumps over the lazy dog. " +
             "Pack my box with five dozen liquor jugs. " +
             "How vexingly quick daft zebras jump!";
@@ -90,6 +93,7 @@
             // Build sets for O(1) lookup of words (case-insensitive)
             const hardestSet = new Set(hardestWords.map(w => w.toLowerCase()));
             const fastestSet = new Set(fastestWords.map(w => w.toLowerCase()));
+            const digraphSet = new Set(digraphs.map(d => d.toLowerCase()));
 
             // Helper to check if a character is part of a word (Unicode-aware)
             // Matches any character that's NOT whitespace, punctuation, or symbols
@@ -107,6 +111,13 @@
                 // Fastest takes priority if word appears in both lists
                 let inFastestWord = fastestSet.size > 0 && fastestSet.has(word);
                 let inHardestWord = !inFastestWord && hardestSet.size > 0 && hardestSet.has(word);
+
+                // Check if this position is part of a highlighted digraph
+                let inDigraph = false;
+                if (digraphSet.size > 0 && i < targetText.length - 1) {
+                    const twoChar = targetText.slice(i, i + 2).toLowerCase();
+                    inDigraph = digraphSet.has(twoChar);
+                }
 
                 let className = '';
                 let style = '';
@@ -126,6 +137,11 @@
                     className = className ? `${className} fastest-word` : 'fastest-word';
                 } else if (inHardestWord && className !== 'current') {
                     className = className ? `${className} hardest-word` : 'hardest-word';
+                }
+
+                // Add digraph highlighting (can combine with word highlighting)
+                if (inDigraph && className !== 'current') {
+                    className = className ? `${className} digraph` : 'digraph';
                 }
 
                 if (className) {
