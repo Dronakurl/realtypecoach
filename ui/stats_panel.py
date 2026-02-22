@@ -6,6 +6,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QGroupBox,
@@ -506,6 +507,22 @@ class StatsPanel(QWidget):
         self._original_button_text = "✨ Generate Text"  # Store original text for restoration
         unified_controls_layout.addWidget(self.unified_generate_btn)
 
+        # Special Characters checkbox
+        self.words_special_chars_checkbox = QCheckBox("Special Chars")
+        self.words_special_chars_checkbox.setToolTip(
+            "Add special characters (quotes, hyphens, punctuation) to practice text (30% chance per word)"
+        )
+        self.words_special_chars_checkbox.setChecked(False)
+        unified_controls_layout.addWidget(self.words_special_chars_checkbox)
+
+        # Numbers checkbox
+        self.words_numbers_checkbox = QCheckBox("Numbers")
+        self.words_numbers_checkbox.setToolTip(
+            "Add random numbers (1-1000) to practice text (15% chance between words)"
+        )
+        self.words_numbers_checkbox.setChecked(False)
+        unified_controls_layout.addWidget(self.words_numbers_checkbox)
+
         unified_controls_layout.addStretch()
         words_layout.addLayout(unified_controls_layout)
 
@@ -626,6 +643,22 @@ class StatsPanel(QWidget):
         self.digraph_practice_btn.clicked.connect(self.practice_digraphs_by_mode)
         digraph_controls_layout.addWidget(self.digraph_practice_btn)
 
+        # Special Characters checkbox
+        self.digraphs_special_chars_checkbox = QCheckBox("Special Chars")
+        self.digraphs_special_chars_checkbox.setToolTip(
+            "Add special characters (quotes, hyphens, punctuation) to practice text (30% chance per word)"
+        )
+        self.digraphs_special_chars_checkbox.setChecked(False)
+        digraph_controls_layout.addWidget(self.digraphs_special_chars_checkbox)
+
+        # Numbers checkbox
+        self.digraphs_numbers_checkbox = QCheckBox("Numbers")
+        self.digraphs_numbers_checkbox.setToolTip(
+            "Add random numbers (1-1000) to practice text (15% chance between words)"
+        )
+        self.digraphs_numbers_checkbox.setChecked(False)
+        digraph_controls_layout.addWidget(self.digraphs_numbers_checkbox)
+
         digraph_controls_layout.addStretch()
         digraphs_layout.addLayout(digraph_controls_layout)
 
@@ -678,6 +711,40 @@ class StatsPanel(QWidget):
         self.tab_widget = tab_widget
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
         self.setLayout(layout)
+
+        # Load checkbox states from config and connect signals
+        app = QApplication.instance()
+        if app and hasattr(app, "config"):
+            # Words tab checkboxes
+            self.words_special_chars_checkbox.setChecked(
+                app.config.get_bool("practice_words_special_chars_enabled", False)
+            )
+            self.words_numbers_checkbox.setChecked(
+                app.config.get_bool("practice_words_numbers_enabled", False)
+            )
+            # Digraphs tab checkboxes
+            self.digraphs_special_chars_checkbox.setChecked(
+                app.config.get_bool("practice_digraphs_special_chars_enabled", False)
+            )
+            self.digraphs_numbers_checkbox.setChecked(
+                app.config.get_bool("practice_digraphs_numbers_enabled", False)
+            )
+
+        # Connect Words tab checkbox signals
+        self.words_special_chars_checkbox.stateChanged.connect(
+            lambda s: self._update_practice_config("practice_words_special_chars_enabled", s)
+        )
+        self.words_numbers_checkbox.stateChanged.connect(
+            lambda s: self._update_practice_config("practice_words_numbers_enabled", s)
+        )
+
+        # Connect Digraphs tab checkbox signals
+        self.digraphs_special_chars_checkbox.stateChanged.connect(
+            lambda s: self._update_practice_config("practice_digraphs_special_chars_enabled", s)
+        )
+        self.digraphs_numbers_checkbox.stateChanged.connect(
+            lambda s: self._update_practice_config("practice_digraphs_numbers_enabled", s)
+        )
 
         # Set default window size (wider for better table display)
         self.resize(700, 500)
@@ -1510,15 +1577,23 @@ class StatsPanel(QWidget):
         count = self.unified_word_count_combo.currentData()
         mode = self.word_mode_combo.currentData()
 
+        # Get checkbox states
+        special_chars = self.words_special_chars_checkbox.isChecked()
+        numbers = self.words_numbers_checkbox.isChecked()
+
         if not clipboard_text or not clipboard_text.strip():
             # Auto-fetch words based on mode if clipboard is empty
             if hasattr(self, "_request_word_highlight_list_callback"):
-                self._request_word_highlight_list_callback(mode, count, None)
+                self._request_word_highlight_list_callback(
+                    mode, count, None, special_chars, numbers
+                )
             return
 
         # If clipboard has text, fetch word list for highlighting
         if hasattr(self, "_request_word_highlight_list_callback"):
-            self._request_word_highlight_list_callback(mode, count, clipboard_text)
+            self._request_word_highlight_list_callback(
+                mode, count, clipboard_text, special_chars, numbers
+            )
 
     def generate_text_by_mode(self) -> None:
         """Generate text using Ollama based on selected mode."""
@@ -1601,7 +1676,7 @@ class StatsPanel(QWidget):
         """Set callback for fetching word highlight list by mode for practice.
 
         Args:
-            callback: Function to call with (mode, count, text) parameters
+            callback: Function to call with (mode, count, text, special_chars, numbers) parameters
         """
         self._request_word_highlight_list_callback = callback
 
@@ -1635,15 +1710,23 @@ class StatsPanel(QWidget):
         word_count = self.digraph_word_count_combo.currentData()
         mode = self.digraph_mode_combo.currentData()
 
+        # Get checkbox states
+        special_chars = self.digraphs_special_chars_checkbox.isChecked()
+        numbers = self.digraphs_numbers_checkbox.isChecked()
+
         if not clipboard_text or not clipboard_text.strip():
             # Auto-fetch words based on mode if clipboard is empty
             if hasattr(self, "_request_digraph_practice_callback"):
-                self._request_digraph_practice_callback(mode, digraph_count, word_count, None)
+                self._request_digraph_practice_callback(
+                    mode, digraph_count, word_count, None, special_chars, numbers
+                )
             return
 
         # If clipboard has text, use it for practice with digraph-based highlighting
         if hasattr(self, "_request_digraph_practice_callback"):
-            self._request_digraph_practice_callback(mode, digraph_count, word_count, clipboard_text)
+            self._request_digraph_practice_callback(
+                mode, digraph_count, word_count, clipboard_text, special_chars, numbers
+            )
 
     def set_digraph_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words containing digraphs for clipboard.
@@ -1657,7 +1740,7 @@ class StatsPanel(QWidget):
         """Set callback for launching practice with digraph-based word highlighting.
 
         Args:
-            callback: Function to call with (mode, digraph_count, word_count, text) parameters
+            callback: Function to call with (mode, digraph_count, word_count, text, special_chars, numbers) parameters
         """
         self._request_digraph_practice_callback = callback
 
@@ -1736,3 +1819,17 @@ class StatsPanel(QWidget):
                     for child in parent.findChildren(QLabel):
                         if child.text() in ["Mode:", "Digraphs:", "Words:"]:
                             child.setVisible(enabled)
+
+    def _update_practice_config(self, key: str, state: int) -> None:
+        """Update practice config when checkbox state changes.
+
+        Args:
+            key: Config key to update
+            state: Qt.CheckState value (0=unchecked, 2=checked)
+        """
+        from PySide6.QtCore import Qt
+
+        app = QApplication.instance()
+        if app and hasattr(app, "config"):
+            is_checked = state == Qt.CheckState.Checked.value
+            app.config.set(key, is_checked)

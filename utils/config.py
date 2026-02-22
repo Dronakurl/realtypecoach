@@ -117,6 +117,24 @@ class AppSettings(BaseModel):
         description="Factor for word length penalty in practice selection (higher = prefer shorter words more)",
     )
 
+    # Practice text enhancement settings
+    practice_words_special_chars_enabled: bool = Field(
+        default=False,
+        description="Enable special characters in words practice text",
+    )
+    practice_words_numbers_enabled: bool = Field(
+        default=False,
+        description="Enable random numbers in words practice text",
+    )
+    practice_digraphs_special_chars_enabled: bool = Field(
+        default=False,
+        description="Enable special characters in digraphs practice text",
+    )
+    practice_digraphs_numbers_enabled: bool = Field(
+        default=False,
+        description="Enable random numbers in digraphs practice text",
+    )
+
     # UI settings
     stats_update_interval_sec: int = Field(
         default=2, ge=1, le=60, description="Statistics update interval (seconds)"
@@ -326,7 +344,7 @@ class Config:
         """Convert value to string for storage."""
         if isinstance(value, bool):
             return "True" if value else "False"
-        if isinstance(value, (list, dict)):
+        if isinstance(value, list | dict):
             return json.dumps(value)
         return str(value)
 

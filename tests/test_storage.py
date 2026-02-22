@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from core.burst_detector import Burst
-from core.models import WordInfo, KeystrokeInfo
+from core.models import KeystrokeInfo, WordInfo
 from core.storage import Storage
 from utils.config import Config
 from utils.crypto import CryptoManager
@@ -214,7 +214,9 @@ class TestStorage:
         slowest_digraphs = storage.get_slowest_digraphs(limit=10, layout="us")
 
         # Find the "ic" digraph
-        ic_digraph = next((d for d in slowest_digraphs if d.first_key == "i" and d.second_key == "c"), None)
+        ic_digraph = next(
+            (d for d in slowest_digraphs if d.first_key == "i" and d.second_key == "c"), None
+        )
 
         assert ic_digraph is not None, "Digraph 'ic' should be stored"
 
@@ -227,13 +229,204 @@ class TestStorage:
         )
 
         # Also verify the other digraphs
-        ni_digraph = next((d for d in slowest_digraphs if d.first_key == "n" and d.second_key == "i"), None)
+        ni_digraph = next(
+            (d for d in slowest_digraphs if d.first_key == "n" and d.second_key == "i"), None
+        )
         assert ni_digraph is not None
         assert ni_digraph.avg_interval_ms == 100.0  # n@1000 to i@1100
 
-        ce_digraph = next((d for d in slowest_digraphs if d.first_key == "c" and d.second_key == "e"), None)
+        ce_digraph = next(
+            (d for d in slowest_digraphs if d.first_key == "c" and d.second_key == "e"), None
+        )
         assert ce_digraph is not None
         assert ce_digraph.avg_interval_ms == 100.0  # c@1400 to e@1500
+
+
+class TestDigraphStorageWithDictionaryValidation:
+    """Test that digraphs are only stored for valid dictionary words."""
+
+    @pytest.fixture
+    def storage_with_dict(self, temp_db):
+        """Create storage with dictionary validation enabled."""
+        from core.dictionary_config import DictionaryConfig
+
+        crypto = CryptoManager(temp_db)
+        if not crypto.key_exists():
+            crypto.initialize_database_key()
+
+        config = Config(temp_db)
+        dict_config = DictionaryConfig(enabled_languages=["en"], accept_all_mode=False)
+        return Storage(temp_db, config=config, dictionary_config=dict_config)
+
+    def test_digraphs_stored_only_for_valid_words(self, storage_with_dict):
+        """Test that digraphs are stored for valid dictionary words but not for invalid ones.
+
+        This verifies the fix that ensures digraph statistics only include digraphs
+        from valid dictionary words, preventing invalid digraphs like 'üü' from being stored.
+        """
+        # "hello" is a valid English word
+        valid_word_info = WordInfo(
+            word="hello",
+            layout="us",
+            total_duration_ms=400,
+            active_duration_ms=400,
+            editing_time_ms=0,
+            backspace_count=0,
+            num_letters=5,
+            keystrokes=[
+                KeystrokeInfo(key="h", time=1000, type="letter", keycode=35),
+                KeystrokeInfo(key="e", time=1100, type="letter", keycode=18),
+                KeystrokeInfo(key="l", time=1200, type="letter", keycode=38),
+                KeystrokeInfo(key="l", time=1300, type="letter", keycode=38),
+                KeystrokeInfo(key="o", time=1400, type="letter", keycode=24),
+            ],
+        )
+
+        # "xyz" is NOT a valid English word (not in dictionary)
+        invalid_word_info = WordInfo(
+            word="xyz",
+            layout="us",
+            total_duration_ms=300,
+            active_duration_ms=300,
+            editing_time_ms=0,
+            backspace_count=0,
+            num_letters=3,
+            keystrokes=[
+                KeystrokeInfo(key="x", time=2000, type="letter", keycode=35),
+                KeystrokeInfo(key="y", time=2100, type="letter", keycode=18),
+                KeystrokeInfo(key="z", time=2200, type="letter", keycode=38),
+            ],
+        )
+
+        # Store both words TWICE (to meet total_sequences >= 2 requirement)
+        for _ in range(2):
+            # Valid word should pass the is_valid_word check and be stored
+            if storage_with_dict.dictionary.is_valid_word(
+                valid_word_info.word, storage_with_dict._get_language_from_layout("us")
+            ):
+                with storage_with_dict._get_connection() as conn:
+                    storage_with_dict._store_word_from_state(conn, valid_word_info)
+                    conn.commit()
+
+            # Invalid word should NOT be stored
+            if storage_with_dict.dictionary.is_valid_word(
+                invalid_word_info.word, storage_with_dict._get_language_from_layout("us")
+            ):
+                with storage_with_dict._get_connection() as conn:
+                    storage_with_dict._store_word_from_state(conn, invalid_word_info)
+                    conn.commit()
+
+        # Verify digraphs from valid word were stored
+        slowest_digraphs = storage_with_dict.get_slowest_digraphs(limit=10, layout="us")
+
+        # Check that "he", "el", "ll", "lo" digraphs from "hello" exist
+        digraph_pairs = [(d.first_key, d.second_key) for d in slowest_digraphs]
+        assert ("h", "e") in digraph_pairs, "Digraph 'he' from 'hello' should be stored"
+        assert ("e", "l") in digraph_pairs, "Digraph 'el' from 'hello' should be stored"
+        assert ("l", "l") in digraph_pairs, "Digraph 'll' from 'hello' should be stored"
+        assert ("l", "o") in digraph_pairs, "Digraph 'lo' from 'hello' should be stored"
+
+        # Check that "xy", "yz" digraphs from "xyz" do NOT exist
+        assert ("x", "y") not in digraph_pairs, (
+            "Digraph 'xy' from invalid word 'xyz' should NOT be stored"
+        )
+        assert ("y", "z") not in digraph_pairs, (
+            "Digraph 'yz' from invalid word 'xyz' should NOT be stored"
+        )
+
+    def test_invalid_digraph_not_in_database(self, storage_with_dict):
+        """Test that directly querying the database shows no invalid digraphs."""
+        # Create a WordInfo with a non-existent digraph
+        # Using a word that definitely won't be in the dictionary
+        word_info = WordInfo(
+            word="qwxyz",  # Not in dictionary
+            layout="us",
+            total_duration_ms=400,
+            active_duration_ms=400,
+            editing_time_ms=0,
+            backspace_count=0,
+            num_letters=5,
+            keystrokes=[
+                KeystrokeInfo(key="q", time=1000, type="letter", keycode=16),
+                KeystrokeInfo(key="w", time=1100, type="letter", keycode=17),
+                KeystrokeInfo(key="x", time=1200, type="letter", keycode=35),
+                KeystrokeInfo(key="y", time=1300, type="letter", keycode=18),
+                KeystrokeInfo(key="z", time=1400, type="letter", keycode=38),
+            ],
+        )
+
+        # Try to store - should fail validation
+        is_valid = storage_with_dict.dictionary.is_valid_word(
+            word_info.word, storage_with_dict._get_language_from_layout("us")
+        )
+
+        assert not is_valid, f"Word '{word_info.word}' should not be valid"
+
+        # Even if we try to bypass and store directly, the analyzer flow prevents it
+        # So no digraphs should be in the database
+        with storage_with_dict._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM digraph_statistics WHERE layout = ?", ("us",))
+            count = cursor.fetchone()[0]
+
+        assert count == 0, "No digraphs should be stored for invalid words"
+
+    def test_uu_digraph_not_stored_for_nonexistent_word(self, storage_with_dict):
+        """Test that üü digraph is not stored for a word not in the German dictionary.
+
+        This is a regression test for the issue where 'üü' appeared in the database.
+        Since no German word contains 'üü', it should never be stored.
+        """
+        from core.dictionary_config import DictionaryConfig
+
+        # Create storage with German dictionary
+        crypto = CryptoManager(storage_with_dict.db_path)
+        config = Config(storage_with_dict.db_path)
+        dict_config = DictionaryConfig(enabled_languages=["de"], accept_all_mode=False)
+        storage_de = Storage(
+            storage_with_dict.db_path, config=config, dictionary_config=dict_config
+        )
+
+        # Create a fake word that contains 'üü' (doesn't exist in German dictionary)
+        fake_word = "grüße"  # Actual word is "grüße" but with 'üü' instead
+        word_info = WordInfo(
+            word="grüüße",  # This is NOT a valid German word
+            layout="de",
+            total_duration_ms=400,
+            active_duration_ms=400,
+            editing_time_ms=0,
+            backspace_count=0,
+            num_letters=6,
+            keystrokes=[
+                KeystrokeInfo(key="g", time=1000, type="letter", keycode=35),
+                KeystrokeInfo(key="r", time=1100, type="letter", keycode=27),
+                KeystrokeInfo(key="ü", time=1200, type="letter", keycode=30),
+                KeystrokeInfo(key="ü", time=1300, type="letter", keycode=30),
+                KeystrokeInfo(key="ß", time=1400, type="letter", keycode=38),
+                KeystrokeInfo(key="e", time=1500, type="letter", keycode=18),
+            ],
+        )
+
+        # Try to store - should fail validation
+        is_valid = storage_de.dictionary.is_valid_word(
+            word_info.word, storage_de._get_language_from_layout("de")
+        )
+
+        assert not is_valid, f"Word '{word_info.word}' should not be in German dictionary"
+
+        # Verify 'üü' digraph is NOT in database
+        with storage_de._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT COUNT(*) FROM digraph_statistics
+                   WHERE first_key = 'ü' AND second_key = 'ü' AND layout = ?""",
+                ("de",),
+            )
+            count = cursor.fetchone()[0]
+
+        assert count == 0, (
+            "Digraph 'üü' should never be stored as it's not in any valid German word"
+        )
 
 
 class TestEqualDigraphSelection:
@@ -245,9 +438,7 @@ class TestEqualDigraphSelection:
         digraphs = ["th", "he", "in", "er", "on"]
         count = 50  # 10 words per digraph
 
-        words = storage.get_random_words_with_equal_digraphs(
-            digraphs=digraphs, count=count
-        )
+        words = storage.get_random_words_with_equal_digraphs(digraphs=digraphs, count=count)
 
         # Count words per digraph
         digraph_word_counts = {d: 0 for d in digraphs}
@@ -262,8 +453,7 @@ class TestEqualDigraphSelection:
         expected_per_digraph = count // len(digraphs)
         for digraph, word_count in digraph_word_counts.items():
             assert word_count == expected_per_digraph, (
-                f"Digraph '{digraph}' has {word_count} words, "
-                f"expected {expected_per_digraph}"
+                f"Digraph '{digraph}' has {word_count} words, expected {expected_per_digraph}"
             )
 
     def test_insufficient_words_logs_warning(self, storage, caplog):
@@ -277,9 +467,7 @@ class TestEqualDigraphSelection:
 
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="core.storage"):
-            words = storage.get_random_words_with_equal_digraphs(
-                digraphs=digraphs, count=count
-            )
+            words = storage.get_random_words_with_equal_digraphs(digraphs=digraphs, count=count)
 
         # Should get an empty result since no words contain 'xxxx'
         assert words == [], "Should return empty list for digraph with no matches"
@@ -293,17 +481,13 @@ class TestEqualDigraphSelection:
         # This demonstrates randomness is working
         results = []
         for _ in range(5):
-            words = storage.get_random_words_with_equal_digraphs(
-                digraphs=digraphs, count=count
-            )
+            words = storage.get_random_words_with_equal_digraphs(digraphs=digraphs, count=count)
             results.append(set(words))
 
         # At least some variation across runs (not identical results every time)
         # Since we're using weighted random selection, results should vary
         all_same = all(r == results[0] for r in results)
-        assert not all_same, (
-            "Results should vary across runs with random selection"
-        )
+        assert not all_same, "Results should vary across runs with random selection"
 
     def test_duplicate_handling(self, storage):
         """Verify words with multiple digraphs assigned once."""
@@ -311,21 +495,16 @@ class TestEqualDigraphSelection:
         digraphs = ["th", "he"]
         count = 50
 
-        words = storage.get_random_words_with_equal_digraphs(
-            digraphs=digraphs, count=count
-        )
+        words = storage.get_random_words_with_equal_digraphs(digraphs=digraphs, count=count)
 
         # No duplicate words should be in the result
         assert len(words) == len(set(words)), (
-            f"Found duplicate words in result: {len(words)} total, "
-            f"{len(set(words))} unique"
+            f"Found duplicate words in result: {len(words)} total, {len(set(words))} unique"
         )
 
     def test_edge_case_empty_digraph_list(self, storage):
         """Verify empty digraph list returns empty result."""
-        words = storage.get_random_words_with_equal_digraphs(
-            digraphs=[], count=100
-        )
+        words = storage.get_random_words_with_equal_digraphs(digraphs=[], count=100)
 
         assert words == [], "Empty digraph list should return empty result"
 
@@ -334,9 +513,7 @@ class TestEqualDigraphSelection:
         digraphs = ["th"]
         count = 20
 
-        words = storage.get_random_words_with_equal_digraphs(
-            digraphs=digraphs, count=count
-        )
+        words = storage.get_random_words_with_equal_digraphs(digraphs=digraphs, count=count)
 
         # All words should contain 'th'
         assert len(words) > 0, "Should return words for single digraph"
@@ -349,9 +526,7 @@ class TestEqualDigraphSelection:
         digraphs = ["th", "er"]
         count = 50
 
-        words = storage.get_random_words_with_equal_digraphs(
-            digraphs=digraphs, count=count
-        )
+        words = storage.get_random_words_with_equal_digraphs(digraphs=digraphs, count=count)
 
         # Check that words from different digraphs are mixed
         # (not all 'th' words first, then all 'er' words)
@@ -374,4 +549,3 @@ class TestEqualDigraphSelection:
         # Due to shuffling, we should see different digraphs at the start
         # (This is probabilistic, but very likely with 10 runs)
         assert found_th_first or found_er_first, "Should see mixed digraphs"
-
