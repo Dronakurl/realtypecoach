@@ -487,10 +487,7 @@ class Application(QObject):
         # Pre-check for unrealistic WPM before processing
         max_wpm_threshold = self.config.get_int("max_realistic_wpm", 300)
         if burst.key_count > 0:
-            # Calculate WPM for validation
-            # Net keystrokes = total - 2*backspaces
-            net_keystrokes = max(0, burst.key_count - (burst.backspace_count * 2))
-            burst_wpm = self._calculate_wpm(net_keystrokes, burst.duration_ms)
+            burst_wpm = self._calculate_wpm(burst.net_key_count, burst.duration_ms)
 
             if burst_wpm > max_wpm_threshold:
                 log.warning(
@@ -556,12 +553,8 @@ class Application(QObject):
 
         Note: key_count should already be net_key_count (with backspaces subtracted).
         """
-        if duration_ms == 0:
-            return 0.0
-
-        words = key_count / 5.0
-        minutes = duration_ms / 60000.0
-        return words / minutes if minutes > 0 else 0.0
+        from core.wpm_calculator import calculate_wpm
+        return calculate_wpm(key_count, duration_ms)
 
     def show_daily_notification(self, summary) -> None:
         """Show daily summary notification.
@@ -1226,11 +1219,23 @@ class Application(QObject):
                     digraphs=digraphs, count=word_count
                 )
 
+                # Get loaded languages to check if German is loaded for capitalization
+                loaded_languages = self.storage.dictionary.get_loaded_languages()
+                use_german_capitalization = "de" in loaded_languages
+
+                # Apply capitalization for German nouns
+                capitalized_words = [
+                    self.storage.dictionary.get_capitalized_form(
+                        w, "de" if use_german_capitalization else None
+                    )
+                    for w in words
+                ]
+
                 # Convert to WordStatisticsLite format for clipboard
                 from core.models import WordStatisticsLite
 
                 word_stats = []
-                for word in words:
+                for word in capitalized_words:
                     # Create simple WordStatisticsLite objects
                     word_stats.append(
                         WordStatisticsLite(

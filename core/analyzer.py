@@ -200,16 +200,9 @@ class Analyzer:
         Returns:
             WPM (words per minute)
         """
-        if duration_ms == 0:
-            return 0.0
-
-        # Calculate productive keystrokes
-        # Each backspace removes 1 character + the backspace itself = 2 net reduction
-        net_keystrokes = max(0, key_count - (backspace_count * 2))
-
-        words = net_keystrokes / 5.0
-        minutes = duration_ms / 60000.0
-        return words / minutes if minutes > 0 else 0.0
+        from core.wpm_calculator import calculate_wpm, calculate_net_keystrokes
+        net_keystrokes = calculate_net_keystrokes(key_count, backspace_count)
+        return calculate_wpm(net_keystrokes, duration_ms)
 
     def _check_high_score(self, wpm: float, duration_ms: int, key_count: int) -> None:
         """Check if burst is a high score.
