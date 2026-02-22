@@ -56,10 +56,8 @@ def calculate_linear_regression(data_points: list[TypingTimeDataPoint]) -> tuple
     ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(days, wpm_values))
     r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
 
-    # Convert slope from WPM/ms to WPM/day
-    slope_wpm_per_day = slope * (1000 * 60 * 60 * 24)
-
-    return slope_wpm_per_day, intercept, r_squared
+    # Slope is already in WPM/day since x-axis is in days
+    return slope, intercept, r_squared
 
 
 class TimeGranularity(Enum):
@@ -287,9 +285,9 @@ class TypingTimeGraph(QWidget):
                 last_day = (last_ts - first_ts) / (1000 * 60 * 60 * 24)
 
                 # Calculate WPM at start and end using the regression equation
-                # WPM = slope * days + intercept
+                # WPM = slope * days + intercept (slope is already in WPM/day)
                 start_wpm = intercept
-                end_wpm = slope_wpm_per_day / (1000 * 60 * 60 * 24) * last_day + intercept
+                end_wpm = slope_wpm_per_day * last_day + intercept
 
                 # Convert back to x indices for display
                 x_trend = [0, len(x_indices) - 1]
@@ -307,7 +305,7 @@ class TypingTimeGraph(QWidget):
                 first_ts = data_points[0].period_start
                 last_ts = data_points[-1].period_start
                 last_day = (last_ts - first_ts) / (1000 * 60 * 60 * 24)
-                end_wpm = self.current_slope / (1000 * 60 * 60 * 24) * last_day + intercept
+                end_wpm = self.current_slope * last_day + intercept
                 all_wpm_values.extend([intercept, end_wpm])
 
             max_wpm = max(all_wpm_values) if all_wpm_values else 100
