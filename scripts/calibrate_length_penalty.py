@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Calibration script for length penalty factor.
 
-Tests different penalty_factor values to validate that the default
-produces target average word length of approximately 5.
+Tests different penalty_factor values to find the optimal value
+that produces target average word length of approximately 5.
 """
+import argparse
 import sys
 from pathlib import Path
 
@@ -15,8 +16,60 @@ from core.storage import Storage
 from utils.config import Config
 
 
-def main():
+def test_penalty_factor(storage, penalty_factor: float, word_count: int = 50, simulations: int = 100):
+    """Test a penalty factor and return average word lengths per digraph."""
     import random
+
+    test_digraphs = [
+        (['th'], 'th'),
+        (['he'], 'he'),
+        (['in'], 'in'),
+        (['er'], 'er'),
+    ]
+
+    target_length = 5
+    results = {}
+
+    for digraph_list, digraph_name in test_digraphs:
+        words = storage.find_words_with_digraphs(digraph_list, language=None)
+
+        if not words:
+            continue
+
+        # Calculate weights using linear penalty
+        weights = [
+            max(0.0, 1.0 - penalty_factor * max(0, len(word) - target_length) / target_length)
+            for word in words
+        ]
+
+        # Simulate selection
+        avg_lengths = []
+        for _ in range(simulations):
+            selected = random.choices(words, weights=weights, k=min(word_count, len(words)))
+            avg_lengths.append(sum(len(w) for w in selected) / len(selected))
+
+        avg = sum(avg_lengths) / len(avg_lengths)
+        results[digraph_name] = avg
+
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Calibrate length penalty factor")
+    parser.add_argument(
+        "--test-values",
+        type=float,
+        nargs="+",
+        default=[0.10, 0.15, 0.20, 0.25, 0.30],
+        help="Penalty factor values to test",
+    )
+    parser.add_argument(
+        "--set",
+        type=float,
+        dest="set_value",
+        help="Set the penalty factor to this value in config",
+    )
+    args = parser.parse_args()
 
     print("=== Length Penalty Calibration ===\n")
 
@@ -25,7 +78,7 @@ def main():
 
     if not test_db_path.exists():
         print(f"Error: Database not found at {test_db_path}")
-        return
+        return 1
 
     config = Config(test_db_path)
     enabled_languages = config.get_list("enabled_languages")
@@ -39,43 +92,45 @@ def main():
         ignore_file_path=None,
     )
 
-    # Test with common digraphs
-    test_digraphs = [
-        (['th'], 'th'),
-        (['he'], 'he'),
-        (['in'], 'in'),
-        (['er'], 'er'),
-    ]
+    current_value = config.get_float("length_penalty_factor")
+    print(f"Current penalty_factor: {current_value:.2f}\n")
 
-    word_count = 50
-    penalty_factor = 0.15  # Default value
+    # Show current value performance
+    print("=== Current Setting ===")
+    current_results = test_penalty_factor(storage, current_value)
+    if current_results:
+        avg_length = sum(current_results.values()) / len(current_results)
+        deviation = abs(avg_length - 5.0)
+        print(f"penalty_factor={current_value:.2f}: avg_length={avg_length:.2f} (deviation: {deviation:.2f})")
 
-    print(f"Testing penalty_factor={penalty_factor}, word_count={word_count}\n")
+    # Test other values
+    test_values = [v for v in args.test_values if v != current_value]
+    if test_values:
+        print("\n=== Test Values ===")
+        for value in test_values:
+            results = test_penalty_factor(storage, value)
+            if results:
+                avg_length = sum(results.values()) / len(results)
+                deviation = abs(avg_length - 5.0)
+                print(f"penalty_factor={value:.2f}: avg_length={avg_length:.2f} (deviation: {deviation:.2f})")
 
-    for digraph_list, digraph_name in test_digraphs:
-        words = storage.find_words_with_digraphs(digraph_list, language=None)
+    # Set new value if requested
+    if args.set_value is not None:
+        print(f"\nSetting penalty_factor to {args.set_value:.2f}")
+        config.set("length_penalty_factor", args.set_value)
 
-        if not words:
-            continue
+        # Verify it was set
+        new_value = config.get_float("length_penalty_factor")
+        print(f"Verification: penalty_factor is now {new_value:.2f}")
 
-        # Calculate weights
-        target_length = 5
-        weights = [
-            1.0 / (1.0 + penalty_factor * ((len(word) - target_length) ** 2))
-            for word in words
-        ]
-
-        # Simulate selection
-        avg_lengths = []
-        for _ in range(100):
-            selected = random.choices(words, weights=weights, k=min(word_count, len(words)))
-            avg_lengths.append(sum(len(w) for w in selected) / len(selected))
-
-        avg = sum(avg_lengths) / len(avg_lengths)
-        print(f"  {digraph_name}: {len(words)} words, avg length = {avg:.2f}")
+        if new_value == args.set_value:
+            print("Done. Run without --set to test the new value.")
+        else:
+            print(f"Warning: Value not updated correctly (expected {args.set_value:.2f}, got {new_value:.2f})")
 
     print("\nTarget: Average length ~5.0")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

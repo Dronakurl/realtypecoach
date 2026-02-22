@@ -110,6 +110,12 @@ class AppSettings(BaseModel):
     exclude_names_enabled: bool = Field(
         default=False, description="Enable automatic exclusion of common names from word statistics"
     )
+    length_penalty_factor: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=3.0,
+        description="Factor for word length penalty in practice selection (higher = prefer shorter words more)",
+    )
 
     # UI settings
     stats_update_interval_sec: int = Field(

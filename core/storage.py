@@ -619,13 +619,14 @@ class Storage:
             return []
 
         # Calculate weights using length penalty
-        # Formula: weight = 1 / (1 + penalty_factor * (length - target_length)^2)
+        # Formula: weight = max(0, 1 - penalty_factor * (length - target_length) / target_length)
+        # When penalty_factor=1.0, words longer than 2*target have zero weight
         # Target average word length is approximately 5
         target_length = 5
-        penalty_factor = 0.15  # Pre-calibrated value
+        penalty_factor = self.config.get_float("length_penalty_factor")
 
         weights = [
-            1.0 / (1.0 + penalty_factor * ((len(word) - target_length) ** 2))
+            max(0.0, 1.0 - penalty_factor * max(0, len(word) - target_length) / target_length)
             for word in matching_words
         ]
 
@@ -684,7 +685,7 @@ class Storage:
         # Select words from each digraph's pool with weighted random selection
         selected_words = []
         target_length = 5
-        penalty_factor = 0.15
+        penalty_factor = self.config.get_float("length_penalty_factor")
 
         for digraph in digraphs:
             word_pool = digraph_word_pools[digraph]
@@ -697,7 +698,7 @@ class Storage:
 
             # Calculate weights using length penalty
             weights = [
-                1.0 / (1.0 + penalty_factor * ((len(word) - target_length) ** 2))
+                max(0.0, 1.0 - penalty_factor * max(0, len(word) - target_length) / target_length)
                 for word in word_pool
             ]
 

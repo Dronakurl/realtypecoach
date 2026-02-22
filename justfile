@@ -177,6 +177,15 @@ test-all: ruff-format
     @echo "=== Running pytest ==="
     @.venv/bin/python3 -m pytest tests/ -v
 
+# Run a single test or test file with optional pytest arguments
+# Examples:
+#   just test tests/test_storage.py              # Run all tests in file
+#   just test tests/test_storage.py::TestStorage # Run specific test class
+#   just test -k "burst"                         # Run tests matching pattern
+#   just test tests/test_storage.py -v --tb=short  # With pytest options
+test test_path="" args="":
+    @.venv/bin/python3 -m pytest {{test_path}} {{args}}
+
 # Test Python module imports
 test-imports:
     @.venv/bin/python3 -c 'import sys; sys.path.insert(0, "."); \
@@ -311,3 +320,20 @@ migrate-status:
 # Show migration history
 migrate-history:
     @.venv/bin/alembic history
+
+# Database Cleanup
+# Cleanup invalid digraphs from database (dry run)
+cleanup-digraphs-dry:
+    @.venv/bin/python3 scripts/cleanup_digraphs.py --dry-run
+
+# Cleanup invalid digraphs from local database only
+cleanup-digraphs-local:
+    @.venv/bin/python3 scripts/cleanup_digraphs.py --local-only
+
+# Cleanup invalid digraphs from both local and remote databases
+cleanup-digraphs:
+    @.venv/bin/python3 scripts/cleanup_digraphs.py
+
+# Calibrate length penalty factor
+calibrate-length *args:
+    @.venv/bin/python3 scripts/calibrate_length_penalty.py {{args}}
