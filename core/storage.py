@@ -590,11 +590,7 @@ class Storage:
                 # Check if word contains any of the digraphs
                 for digraph in digraphs:
                     if digraph.lower() in word_lower:
-                        # Apply capitalization for German nouns
-                        capitalized = self.dictionary.get_capitalized_form(
-                            word_lower, "de" if lang == "de" else None
-                        )
-                        matching_words.add(capitalized)
+                        matching_words.add(word)
                         break
 
         return list(matching_words)
