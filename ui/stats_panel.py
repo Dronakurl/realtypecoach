@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -416,6 +417,38 @@ class StatsPanel(QWidget):
             self.fastest_words_table.setItem(i, 1, QTableWidgetItem("--"))
             self.fastest_words_table.setItem(i, 2, QTableWidgetItem("--"))
         fastest_words_layout.addWidget(self.fastest_words_table)
+
+        # Controls area for fastest words
+        fastest_controls_layout = QHBoxLayout()
+
+        fastest_count_label = QLabel("Copy:")
+        fastest_count_label.setStyleSheet("font-size: 12px; color: #666;")
+        fastest_controls_layout.addWidget(fastest_count_label)
+
+        self.fastest_words_count_combo = QComboBox()
+        self.fastest_words_count_combo.addItem("10", 10)
+        self.fastest_words_count_combo.addItem("25", 25)
+        self.fastest_words_count_combo.addItem("50", 50)
+        self.fastest_words_count_combo.addItem("75", 75)
+        self.fastest_words_count_combo.addItem("100", 100)
+        self.fastest_words_count_combo.addItem("500", 500)
+        self.fastest_words_count_combo.addItem("1000", 1000)
+        self.fastest_words_count_combo.setCurrentIndex(0)  # Default to 10
+        self.fastest_words_count_combo.setMaximumWidth(80)
+        fastest_controls_layout.addWidget(self.fastest_words_count_combo)
+
+        self.copy_fastest_words_btn = QPushButton("📋 Fastest")
+        self.copy_fastest_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.copy_fastest_words_btn.clicked.connect(self.copy_fastest_words_to_clipboard)
+        fastest_controls_layout.addWidget(self.copy_fastest_words_btn)
+
+        self.copy_mixed_words_btn = QPushButton("🎲 Mixed")
+        self.copy_mixed_words_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
+        self.copy_mixed_words_btn.clicked.connect(self.copy_mixed_words_to_clipboard)
+        fastest_controls_layout.addWidget(self.copy_mixed_words_btn)
+
+        fastest_controls_layout.addStretch()
+        fastest_words_layout.addLayout(fastest_controls_layout)
 
         words_layout.addWidget(fastest_words_widget)
 
@@ -1078,6 +1111,22 @@ class StatsPanel(QWidget):
         if app and hasattr(app, "tray_icon"):
             app.tray_icon.show_notification("Copy Words", message)
 
+    def copy_fastest_words_to_clipboard(self) -> None:
+        """Copy the n fastest words to clipboard."""
+        count = self.fastest_words_count_combo.currentData()
+        if hasattr(self, "_request_fastest_words_callback"):
+            # Store the callback temporarily and trigger fetch
+            self._clipboard_callback = self._on_words_fetched_for_copy
+            self._request_fastest_words_callback(count)
+
+    def copy_mixed_words_to_clipboard(self) -> None:
+        """Copy mixed random words (50% fastest, 50% hardest) to clipboard."""
+        count = self.hardest_words_count_combo.currentData()
+        if hasattr(self, "_request_mixed_words_callback"):
+            # Store the callback temporarily and trigger fetch
+            self._clipboard_callback = self._on_words_fetched_for_copy
+            self._request_mixed_words_callback(count)
+
     def practice_text(self) -> None:
         """Open clipboard text for typing practice."""
         import subprocess
@@ -1161,6 +1210,32 @@ class StatsPanel(QWidget):
             callback: Function to call when new data is needed
         """
         self._digraph_data_callback = callback
+
+    def set_fastest_words_clipboard_callback(self, callback) -> None:
+        """Set callback for fetching fastest words for clipboard.
+
+        Args:
+            callback: Function to call with (count) parameter
+        """
+        self._request_fastest_words_callback = callback
+
+    def set_mixed_words_clipboard_callback(self, callback) -> None:
+        """Set callback for fetching mixed words for clipboard.
+
+        Args:
+            callback: Function to call with (count) parameter
+        """
+        self._request_mixed_words_callback = callback
+
+    def _on_fastest_words_ready(self, words: list[WordStatisticsLite]) -> None:
+        """Slot called when fastest words are ready."""
+        if hasattr(self, "_clipboard_callback"):
+            self._clipboard_callback(words)
+
+    def _on_mixed_words_ready(self, words: list[WordStatisticsLite]) -> None:
+        """Slot called when mixed words are ready."""
+        if hasattr(self, "_clipboard_callback"):
+            self._clipboard_callback(words)
 
     def set_text_generation_callback(self, callback) -> None:
         """Set callback for Ollama text generation.

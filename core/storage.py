@@ -1100,12 +1100,10 @@ class Storage:
             def is_ignored_or_name(word: str) -> bool:
                 """Check if word is ignored (hash-based) or is a common name."""
                 # Check hash-based ignored words first
-                # Check if it is a name (if exclude_names is enabled)
-                return self.dictionary._exclude_names and self.dictionary._is_name(word)
                 if self.is_word_ignored(word):
                     return True
                 # Check if it's a name (if exclude_names is enabled)
-                return False
+                return self.dictionary._exclude_names and self.dictionary._is_name(word)
 
             local_adapter.clean_ignored_words_stats(is_ignored_or_name)
             remote_adapter.clean_ignored_words_stats(is_ignored_or_name)
