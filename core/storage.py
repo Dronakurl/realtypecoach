@@ -637,6 +637,85 @@ class Storage:
         selected = random.choices(matching_words, weights=weights, k=count)
         return selected
 
+    def get_random_words_with_equal_digraphs(
+        self, digraphs: list[str], count: int, language: str | None = None
+    ) -> list[str]:
+        """Get random words with equal representation per digraph.
+
+        Ensures each digraph gets the same number of words in the practice set.
+        Uses weighted selection (length penalty) within each digraph's word pool.
+
+        Args:
+            digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
+            count: Total number of words to return (divided equally among digraphs)
+            language: Optional language code filter (e.g., 'en', 'de')
+
+        Returns:
+            List of random words with equal representation per digraph
+        """
+        import random
+        import logging
+
+        log = logging.getLogger(__name__)
+
+        if not digraphs:
+            return []
+
+        words_per_digraph = count // len(digraphs)
+        all_words = self.find_words_with_digraphs(digraphs, language)
+
+        if not all_words:
+            return []
+
+        # Assign each word to the first matching digraph (avoiding duplicates)
+        digraph_word_pools: dict[str, list[str]] = {d: [] for d in digraphs}
+        assigned_words = set()
+
+        for word in all_words:
+            if word in assigned_words:
+                continue
+            word_lower = word.lower()
+            for digraph in digraphs:
+                if digraph.lower() in word_lower:
+                    digraph_word_pools[digraph].append(word)
+                    assigned_words.add(word)
+                    break
+
+        # Select words from each digraph's pool with weighted random selection
+        selected_words = []
+        target_length = 5
+        penalty_factor = 0.15
+
+        for digraph in digraphs:
+            word_pool = digraph_word_pools[digraph]
+
+            if not word_pool:
+                log.warning(
+                    f"Digraph '{digraph}' has no words available for practice"
+                )
+                continue
+
+            # Calculate weights using length penalty
+            weights = [
+                1.0 / (1.0 + penalty_factor * ((len(word) - target_length) ** 2))
+                for word in word_pool
+            ]
+
+            # Select words from this digraph's pool
+            pool_count = min(words_per_digraph, len(word_pool))
+            selected_from_digraph = random.choices(word_pool, weights=weights, k=pool_count)
+            selected_words.extend(selected_from_digraph)
+
+            if pool_count < words_per_digraph:
+                log.warning(
+                    f"Digraph '{digraph}' has only {len(word_pool)} words available, "
+                    f"requested {words_per_digraph}"
+                )
+
+        # Shuffle final list to mix digraphs
+        random.shuffle(selected_words)
+        return selected_words
+
     # Word Statistics Operations
 
     def update_word_statistics(

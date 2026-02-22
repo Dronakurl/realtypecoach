@@ -1283,7 +1283,7 @@ class Application(QObject):
                 # If no text provided, auto-fetch words containing these digraphs
                 practice_text = text
                 if practice_text is None:
-                    words = self.storage.get_random_words_with_digraphs(
+                    words = self.storage.get_random_words_with_equal_digraphs(
                         digraphs=digraphs, count=word_count
                     )
                     # Apply capitalization for German nouns
