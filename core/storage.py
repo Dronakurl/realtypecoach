@@ -600,6 +600,9 @@ class Storage:
     ) -> list[str]:
         """Get random words containing the specified digraphs.
 
+        Uses weighted selection where longer words have lower probability.
+        Target average word length is approximately 5 characters.
+
         Args:
             digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
             count: Maximum number of words to return
@@ -615,9 +618,24 @@ class Storage:
         if not matching_words:
             return []
 
-        # Return random selection up to count
-        random.shuffle(matching_words)
-        return matching_words[:count]
+        # Calculate weights using length penalty
+        # Formula: weight = 1 / (1 + penalty_factor * (length - target_length)^2)
+        # Target average word length is approximately 5
+        target_length = 5
+        penalty_factor = 0.15  # Pre-calibrated value
+
+        weights = [
+            1.0 / (1.0 + penalty_factor * ((len(word) - target_length) ** 2))
+            for word in matching_words
+        ]
+
+        # Return all if requesting more than available
+        if count >= len(matching_words):
+            return matching_words
+
+        # Use weighted random selection
+        selected = random.choices(matching_words, weights=weights, k=count)
+        return selected
 
     # Word Statistics Operations
 
@@ -845,6 +863,28 @@ class Storage:
             WPM value at the percentile or None if no bursts recorded
         """
         return self.adapter.get_burst_wpm_percentile(percentile)
+
+    @property
+    def db(self) -> DatabaseAdapter:
+        """Direct access to database adapter for read-only queries.
+
+        This property provides controlled access to the underlying database adapter,
+        eliminating one layer of indirection for simple read operations.
+
+        Use this for:
+            - Simple SELECT queries (get_slowest_keys, get_fastest_words, etc.)
+            - Read-only operations that don't require dictionary integration
+
+        Use Storage methods for:
+            - Write operations (store_burst, update_word_statistics)
+            - Complex operations requiring transactions
+            - Operations needing dictionary validation
+            - Operations needing ignored word filtering
+
+        Returns:
+            DatabaseAdapter: The underlying database adapter
+        """
+        return self.adapter
 
     # Data Management
 

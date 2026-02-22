@@ -990,9 +990,7 @@ class Application(QObject):
                         limit=count, layout=self.get_current_layout()
                     )
                     highlight_words["hardest"] = [
-                        self.storage.dictionary.get_capitalized_form(
-                            w.word, "de" if use_german_capitalization else None
-                        )
+                        self.storage.dictionary.get_capitalized_form(w.word, None)
                         for w in words
                     ]
                 elif mode == "fastest":
@@ -1000,9 +998,7 @@ class Application(QObject):
                         limit=count, layout=self.get_current_layout()
                     )
                     highlight_words["fastest"] = [
-                        self.storage.dictionary.get_capitalized_form(
-                            w.word, "de" if use_german_capitalization else None
-                        )
+                        self.storage.dictionary.get_capitalized_form(w.word, None)
                         for w in words
                     ]
                 elif mode == "mixed":
@@ -1014,15 +1010,11 @@ class Application(QObject):
                         limit=half, layout=self.get_current_layout()
                     )
                     highlight_words["hardest"] = [
-                        self.storage.dictionary.get_capitalized_form(
-                            w.word, "de" if use_german_capitalization else None
-                        )
+                        self.storage.dictionary.get_capitalized_form(w.word, None)
                         for w in hardest
                     ]
                     highlight_words["fastest"] = [
-                        self.storage.dictionary.get_capitalized_form(
-                            w.word, "de" if use_german_capitalization else None
-                        )
+                        self.storage.dictionary.get_capitalized_form(w.word, None)
                         for w in fastest
                     ]
 
@@ -1033,24 +1025,14 @@ class Application(QObject):
                             limit=count, layout=self.get_current_layout()
                         )
                         text = " ".join(
-                            [
-                                self.storage.dictionary.get_capitalized_form(
-                                    w.word, "de" if use_german_capitalization else None
-                                )
-                                for w in words
-                            ]
+                            [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
                         )
                     elif mode == "fastest":
                         words = self.analyzer.get_fastest_words(
                             limit=count, layout=self.get_current_layout()
                         )
                         text = " ".join(
-                            [
-                                self.storage.dictionary.get_capitalized_form(
-                                    w.word, "de" if use_german_capitalization else None
-                                )
-                                for w in words
-                            ]
+                            [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
                         )
                     elif mode == "mixed":
                         import random
@@ -1065,12 +1047,7 @@ class Application(QObject):
                         combined = fastest + hardest
                         random.shuffle(combined)
                         text = " ".join(
-                            [
-                                self.storage.dictionary.get_capitalized_form(
-                                    w.word, "de" if use_german_capitalization else None
-                                )
-                                for w in combined
-                            ]
+                            [self.storage.dictionary.get_capitalized_form(w.word, None) for w in combined]
                         )
 
                     # Copy to clipboard
@@ -1151,9 +1128,7 @@ class Application(QObject):
 
                 # Format prompt with selected words (capitalized for German)
                 selected_words = [
-                    self.storage.dictionary.get_capitalized_form(
-                        w.word, "de" if use_german_capitalization else None
-                    )
+                    self.storage.dictionary.get_capitalized_form(w.word, None)
                     for w in words[: min(count, 50)]
                 ]
                 selected_words_str = ", ".join(selected_words)
@@ -1225,9 +1200,7 @@ class Application(QObject):
 
                 # Apply capitalization for German nouns
                 capitalized_words = [
-                    self.storage.dictionary.get_capitalized_form(
-                        w, "de" if use_german_capitalization else None
-                    )
+                    self.storage.dictionary.get_capitalized_form(w, None)
                     for w in words
                 ]
 
@@ -1315,9 +1288,7 @@ class Application(QObject):
                     )
                     # Apply capitalization for German nouns
                     capitalized_words = [
-                        self.storage.dictionary.get_capitalized_form(
-                            w, "de" if use_german_capitalization else None
-                        )
+                        self.storage.dictionary.get_capitalized_form(w, None)
                         for w in words
                     ]
                     practice_text = " ".join(capitalized_words)
@@ -1412,9 +1383,7 @@ class Application(QObject):
 
                 # Format prompt with capitalized words for German
                 hardest_words = [
-                    self.storage.dictionary.get_capitalized_form(
-                        w.word, "de" if use_german_capitalization else None
-                    )
+                    self.storage.dictionary.get_capitalized_form(w.word, None)
                     for w in words[:hardest_word_count]
                 ]
                 hardest_words_str = ", ".join(hardest_words)
