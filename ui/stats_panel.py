@@ -32,14 +32,16 @@ class StatsPanel(QWidget):
     settings_requested = Signal()
     visibility_changed = Signal(bool)  # Emitted when panel visibility changes
 
-    def __init__(self, icon_path: str = None):
+    def __init__(self, icon_path: str = None, config=None):
         """Initialize statistics panel.
 
         Args:
             icon_path: Optional path to the project logo icon
+            config: Optional Config object for settings persistence
         """
         super().__init__()
         self.icon_path = icon_path
+        self._config = config  # Store config reference directly
         self.slowest_keys_count = 10
         self._clipboard = QApplication.clipboard()
         self._trend_data_loaded = False
@@ -509,7 +511,7 @@ class StatsPanel(QWidget):
         # Special Characters checkbox
         self.words_special_chars_checkbox = QCheckBox("Special Chars")
         self.words_special_chars_checkbox.setToolTip(
-            "Add special characters (quotes, hyphens, punctuation) to practice text (30% chance per word)"
+            "Add special characters (quotes, hyphens, punctuation) to practice text (configurable probability in settings)"
         )
         self.words_special_chars_checkbox.setChecked(False)
         unified_controls_layout.addWidget(self.words_special_chars_checkbox)
@@ -517,7 +519,7 @@ class StatsPanel(QWidget):
         # Numbers checkbox
         self.words_numbers_checkbox = QCheckBox("Numbers")
         self.words_numbers_checkbox.setToolTip(
-            "Add random numbers (1-1000) to practice text (15% chance between words)"
+            "Add random numbers (1-1000) to practice text (configurable probability in settings)"
         )
         self.words_numbers_checkbox.setChecked(False)
         unified_controls_layout.addWidget(self.words_numbers_checkbox)
@@ -645,7 +647,7 @@ class StatsPanel(QWidget):
         # Special Characters checkbox
         self.digraphs_special_chars_checkbox = QCheckBox("Special Chars")
         self.digraphs_special_chars_checkbox.setToolTip(
-            "Add special characters (quotes, hyphens, punctuation) to practice text (30% chance per word)"
+            "Add special characters (quotes, hyphens, punctuation) to practice text (configurable probability in settings)"
         )
         self.digraphs_special_chars_checkbox.setChecked(False)
         digraph_controls_layout.addWidget(self.digraphs_special_chars_checkbox)
@@ -653,7 +655,7 @@ class StatsPanel(QWidget):
         # Numbers checkbox
         self.digraphs_numbers_checkbox = QCheckBox("Numbers")
         self.digraphs_numbers_checkbox.setToolTip(
-            "Add random numbers (1-1000) to practice text (15% chance between words)"
+            "Add random numbers (1-1000) to practice text (configurable probability in settings)"
         )
         self.digraphs_numbers_checkbox.setChecked(False)
         digraph_controls_layout.addWidget(self.digraphs_numbers_checkbox)
@@ -712,28 +714,28 @@ class StatsPanel(QWidget):
         self.setLayout(layout)
 
         # Load checkbox states from config and connect signals
-        app = QApplication.instance()
-        if app and hasattr(app, "application") and hasattr(app.application, "config"):
+        config = self._get_config()
+        if config:
             # Words tab checkboxes
-            words_special_chars = app.application.config.get_bool("practice_words_special_chars_enabled", False)
+            words_special_chars = config.get_bool("practice_words_special_chars_enabled", False)
             log.info(f"Loading practice_words_special_chars_enabled = {words_special_chars}")
             self.words_special_chars_checkbox.setChecked(words_special_chars)
 
-            words_numbers = app.application.config.get_bool("practice_words_numbers_enabled", False)
+            words_numbers = config.get_bool("practice_words_numbers_enabled", False)
             log.info(f"Loading practice_words_numbers_enabled = {words_numbers}")
             self.words_numbers_checkbox.setChecked(words_numbers)
 
             # Digraphs tab checkboxes
-            digraphs_special_chars = app.application.config.get_bool("practice_digraphs_special_chars_enabled", False)
+            digraphs_special_chars = config.get_bool("practice_digraphs_special_chars_enabled", False)
             log.info(f"Loading practice_digraphs_special_chars_enabled = {digraphs_special_chars}")
             self.digraphs_special_chars_checkbox.setChecked(digraphs_special_chars)
-            digraphs_numbers = app.application.config.get_bool("practice_digraphs_numbers_enabled", False)
+            digraphs_numbers = config.get_bool("practice_digraphs_numbers_enabled", False)
             log.info(f"Loading practice_digraphs_numbers_enabled = {digraphs_numbers}")
             self.digraphs_numbers_checkbox.setChecked(digraphs_numbers)
 
             # Load saved combo box values
             # Words mode
-            saved_word_mode = app.application.config.get("practice_words_mode", "hardest")
+            saved_word_mode = config.get("practice_words_mode", "hardest")
             log.info(f"Loading saved_word_mode = {saved_word_mode}")
             for i in range(self.word_mode_combo.count()):
                 if self.word_mode_combo.itemData(i) == saved_word_mode:
@@ -742,7 +744,7 @@ class StatsPanel(QWidget):
                     break
 
             # Words count
-            saved_word_count = app.application.config.get_int("practice_words_word_count", 10)
+            saved_word_count = config.get_int("practice_words_word_count", 10)
             log.info(f"Loading saved_word_count = {saved_word_count}")
             for i in range(self.unified_word_count_combo.count()):
                 if self.unified_word_count_combo.itemData(i) == saved_word_count:
@@ -750,7 +752,7 @@ class StatsPanel(QWidget):
                     break
 
             # Digraphs mode
-            saved_digraph_mode = app.application.config.get("practice_digraphs_mode", "hardest")
+            saved_digraph_mode = config.get("practice_digraphs_mode", "hardest")
             log.info(f"Loading saved_digraph_mode = {saved_digraph_mode}")
             for i in range(self.digraph_mode_combo.count()):
                 if self.digraph_mode_combo.itemData(i) == saved_digraph_mode:
@@ -758,7 +760,7 @@ class StatsPanel(QWidget):
                     break
 
             # Digraph count
-            saved_digraph_count = app.application.config.get_int("practice_digraphs_digraph_count", 5)
+            saved_digraph_count = config.get_int("practice_digraphs_digraph_count", 5)
             log.info(f"Loading saved_digraph_count = {saved_digraph_count}")
             for i in range(self.digraph_count_combo.count()):
                 if self.digraph_count_combo.itemData(i) == saved_digraph_count:
@@ -766,7 +768,7 @@ class StatsPanel(QWidget):
                     break
 
             # Digraph word count
-            saved_digraph_word_count = app.application.config.get_int("practice_digraphs_word_count", 10)
+            saved_digraph_word_count = config.get_int("practice_digraphs_word_count", 10)
             log.info(f"Loading saved_digraph_word_count = {saved_digraph_word_count}")
             for i in range(self.digraph_word_count_combo.count()):
                 if self.digraph_word_count_combo.itemData(i) == saved_digraph_word_count:
@@ -1425,7 +1427,7 @@ class StatsPanel(QWidget):
         # Combo box is for "Copy Words" feature, generation uses configured word count
         app = QApplication.instance()
         if app and hasattr(app, "config"):
-            count = app.application.config.get_int("llm_word_count", 50)
+            count = self._get_config().get_int("llm_word_count", 50)
         else:
             count = 50  # Fallback default
 
@@ -1888,6 +1890,15 @@ class StatsPanel(QWidget):
                         if child.text() in ["Mode:", "Digraphs:", "Words:"]:
                             child.setVisible(enabled)
 
+    def _get_config(self):
+        """Get the config object, trying multiple sources."""
+        if self._config:
+            return self._config
+        app = QApplication.instance()
+        if app and hasattr(app, "application") and hasattr(app.application, "config"):
+            return app.application.config
+        return None
+
     def _update_practice_config(self, key: str, state: int) -> None:
         """Update practice config when checkbox state changes.
 
@@ -1897,13 +1908,13 @@ class StatsPanel(QWidget):
         """
         from PySide6.QtCore import Qt
 
-        app = QApplication.instance()
-        if app and hasattr(app, "application") and hasattr(app.application, "config"):
+        config = self._get_config()
+        if config:
             is_checked = state == Qt.CheckState.Checked.value
             log.info(f"Updating config {key} = {is_checked}")
-            app.application.config.set(key, is_checked)
+            config.set(key, is_checked)
         else:
-            log.warning(f"Cannot update config {key}: app.application.config not available")
+            log.warning(f"Cannot update config {key}: config not available")
 
     def _update_practice_config_int(self, key: str, value: int) -> None:
         """Update practice config with integer value.
@@ -1912,12 +1923,12 @@ class StatsPanel(QWidget):
             key: Config key to update
             value: Integer value to set
         """
-        app = QApplication.instance()
-        if app and hasattr(app, "application") and hasattr(app.application, "config"):
+        config = self._get_config()
+        if config:
             log.info(f"Updating config {key} = {value}")
-            app.application.config.set(key, value)
+            config.set(key, value)
         else:
-            log.warning(f"Cannot update config {key}: app.application.config not available")
+            log.warning(f"Cannot update config {key}: config not available")
 
     def _update_practice_config_str(self, key: str, value: str) -> None:
         """Update practice config with string value.
@@ -1926,9 +1937,9 @@ class StatsPanel(QWidget):
             key: Config key to update
             value: String value to set
         """
-        app = QApplication.instance()
-        if app and hasattr(app, "application") and hasattr(app.application, "config"):
+        config = self._get_config()
+        if config:
             log.info(f"Updating config {key} = {value}")
-            app.application.config.set(key, value)
+            config.set(key, value)
         else:
-            log.warning(f"Cannot update config {key}: app.application.config not available")
+            log.warning(f"Cannot update config {key}: config not available")
