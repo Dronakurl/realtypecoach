@@ -1165,13 +1165,31 @@ class StatsPanel(QWidget):
         # Don't load immediately - wait for tab to be shown
         self.wpm_graph.set_data_callback(callback, load_immediately=False)
 
-    def update_trend_graph(self, data: list[tuple[int, float]]) -> None:
+    def update_trend_graph(self, data: tuple[list[float], list[int]]) -> None:
         """Update trend graph with new data.
 
         Args:
-            data: List of (timestamp_ms, avg_wpm) tuples
+            data: Tuple of (raw_wpm_values, x_positions) - backend always returns raw data now
         """
-        slope = self.wpm_graph.update_graph(data)
+        self.wpm_graph.update_graph(data)
+
+    def set_typing_time_data_callback(self, callback) -> None:
+        """Set callback for requesting typing time data.
+
+        Args:
+            callback: Function to call when new data is needed
+        """
+        self._typing_time_data_callback = callback
+        # Don't load immediately - wait for tab to be shown
+        self.typing_time_graph.set_data_callback(callback, load_immediately=False)
+
+    def update_typing_time_graph(self, data: list[TypingTimeDataPoint]) -> None:
+        """Update typing time graph with new data.
+
+        Args:
+            data: List of TypingTimeDataPoint models
+        """
+        slope = self.typing_time_graph.update_graph(data)
         self.update_trend_parameter(slope)
 
     def update_trend_parameter(self, wpm_per_day: float | None) -> None:
@@ -1194,24 +1212,6 @@ class StatsPanel(QWidget):
             self.avg_wpm_subtitle_label.setText(f"{base_text} • trend: {wpm_per_day:+.2f} WPM/day")
         else:
             self.avg_wpm_subtitle_label.setText(base_text)
-
-    def set_typing_time_data_callback(self, callback) -> None:
-        """Set callback for requesting typing time data.
-
-        Args:
-            callback: Function to call when new data is needed
-        """
-        self._typing_time_data_callback = callback
-        # Don't load immediately - wait for tab to be shown
-        self.typing_time_graph.set_data_callback(callback, load_immediately=False)
-
-    def update_typing_time_graph(self, data: list[TypingTimeDataPoint]) -> None:
-        """Update typing time graph with new data.
-
-        Args:
-            data: List of TypingTimeDataPoint models
-        """
-        self.typing_time_graph.update_graph(data)
 
     def set_histogram_data_callback(self, callback) -> None:
         """Set callback for requesting histogram data.

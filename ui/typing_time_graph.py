@@ -1,11 +1,12 @@
 """Typing time graph widget for RealTypeCoach."""
 
 from collections.abc import Callable
+from datetime import datetime
 from enum import Enum
 
 import pyqtgraph as pg
 from pyqtgraph import BarGraphItem, GraphicsLayoutWidget
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -16,6 +17,49 @@ from PySide6.QtWidgets import (
 )
 
 from core.models import TypingTimeDataPoint
+
+
+def calculate_linear_regression(data_points: list[TypingTimeDataPoint]) -> tuple[float | None, float | None, float | None]:
+    """Calculate linear regression (y = mx + b) for WPM over time.
+
+    Args:
+        data_points: List of TypingTimeDataPoint models with period_start timestamps
+
+    Returns:
+        Tuple of (slope_wpm_per_day, intercept, r_squared) or (None, None, None) if insufficient data
+    """
+    if len(data_points) < 2:
+        return None, None, None
+
+    # Convert timestamps to days since first timestamp
+    first_ts = data_points[0].period_start
+    days = [(dp.period_start - first_ts) / (1000 * 60 * 60 * 24) for dp in data_points]
+    wpm_values = [dp.avg_wpm for dp in data_points]
+
+    # Calculate slope and intercept using least squares
+    n = len(days)
+    sum_x = sum(days)
+    sum_y = sum(wpm_values)
+    sum_xy = sum(x * y for x, y in zip(days, wpm_values))
+    sum_x2 = sum(x * x for x in days)
+
+    denominator = n * sum_x2 - sum_x * sum_x
+    if denominator == 0:
+        return None, None, None
+
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    intercept = (sum_y - slope * sum_x) / n
+
+    # Calculate R² for trend quality
+    y_mean = sum_y / n
+    ss_tot = sum((y - y_mean) ** 2 for y in wpm_values)
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(days, wpm_values))
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+
+    # Convert slope from WPM/ms to WPM/day
+    slope_wpm_per_day = slope * (1000 * 60 * 60 * 24)
+
+    return slope_wpm_per_day, intercept, r_squared
 
 
 class TimeGranularity(Enum):
@@ -43,6 +87,7 @@ class TypingTimeGraph(QWidget):
         self.data: list[TypingTimeDataPoint] = []
         self._data_callback: Callable[[str], None] | None = None
         self._update_timer: QTimer | None = None
+        self.current_slope: float | None = None  # Store current slope for display
 
         self.init_ui()
 
@@ -115,6 +160,11 @@ class TypingTimeGraph(QWidget):
             pen=pg.mkPen(color=(80, 200, 120), width=2), symbol="o", symbolSize=5
         )
 
+        # Create trend line plot item (initially empty)
+        self.plot_trend_item = self.plot_wpm.plot(
+            pen=pg.mkPen(color=(255, 140, 0), width=2, style=Qt.PenStyle.DashLine)
+        )
+
         layout.addWidget(self.plot_widget)
 
         # Info label
@@ -177,11 +227,14 @@ class TypingTimeGraph(QWidget):
         if self._data_callback:
             self._data_callback(self.current_granularity.value)
 
-    def update_graph(self, data_points: list[TypingTimeDataPoint]) -> None:
+    def update_graph(self, data_points: list[TypingTimeDataPoint]) -> float | None:
         """Update both plots with typing time and WPM data.
 
         Args:
             data_points: List of TypingTimeDataPoint models
+
+        Returns:
+            Slope in WPM/day, or None if insufficient data
         """
         import logging
         import traceback
@@ -197,8 +250,10 @@ class TypingTimeGraph(QWidget):
                 log.warning("No data points received, showing 'No data available'")
                 self.bar_item.setOpts(x=[], height=[])
                 self.plot_wpm_item.setData([], [])
+                self.plot_trend_item.setData([], [])
                 self.info_label.setText("Showing: No data")
-                return
+                self.current_slope = None
+                return None
 
             # Extract data
             period_labels = [dp.period_label for dp in data_points]
@@ -220,15 +275,47 @@ class TypingTimeGraph(QWidget):
             # Update line chart for WPM
             self.plot_wpm_item.setData(x_indices, avg_wpm)
 
+            # Calculate and display trend line
+            slope_wpm_per_day, intercept, r_squared = calculate_linear_regression(data_points)
+            self.current_slope = slope_wpm_per_day
+
+            if slope_wpm_per_day is not None and len(data_points) >= 2:
+                # Generate trend line points (start and end of time range)
+                first_ts = data_points[0].period_start
+                last_ts = data_points[-1].period_start
+                first_day = 0
+                last_day = (last_ts - first_ts) / (1000 * 60 * 60 * 24)
+
+                # Calculate WPM at start and end using the regression equation
+                # WPM = slope * days + intercept
+                start_wpm = intercept
+                end_wpm = slope_wpm_per_day / (1000 * 60 * 60 * 24) * last_day + intercept
+
+                # Convert back to x indices for display
+                x_trend = [0, len(x_indices) - 1]
+                y_trend = [start_wpm, end_wpm]
+
+                self.plot_trend_item.setData(x_trend, y_trend)
+            else:
+                self.plot_trend_item.setData([], [])
+                self.current_slope = None
+
             # Auto-scale Y-axis for WPM, starting from 0
-            max_wpm = max(avg_wpm) if avg_wpm else 100
+            all_wpm_values = avg_wpm[:]
+            if self.current_slope is not None:
+                # Add trend line endpoints to the scale calculation
+                first_ts = data_points[0].period_start
+                last_ts = data_points[-1].period_start
+                last_day = (last_ts - first_ts) / (1000 * 60 * 60 * 24)
+                end_wpm = self.current_slope / (1000 * 60 * 60 * 24) * last_day + intercept
+                all_wpm_values.extend([intercept, end_wpm])
+
+            max_wpm = max(all_wpm_values) if all_wpm_values else 100
             self.plot_wpm.setYRange(0, max_wpm * 1.1, padding=0)
 
             # Format labels more compactly for days mode
             display_labels = period_labels
             if self.current_granularity == TimeGranularity.DAY:
-                from datetime import datetime
-
                 display_labels = []
                 for label in period_labels:
                     try:
@@ -254,8 +341,12 @@ class TypingTimeGraph(QWidget):
                 f"Showing: {len(data_points)} {self.current_granularity.value}(s) | "
                 f"Total: {total_hours:.1f} hours"
             )
+            if self.current_slope is not None:
+                info_text += f" • Trend: {self.current_slope:+.2f} WPM/day"
             self.info_label.setText(info_text)
             log.info(f"Graph updated successfully: {info_text}")
+            return self.current_slope
         except Exception as e:
             log.error(f"Error updating graph: {e}")
             log.error(traceback.format_exc())
+            return None

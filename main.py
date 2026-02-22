@@ -767,16 +767,13 @@ class Application(QObject):
         """Provide trend data to stats panel.
 
         Args:
-            smoothness: Smoothing level (1-100) - NOTE: ignored, kept for compatibility
+            smoothness: Smoothing level (1-100)
         """
 
         def fetch_data():
             try:
-                # Use new method that returns BurstTimeSeries with timestamps
-                data = self.analyzer.get_wpm_time_series()
-                # Convert to list of tuples for signal
-                data_tuples = [(ts.timestamp_ms, ts.avg_wpm) for ts in data]
-                self.signal_update_trend_data.emit(data_tuples)
+                data = self.analyzer.get_wpm_burst_sequence(smoothness=smoothness)
+                self.signal_update_trend_data.emit(data)
             except Exception as e:
                 log.error(f"Error fetching trend data: {e}")
 
