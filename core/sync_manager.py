@@ -64,6 +64,7 @@ class SyncManager:
         "ignored_words",
         "settings",
         "llm_prompts",
+        "sync_log",
     ]
 
     def __init__(
@@ -108,7 +109,8 @@ class SyncManager:
 
             # Verify critical tables exist
             required_tables = ["bursts", "statistics", "word_statistics",
-                              "digraph_statistics", "high_scores", "daily_summaries"]
+                              "digraph_statistics", "high_scores", "daily_summaries",
+                              "sync_log"]
             for table in required_tables:
                 cursor.execute(
                     "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
@@ -338,6 +340,10 @@ class SyncManager:
             return record.get("key")
         elif table == "llm_prompts":
             return record.get("id")
+        elif table == "sync_log":
+            # Use timestamp + machine_name as unique key for sync_log entries
+            # Each sync event is unique per machine per timestamp
+            return (record.get("timestamp"), record.get("machine_name"))
         return None
 
     def _records_equal(self, table: str, local: dict, remote: dict) -> bool:
@@ -419,6 +425,19 @@ class SyncManager:
                 and local.get("name") == remote.get("name")
                 and local.get("content") == remote.get("content")
                 and local.get("updated_at") == remote.get("updated_at")
+            )
+        elif table == "sync_log":
+            # Compare all fields for sync_log
+            # Each sync event is unique, so we compare all fields
+            return (
+                local.get("timestamp") == remote.get("timestamp")
+                and local.get("machine_name") == remote.get("machine_name")
+                and local.get("pushed") == remote.get("pushed")
+                and local.get("pulled") == remote.get("pulled")
+                and local.get("merged") == remote.get("merged")
+                and local.get("duration_ms") == remote.get("duration_ms")
+                and local.get("error") == remote.get("error")
+                and local.get("table_breakdown") == remote.get("table_breakdown")
             )
 
         return False
@@ -966,6 +985,10 @@ class SyncManager:
         elif table == "llm_prompts":
             # Use adapter's get_all_llm_prompts_for_sync method
             return self.local.get_all_llm_prompts_for_sync()
+        elif table == "sync_log":
+            # Use adapter's get_sync_logs method
+            # Get all logs - we'll sync them all
+            return self.local.get_sync_logs(limit=10000)
 
         return data
 
@@ -1220,6 +1243,10 @@ class SyncManager:
             elif table == "llm_prompts":
                 # Use adapter's get_all_llm_prompts_for_sync method
                 return self.remote.get_all_llm_prompts_for_sync()
+            elif table == "sync_log":
+                # Use adapter's get_sync_logs method
+                # Get all logs - we'll sync them all
+                return self.remote.get_sync_logs(limit=10000)
 
         except Exception as e:
             error_msg = f"Failed to get remote data for {table}: {e}"
@@ -1393,6 +1420,9 @@ class SyncManager:
                 elif table == "llm_prompts":
                     # Use batch insert for prompts
                     self.remote.batch_insert_llm_prompts([record])
+                elif table == "sync_log":
+                    # Use adapter's insert_sync_log method
+                    self.remote.insert_sync_log(record)
 
                 conn.commit()
             return True
@@ -1545,6 +1575,9 @@ class SyncManager:
                 elif table == "llm_prompts":
                     # Use batch insert for prompts
                     self.local.batch_insert_llm_prompts([record])
+                elif table == "sync_log":
+                    # Use adapter's insert_sync_log method
+                    self.local.insert_sync_log(record)
 
                 conn.commit()
             return True
@@ -1629,6 +1662,10 @@ class SyncManager:
                 return local
             else:
                 return remote
+        elif table == "sync_log":
+            # Sync log entries are unique per timestamp + machine_name
+            # Don't merge - each sync event is distinct
+            return None
 
         return None
 
