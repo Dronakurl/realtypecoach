@@ -1121,12 +1121,10 @@ class StatsPanel(QWidget):
         """Copy the n slowest words to clipboard."""
         count = self.hardest_words_count_combo.currentData()
         if hasattr(self, "_request_words_for_clipboard_callback"):
-            # Store the callback temporarily and trigger fetch
-            self._clipboard_callback = self._on_words_fetched_for_copy
-            self._request_words_for_clipboard_callback(count)
+            self._request_words_for_clipboard_callback(count, hardest=True)
 
-    def _on_words_fetched_for_copy(self, words: list[WordStatisticsLite]) -> None:
-        """Callback when words are fetched - copies to clipboard.
+    def copy_words_to_clipboard(self, words: list[WordStatisticsLite]) -> None:
+        """Copy words to clipboard.
 
         Args:
             words: List of WordStatisticsLite models
@@ -1165,16 +1163,12 @@ class StatsPanel(QWidget):
         """Copy the n fastest words to clipboard."""
         count = self.fastest_words_count_combo.currentData()
         if hasattr(self, "_request_fastest_words_callback"):
-            # Store the callback temporarily and trigger fetch
-            self._clipboard_callback = self._on_words_fetched_for_copy
             self._request_fastest_words_callback(count)
 
     def copy_mixed_words_to_clipboard(self) -> None:
         """Copy mixed random words (50% fastest, 50% hardest) to clipboard."""
         count = self.hardest_words_count_combo.currentData()
         if hasattr(self, "_request_mixed_words_callback"):
-            # Store the callback temporarily and trigger fetch
-            self._clipboard_callback = self._on_words_fetched_for_copy
             self._request_mixed_words_callback(count)
 
     def practice_text(self) -> None:
@@ -1248,11 +1242,6 @@ class StatsPanel(QWidget):
         """
         self._request_words_for_clipboard_callback = callback
 
-    def _on_clipboard_words_ready(self, words: list[WordStatisticsLite]) -> None:
-        """Slot called when clipboard words are ready."""
-        if hasattr(self, "_clipboard_callback"):
-            self._clipboard_callback(words)
-
     def set_digraph_data_callback(self, callback) -> None:
         """Set callback for requesting digraph data.
 
@@ -1276,16 +1265,6 @@ class StatsPanel(QWidget):
             callback: Function to call with (count) parameter
         """
         self._request_mixed_words_callback = callback
-
-    def _on_fastest_words_ready(self, words: list[WordStatisticsLite]) -> None:
-        """Slot called when fastest words are ready."""
-        if hasattr(self, "_clipboard_callback"):
-            self._clipboard_callback(words)
-
-    def _on_mixed_words_ready(self, words: list[WordStatisticsLite]) -> None:
-        """Slot called when mixed words are ready."""
-        if hasattr(self, "_clipboard_callback"):
-            self._clipboard_callback(words)
 
     def set_text_generation_callback(self, callback) -> None:
         """Set callback for Ollama text generation.
@@ -1519,7 +1498,6 @@ class StatsPanel(QWidget):
         mode = self.word_mode_combo.currentData()
 
         if hasattr(self, "_request_words_by_mode_callback"):
-            self._clipboard_callback = self._on_words_fetched_for_copy
             self._request_words_by_mode_callback(mode, count)
 
     def practice_text_by_mode(self) -> None:
@@ -1644,7 +1622,6 @@ class StatsPanel(QWidget):
         mode = self.digraph_mode_combo.currentData()
 
         if hasattr(self, "_request_digraph_words_callback"):
-            self._clipboard_callback = self._on_words_fetched_for_copy
             self._request_digraph_words_callback(mode, digraph_count, word_count)
 
     def practice_digraphs_by_mode(self) -> None:

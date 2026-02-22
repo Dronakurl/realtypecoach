@@ -78,7 +78,6 @@ ignore = [
     "N806",  # variable naming - allow startOfDay, endOfDay for readability
     "SIM108",  # ternary operator suggestions - keep if-else for clarity
     "B904",  # exception raising - keep simple raise statements
-    "UP038",  # isinstance union - keep (list, dict) syntax for clarity
     "SIM113",  # enumerate - keep simple for loops
     "C401",  # unnecessary generator - keep explicit generator expressions
     "B007",  # loop control variable not used (in test code)

@@ -411,23 +411,23 @@ class Application(QObject):
         self.stats_panel.set_digraph_practice_callback(self.fetch_digraph_practice)
 
         self.signal_clipboard_words_ready.connect(
-            self.stats_panel._on_clipboard_words_ready,
+            self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
 
         self.signal_clipboard_fastest_words_ready.connect(
-            self.stats_panel._on_fastest_words_ready,
+            self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
 
         self.signal_clipboard_mixed_words_ready.connect(
-            self.stats_panel._on_mixed_words_ready,
+            self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
 
         # Connect digraph signals
         self.signal_digraph_words_ready.connect(
-            self.stats_panel._on_clipboard_words_ready,
+            self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
 
@@ -843,18 +843,24 @@ class Application(QObject):
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_data)
 
-    def fetch_words_for_clipboard(self, count: int) -> None:
-        """Fetch slowest words in background thread and emit signal.
+    def fetch_words_for_clipboard(self, count: int, hardest: bool = True) -> None:
+        """Fetch words for clipboard in background thread and emit signal.
 
         Args:
             count: Number of words to fetch
+            hardest: If True, fetch slowest words; if False, fetch fastest words
         """
 
         def fetch_in_thread():
             try:
-                words = self.analyzer.get_slowest_words(
-                    limit=count, layout=self.get_current_layout()
-                )
+                if hardest:
+                    words = self.analyzer.get_slowest_words(
+                        limit=count, layout=self.get_current_layout()
+                    )
+                else:
+                    words = self.analyzer.get_fastest_words(
+                        limit=count, layout=self.get_current_layout()
+                    )
                 # Emit signal to main thread
                 self.signal_clipboard_words_ready.emit(words)
             except Exception as e:
