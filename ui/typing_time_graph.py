@@ -244,7 +244,7 @@ class TypingTimeGraph(QWidget):
         log = logging.getLogger("realtypecoach.typing_time_graph")
 
         try:
-            log.info(f"update_graph called with {len(data_points)} data points")
+            log.debug(f"update_graph called with {len(data_points)} data points")
 
             self.data = data_points
 
@@ -346,7 +346,7 @@ class TypingTimeGraph(QWidget):
             if self.current_slope is not None:
                 info_text += f" • Trend: {self.current_slope:+.2f} WPM/day"
             self.info_label.setText(info_text)
-            log.info(f"Graph updated successfully: {info_text}")
+            log.debug(f"Graph updated successfully: {info_text}")
             return self.current_slope
         except Exception as e:
             log.error(f"Error updating graph: {e}")

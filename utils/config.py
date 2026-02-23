@@ -443,7 +443,7 @@ class Config:
         # Check temporary overrides first
         if hasattr(self, "_temp_overrides") and key in self._temp_overrides:
             value = self._temp_overrides[key]
-            log.info(f"Config {key} from temporary override: {value}")
+            log.debug(f"Config {key} from temporary override: {value}")
             # Validate through pydantic if key is in AppSettings
             if key in AppSettings.model_fields:
                 try:
@@ -460,7 +460,7 @@ class Config:
             if result:
                 raw_value = result[0]
                 parsed = self._simple_parse(raw_value)
-                log.info(f"Config {key} from database: {parsed}")
+                log.debug(f"Config {key} from database: {parsed}")
                 # Validate through pydantic if key is in AppSettings
                 if key in AppSettings.model_fields:
                     try:
@@ -470,14 +470,14 @@ class Config:
                         return parsed
                 return parsed
             # Key not found in database
-            log.info(f"Config {key} not in database, using default: {default}")
+            log.debug(f"Config {key} not in database, using default: {default}")
             if default is not None:
                 return default
             # Fall back to AppSettings default if key exists
             if key in AppSettings.model_fields:
                 settings = AppSettings()
                 default_value = getattr(settings, key)
-                log.info(f"Config {key} using AppSettings default: {default_value}")
+                log.debug(f"Config {key} using AppSettings default: {default_value}")
                 return default_value
             return None
 
