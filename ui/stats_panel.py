@@ -831,10 +831,10 @@ class StatsPanel(QWidget):
             all_time_best: All-time best WPM
             wpm_95th_percentile: 95th percentile WPM across all bursts
         """
-        log.info(f"update_wpm() called: burst_wpm={burst_wpm:.1f}, visible={self.isVisible()}")
+        log.debug(f"update_wpm() called: burst_wpm={burst_wpm:.1f}, visible={self.isVisible()}")
 
         if not self.isVisible():
-            log.info("update_wpm() - panel not visible, returning early")
+            log.debug("update_wpm() - panel not visible, returning early")
             return
 
         # Update Current Burst WPM card
@@ -872,10 +872,10 @@ class StatsPanel(QWidget):
             if hasattr(self, "_trend_wpm_per_day") and self._trend_wpm_per_day is not None:
                 subtitle = f"{base_text} • trend: {self._trend_wpm_per_day:+.2f} WPM/day"
                 self.avg_wpm_subtitle_label.setText(subtitle)
-                log.info(f"update_wpm() set subtitle with trend: {subtitle}")
+                log.debug(f"update_wpm() set subtitle with trend: {subtitle}")
             else:
                 self.avg_wpm_subtitle_label.setText(base_text)
-                log.info(f"update_wpm() set subtitle without trend (hasattr={hasattr(self, '_trend_wpm_per_day')}): {base_text}")
+                log.debug(f"update_wpm() set subtitle without trend (hasattr={hasattr(self, '_trend_wpm_per_day')}): {base_text}")
 
     def update_slowest_keys(self, slowest_keys: list[KeyPerformance]) -> None:
         """Update slowest keys display.
@@ -1200,9 +1200,9 @@ class StatsPanel(QWidget):
         Args:
             data: List of TypingTimeDataPoint models
         """
-        log.info(f"update_typing_time_graph() called with {len(data)} data points")
+        log.debug(f"update_typing_time_graph() called with {len(data)} data points")
         slope = self.typing_time_graph.update_graph(data)
-        log.info(f"update_typing_time_graph() got slope: {slope}")
+        log.debug(f"update_typing_time_graph() got slope: {slope}")
         self.update_trend_parameter(slope)
 
     def update_trend_parameter(self, wpm_per_day: float | None) -> None:
@@ -1211,7 +1211,7 @@ class StatsPanel(QWidget):
         Args:
             wpm_per_day: WPM increase per day (positive or negative), or None if unavailable
         """
-        log.info(f"update_trend_parameter() called with wpm_per_day={wpm_per_day}")
+        log.debug(f"update_trend_parameter() called with wpm_per_day={wpm_per_day}")
         # Store the trend value
         self._trend_wpm_per_day = wpm_per_day
 
@@ -1229,11 +1229,11 @@ class StatsPanel(QWidget):
         if wpm_per_day is not None:
             subtitle = f"{base_text} • trend: {wpm_per_day:+.2f} WPM/day"
             self.avg_wpm_subtitle_label.setText(subtitle)
-            log.info(f"Set subtitle to: {subtitle}")
+            log.debug(f"Set subtitle to: {subtitle}")
         else:
             subtitle = base_text
             self.avg_wpm_subtitle_label.setText(subtitle)
-            log.info(f"Set subtitle to (no trend): {subtitle}")
+            log.debug(f"Set subtitle to (no trend): {subtitle}")
 
     def set_histogram_data_callback(self, callback) -> None:
         """Set callback for requesting histogram data.
@@ -1814,9 +1814,11 @@ class StatsPanel(QWidget):
         digraph_count = self.digraph_count_combo.currentData()
         word_count = self.digraph_word_count_combo.currentData()
         mode = self.digraph_mode_combo.currentData()
+        special_chars = self.digraphs_special_chars_checkbox.isChecked()
+        numbers = self.digraphs_numbers_checkbox.isChecked()
 
         if hasattr(self, "_request_digraph_words_callback"):
-            self._request_digraph_words_callback(mode, digraph_count, word_count)
+            self._request_digraph_words_callback(mode, digraph_count, word_count, special_chars, numbers)
 
     def practice_digraphs_by_mode(self) -> None:
         """Launch practice with words containing selected digraphs."""
@@ -1851,7 +1853,7 @@ class StatsPanel(QWidget):
         """Set callback for fetching words containing digraphs for clipboard.
 
         Args:
-            callback: Function to call with (mode, digraph_count, word_count) parameters
+            callback: Function to call with (mode, digraph_count, word_count, special_chars, numbers) parameters
         """
         self._request_digraph_words_callback = callback
 

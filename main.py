@@ -789,11 +789,11 @@ class Application(QObject):
 
         def fetch_data():
             try:
-                log.info(f"Fetching typing time data with granularity: {granularity}")
+                log.debug(f"Fetching typing time data with granularity: {granularity}")
                 data = self.analyzer.get_typing_time_data(granularity=granularity)
-                log.info(f"Got {len(data)} data points, emitting signal")
+                log.debug(f"Got {len(data)} data points, emitting signal")
                 self.signal_update_typing_time_graph.emit(data)
-                log.info("Signal emitted successfully")
+                log.debug("Signal emitted successfully")
             except Exception as e:
                 log.error(f"Error fetching typing time data: {e}")
 
@@ -1177,13 +1177,15 @@ class Application(QObject):
 
         self._executor.submit(generate_in_thread)
 
-    def fetch_digraph_words(self, mode: str, digraph_count: int, word_count: int) -> None:
+    def fetch_digraph_words(self, mode: str, digraph_count: int, word_count: int, special_chars: bool = False, numbers: bool = False) -> None:
         """Fetch words containing selected digraphs for clipboard.
 
         Args:
             mode: Digraph mode ("hardest", "fastest", or "mixed")
             digraph_count: Number of digraphs to select
             word_count: Number of words to return
+            special_chars: Whether to add special characters to text
+            numbers: Whether to add random numbers to text
         """
 
         def fetch_in_thread():
@@ -1237,23 +1239,10 @@ class Application(QObject):
                     self.storage.dictionary.get_capitalized_form(w, None) for w in words
                 ]
 
-                # Convert to WordStatisticsLite format for clipboard
-                from core.models import WordStatisticsLite
+                # Apply enhancements (special chars and numbers)
+                enhanced_words = self._apply_text_enhancements(capitalized_words, special_chars, numbers)
 
-                word_stats = []
-                for word in capitalized_words:
-                    # Create simple WordStatisticsLite objects
-                    word_stats.append(
-                        WordStatisticsLite(
-                            word=word,
-                            avg_speed_ms_per_letter=100.0,  # Placeholder value
-                            total_duration_ms=len(word) * 100,
-                            total_letters=len(word),
-                            rank=0,
-                        )
-                    )
-
-                self.signal_digraph_words_ready.emit(word_stats)
+                self.signal_digraph_words_ready.emit(enhanced_words)
 
             except Exception as e:
                 log.error(f"Error fetching digraph words: {e}")
@@ -1874,16 +1863,16 @@ class Application(QObject):
     def update_statistics(self) -> None:
         """Update statistics display."""
         start_time = time.time()
-        log.info("update_statistics() called")
+        log.debug("update_statistics() called")
 
         stats = self.analyzer.get_statistics()
         long_term_avg = self.analyzer.get_long_term_average_wpm() or 0
         all_time_best = self.analyzer.get_all_time_high_score() or 0
         wpm_95th_percentile = self.analyzer.get_burst_wpm_percentile(95) or 0
 
-        log.info(f"get_statistics took {(time.time() - start_time) * 1000:.1f}ms")
+        log.debug(f"get_statistics took {(time.time() - start_time) * 1000:.1f}ms")
 
-        log.info(
+        log.debug(
             f"Emitting stats signal: burst_wpm={stats['burst_wpm']:.1f}, today_best={stats['personal_best_today'] or 0:.1f}"
         )
         self.signal_update_stats.emit(
@@ -1906,7 +1895,7 @@ class Application(QObject):
             layout=self.get_current_layout(),
         )
         self.signal_update_fastest_keys.emit(fastest_keys)
-        log.info(f"Slowest/fastest keys queries took {(time.time() - keys_start) * 1000:.1f}ms")
+        log.debug(f"Slowest/fastest keys queries took {(time.time() - keys_start) * 1000:.1f}ms")
 
         words_start = time.time()
         hardest_words = self.analyzer.get_slowest_words(limit=10, layout=self.get_current_layout())
@@ -1914,7 +1903,7 @@ class Application(QObject):
 
         fastest_words = self.analyzer.get_fastest_words(limit=10, layout=self.get_current_layout())
         self.signal_update_fastest_words_stats.emit(fastest_words)
-        log.info(f"Slowest/fastest words queries took {(time.time() - words_start) * 1000:.1f}ms")
+        log.debug(f"Slowest/fastest words queries took {(time.time() - words_start) * 1000:.1f}ms")
 
         # Update digraph statistics
         digraphs_start = time.time()
@@ -1925,7 +1914,7 @@ class Application(QObject):
             limit=10, layout=self.get_current_layout()
         )
         self.signal_update_digraph_stats.emit(fastest_digraphs, slowest_digraphs)
-        log.info(f"Digraph queries took {(time.time() - digraphs_start) * 1000:.1f}ms")
+        log.debug(f"Digraph queries took {(time.time() - digraphs_start) * 1000:.1f}ms")
 
         # Update typing time display (today + all-time excluding today)
         all_time_typing_sec = self.storage.get_all_time_typing_time(
@@ -1971,7 +1960,7 @@ class Application(QObject):
         )
 
         total_time = (time.time() - start_time) * 1000
-        log.info(f"update_statistics() completed in {total_time:.1f}ms")
+        log.debug(f"update_statistics() completed in {total_time:.1f}ms")
 
     def _health_check(self) -> None:
         """Periodic health check logging - runs every 5 minutes regardless of panel state."""
