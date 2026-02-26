@@ -1702,8 +1702,10 @@ class Application(QObject):
 
         Uses stats_panel's working method for clipboard access.
         """
+        log.info("practice_clipboard_from_tray called")
         # Call stats_panel's practice_text method which handles clipboard correctly
         self.stats_panel.practice_text()
+        log.info("practice_clipboard_from_tray completed")
 
     def process_event_queue(self) -> None:
         """Process events from queue."""
