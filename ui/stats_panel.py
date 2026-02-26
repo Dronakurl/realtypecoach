@@ -1358,10 +1358,14 @@ class StatsPanel(QWidget):
         """Open clipboard text for typing practice."""
         from PySide6.QtGui import QClipboard
 
+        log.info("practice_text() called")
+
         # Get text from clipboard
         clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
+        log.info(f"practice_text() clipboard: '{clipboard_text[:50] if clipboard_text else 'None'}'")
 
         if not clipboard_text or not clipboard_text.strip():
+            log.info("practice_text() clipboard is empty, showing notification")
             # Show error if clipboard is empty
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
