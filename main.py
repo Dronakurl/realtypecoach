@@ -1698,30 +1698,32 @@ class Application(QObject):
 
         Gets text from system clipboard and opens Monkeytype with that text.
         """
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QClipboard
+
+        # Access clipboard on main thread (required for Wayland)
+        clipboard = QApplication.clipboard()
+        clipboard_text = clipboard.text(QClipboard.Mode.Clipboard)
+
+        if not clipboard_text or not clipboard_text.strip():
+            log.warning("Clipboard is empty")
+            self.tray_icon.show_notification(
+                "Clipboard Practice",
+                "Clipboard is empty - copy some text first",
+                "warning",
+            )
+            return
+
+        # Limit to 100 words to avoid URL length issues
+        words = clipboard_text.split()[:100]
+        practice_text = " ".join(words)
+
+        log.info(f"Opening clipboard practice with {len(words)} words")
+
         def practice_with_clipboard():
             try:
-                from PySide6.QtWidgets import QApplication
-                from PySide6.QtGui import QClipboard
                 from utils.monkeytype_url import generate_custom_text_url
                 import webbrowser
-
-                clipboard = QApplication.clipboard()
-                clipboard_text = clipboard.text(QClipboard.Mode.Clipboard)
-
-                if not clipboard_text or not clipboard_text.strip():
-                    log.warning("Clipboard is empty")
-                    self.tray_icon.show_notification(
-                        "Clipboard Practice",
-                        "Clipboard is empty - copy some text first",
-                        "warning",
-                    )
-                    return
-
-                # Limit to 100 words to avoid URL length issues
-                words = clipboard_text.split()[:100]
-                practice_text = " ".join(words)
-
-                log.info(f"Opening clipboard practice with {len(words)} words")
 
                 url = generate_custom_text_url(practice_text)
                 webbrowser.open(url)
@@ -1738,7 +1740,7 @@ class Application(QObject):
                     "Clipboard Practice Error", f"Error: {str(e)}", "error"
                 )
 
-        # Run in background thread
+        # Run URL generation and browser open in background thread
         self._executor.submit(practice_with_clipboard)
 
     def process_event_queue(self) -> None:
