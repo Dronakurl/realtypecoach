@@ -1703,7 +1703,16 @@ class Application(QObject):
         Gets text from system clipboard and opens Monkeytype with that text.
         Uses stats_panel's clipboard reference since it works reliably.
         """
+        from PySide6.QtWidgets import QApplication
         from PySide6.QtGui import QClipboard
+
+        # On Wayland, need to process events and raise panel to get clipboard access
+        QApplication.processEvents()
+
+        # Briefly raise stats panel to ensure clipboard is accessible
+        self.stats_panel.show()
+        self.stats_panel.activateWindow()
+        QApplication.processEvents()
 
         # Use stats_panel's clipboard reference (works on Wayland)
         clipboard_text = self.stats_panel._clipboard.text(QClipboard.Mode.Clipboard)
