@@ -1701,18 +1701,18 @@ class Application(QObject):
         """Practice with clipboard contents.
 
         Gets text from system clipboard and opens Monkeytype with that text.
+        Uses stats_panel's clipboard reference since it works reliably.
         """
         from PySide6.QtGui import QClipboard
 
-        # Access clipboard on main thread (required for Wayland)
-        # Use stored clipboard reference (same as stats_panel)
-        clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
-        log.info(f"Clipboard mode: '{clipboard_text[:50] if clipboard_text else 'None'}")
+        # Use stats_panel's clipboard reference (works on Wayland)
+        clipboard_text = self.stats_panel._clipboard.text(QClipboard.Mode.Clipboard)
+        log.info(f"Clipboard mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
 
         if not clipboard_text or not clipboard_text.strip():
             # Try Selection mode as fallback (X11/Wayland primary selection)
-            clipboard_text = self._clipboard.text(QClipboard.Mode.Selection)
-            log.info(f"Selection mode: '{clipboard_text[:50] if clipboard_text else 'None'}")
+            clipboard_text = self.stats_panel._clipboard.text(QClipboard.Mode.Selection)
+            log.info(f"Selection mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
 
         if not clipboard_text or not clipboard_text.strip():
             log.warning("Clipboard is empty")
