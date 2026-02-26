@@ -1698,14 +1698,54 @@ class Application(QObject):
         self._executor.submit(practice_with_words)
 
     def practice_clipboard_from_tray(self) -> None:
-        """Practice with clipboard contents.
+        """Practice with clipboard contents."""
+        from utils.clipboard import get_clipboard_content_wayland, is_wayland
 
-        Uses stats_panel's working method for clipboard access.
-        """
-        log.info("practice_clipboard_from_tray called")
-        # Call stats_panel's practice_text method which handles clipboard correctly
-        self.stats_panel.practice_text()
-        log.info("practice_clipboard_from_tray completed")
+        clipboard_text = None
+
+        # Try Wayland native method first
+        if is_wayland():
+            clipboard_text = get_clipboard_content_wayland()
+
+        # Fallback to Qt clipboard
+        if not clipboard_text:
+            from PySide6.QtGui import QClipboard
+            clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
+
+        if not clipboard_text or not clipboard_text.strip():
+            log.warning("Clipboard is empty")
+            self.tray_icon.show_notification(
+                "Clipboard Practice",
+                "Clipboard is empty - copy some text first",
+                "warning",
+            )
+            return
+
+        # Limit to 100 words and open Monkeytype
+        words = clipboard_text.split()[:100]
+        practice_text = " ".join(words)
+
+        log.info(f"Opening clipboard practice with {len(words)} words")
+
+        def practice_with_clipboard():
+            try:
+                from utils.monkeytype_url import generate_custom_text_url
+                import webbrowser
+
+                url = generate_custom_text_url(practice_text)
+                webbrowser.open(url)
+
+                self.tray_icon.show_notification(
+                    "Clipboard Practice",
+                    f"Opened with {len(words)} words",
+                )
+            except Exception as e:
+                log.error(f"Error: {e}")
+                self.tray_icon.show_notification(
+                    "Clipboard Practice Error", f"Error: {str(e)}", "error"
+                )
+
+        self._executor.submit(practice_with_clipboard)
 
     def process_event_queue(self) -> None:
         """Process events from queue."""
