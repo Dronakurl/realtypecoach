@@ -393,6 +393,7 @@ class Application(QObject):
         self.tray_icon.practice_requested.connect(self.practice_hardest_words)
         self.tray_icon.digraphs_practice_requested.connect(self.practice_digraphs_from_tray)
         self.tray_icon.words_practice_requested.connect(self.practice_words_from_tray)
+        self.tray_icon.clipboard_practice_requested.connect(self.practice_clipboard_from_tray)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
@@ -1691,6 +1692,54 @@ class Application(QObject):
 
         # Run in background thread
         self._executor.submit(practice_with_words)
+
+    def practice_clipboard_from_tray(self) -> None:
+        """Practice with clipboard contents.
+
+        Gets text from system clipboard and opens Monkeytype with that text.
+        """
+        def practice_with_clipboard():
+            try:
+                from PySide6.QtWidgets import QApplication
+                from PySide6.QtGui import QClipboard
+                from utils.monkeytype_url import generate_custom_text_url
+                import webbrowser
+
+                clipboard = QApplication.clipboard()
+                clipboard_text = clipboard.text(QClipboard.Mode.Clipboard)
+
+                if not clipboard_text or not clipboard_text.strip():
+                    log.warning("Clipboard is empty")
+                    self.tray_icon.show_notification(
+                        "Clipboard Practice",
+                        "Clipboard is empty - copy some text first",
+                        "warning",
+                    )
+                    return
+
+                # Limit to 100 words to avoid URL length issues
+                words = clipboard_text.split()[:100]
+                practice_text = " ".join(words)
+
+                log.info(f"Opening clipboard practice with {len(words)} words")
+
+                url = generate_custom_text_url(practice_text)
+                webbrowser.open(url)
+
+                log.info("Successfully opened typing practice with clipboard text")
+                self.tray_icon.show_notification(
+                    "Clipboard Practice",
+                    f"Opened with {len(words)} words",
+                )
+
+            except Exception as e:
+                log.error(f"Error in practice_clipboard_from_tray: {e}")
+                self.tray_icon.show_notification(
+                    "Clipboard Practice Error", f"Error: {str(e)}", "error"
+                )
+
+        # Run in background thread
+        self._executor.submit(practice_with_clipboard)
 
     def process_event_queue(self) -> None:
         """Process events from queue."""

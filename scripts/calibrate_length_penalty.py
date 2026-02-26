@@ -18,8 +18,8 @@ from utils.config import Config
 
 
 def _is_abbreviation(word: str) -> bool:
-    """Check if word is an abbreviation (>2 capital letters)."""
-    return sum(1 for c in word if c.isupper()) > 2
+    """Check if word is an abbreviation (>1 capital letter)."""
+    return sum(1 for c in word if c.isupper()) > 1
 
 
 def _is_roman_numeral(word: str) -> bool:
@@ -45,9 +45,9 @@ def _calculate_length_penalty(word: str, target_length: float, penalty_factor: f
     """Calculate length penalty for weighted word selection."""
     length = len(word)
 
-    # Heavily penalize abbreviations and Roman numerals
+    # Extremely heavily penalize abbreviations and Roman numerals
     if _is_abbreviation(word) or _is_roman_numeral(word):
-        effective_length = 20
+        effective_length = 100
     elif length == 3:
         effective_length = 10
     elif length == 4:

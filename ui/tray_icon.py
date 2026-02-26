@@ -19,6 +19,7 @@ class TrayIcon(QSystemTrayIcon):
     practice_requested = Signal()  # Emitted when AI typing practice is requested
     digraphs_practice_requested = Signal()  # Emitted when digraph practice is requested
     words_practice_requested = Signal()  # Emitted when word practice is requested
+    clipboard_practice_requested = Signal()  # Emitted when clipboard practice is requested
     dismiss_notification_requested = Signal()  # Emitted to dismiss current notification
 
     def __init__(
@@ -84,6 +85,12 @@ class TrayIcon(QSystemTrayIcon):
         practice_words_action.triggered.connect(self.practice_words)
         menu.addAction(practice_words_action)
 
+        # Practice with Clipboard
+        practice_clipboard_action = QAction("📋 Practice Clipboard (Monkeytype)", self)
+        practice_clipboard_action.setIcon(QIcon(monkeytype_icon_path))
+        practice_clipboard_action.triggered.connect(self.practice_clipboard)
+        menu.addAction(practice_clipboard_action)
+
         # Only show AI Practice when Ollama is available
         if self.ollama_available:
             monkeytype_icon_path = str(Path(__file__).parent.parent / "icons" / "monkeytype.png")
@@ -128,6 +135,10 @@ class TrayIcon(QSystemTrayIcon):
     def practice_words(self) -> None:
         """Practice words with settings from statistics panel."""
         self.words_practice_requested.emit()
+
+    def practice_clipboard(self) -> None:
+        """Practice with clipboard contents."""
+        self.clipboard_practice_requested.emit()
 
     def practice_ai(self) -> None:
         """Practice with AI-generated text using Ollama."""

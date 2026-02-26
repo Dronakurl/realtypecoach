@@ -596,15 +596,15 @@ class Storage:
         return list(matching_words)
 
     def _is_abbreviation(self, word: str) -> bool:
-        """Check if word is an abbreviation (>2 capital letters).
+        """Check if word is an abbreviation (>1 capital letter).
 
         Args:
             word: The word to check
 
         Returns:
-            True if word has more than 2 capital letters
+            True if word has more than 1 capital letter (i.e., 2+ uppercase)
         """
-        return sum(1 for c in word if c.isupper()) > 2
+        return sum(1 for c in word if c.isupper()) > 1
 
     def _is_roman_numeral(self, word: str) -> bool:
         """Check if word is a Roman numeral (e.g., iii, vii, xii, xvii).
@@ -641,8 +641,8 @@ class Storage:
         - Short words: 3-letter words get penalty equivalent to 10-letter words,
                        4-letter words get penalty equivalent to 8-letter words
         - Long words: penalty based on how much longer than target
-        - Abbreviations: heavily penalized (effective_length = 20)
-        - Roman numerals: heavily penalized (effective_length = 20)
+        - Abbreviations (2+ uppercase): extremely heavily penalized (effective_length = 100)
+        - Roman numerals: extremely heavily penalized (effective_length = 100)
 
         Args:
             word: The word to calculate penalty for
@@ -654,9 +654,10 @@ class Storage:
         """
         length = len(word)
 
-        # Heavily penalize abbreviations and Roman numerals
+        # Extremely heavily penalize abbreviations (2+ uppercase) and Roman numerals
+        # Only selected in extreme cases (e.g., when no other words available)
         if self._is_abbreviation(word) or self._is_roman_numeral(word):
-            effective_length = 20
+            effective_length = 100
         elif length == 3:
             effective_length = 10
         elif length == 4:
@@ -676,7 +677,7 @@ class Storage:
         Uses weighted selection where:
         - Short words (3-4 letters) are penalized
         - Long words are penalized
-        - Abbreviations (>2 capital letters) are heavily penalized
+        - Abbreviations (2+ uppercase letters) are extremely heavily penalized
         Target average word length is approximately 6.5 characters.
 
         Args:
