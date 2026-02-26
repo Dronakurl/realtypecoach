@@ -1700,66 +1700,10 @@ class Application(QObject):
     def practice_clipboard_from_tray(self) -> None:
         """Practice with clipboard contents.
 
-        Gets text from system clipboard and opens Monkeytype with that text.
-        Uses stats_panel's clipboard reference since it works reliably.
+        Uses stats_panel's working method for clipboard access.
         """
-        from PySide6.QtWidgets import QApplication
-        from PySide6.QtGui import QClipboard
-
-        # On Wayland, need to process events and raise panel to get clipboard access
-        QApplication.processEvents()
-
-        # Briefly raise stats panel to ensure clipboard is accessible
-        self.stats_panel.show()
-        self.stats_panel.activateWindow()
-        QApplication.processEvents()
-
-        # Use stats_panel's clipboard reference (works on Wayland)
-        clipboard_text = self.stats_panel._clipboard.text(QClipboard.Mode.Clipboard)
-        log.info(f"Clipboard mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
-
-        if not clipboard_text or not clipboard_text.strip():
-            # Try Selection mode as fallback (X11/Wayland primary selection)
-            clipboard_text = self.stats_panel._clipboard.text(QClipboard.Mode.Selection)
-            log.info(f"Selection mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
-
-        if not clipboard_text or not clipboard_text.strip():
-            log.warning("Clipboard is empty")
-            self.tray_icon.show_notification(
-                "Clipboard Practice",
-                "Clipboard is empty - copy some text first",
-                "warning",
-            )
-            return
-
-        # Limit to 100 words to avoid URL length issues
-        words = clipboard_text.split()[:100]
-        practice_text = " ".join(words)
-
-        log.info(f"Opening clipboard practice with {len(words)} words")
-
-        def practice_with_clipboard():
-            try:
-                from utils.monkeytype_url import generate_custom_text_url
-                import webbrowser
-
-                url = generate_custom_text_url(practice_text)
-                webbrowser.open(url)
-
-                log.info("Successfully opened typing practice with clipboard text")
-                self.tray_icon.show_notification(
-                    "Clipboard Practice",
-                    f"Opened with {len(words)} words",
-                )
-
-            except Exception as e:
-                log.error(f"Error in practice_clipboard_from_tray: {e}")
-                self.tray_icon.show_notification(
-                    "Clipboard Practice Error", f"Error: {str(e)}", "error"
-                )
-
-        # Run URL generation and browser open in background thread
-        self._executor.submit(practice_with_clipboard)
+        # Call stats_panel's practice_text method which handles clipboard correctly
+        self.stats_panel.practice_text()
 
     def process_event_queue(self) -> None:
         """Process events from queue."""
