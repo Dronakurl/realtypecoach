@@ -1,6 +1,7 @@
 """Statistics panel for RealTypeCoach."""
 
 import logging
+import webbrowser
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPalette, QPixmap
@@ -495,11 +496,11 @@ class StatsPanel(QWidget):
         self.unified_copy_btn.clicked.connect(self.copy_words_by_mode)
         unified_controls_layout.addWidget(self.unified_copy_btn)
 
-        self.unified_practice_btn = QPushButton("⌨️ Practice")
+        self.unified_practice_btn = QPushButton("🐵 Practice (Monkeytype)")
         self.unified_practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.unified_practice_btn.clicked.connect(self.practice_text_by_mode)
         self.unified_practice_btn.setToolTip(
-            "Open clipboard text for typing practice with word highlighting"
+            "Open Monkeytype with custom text for typing practice"
         )
         unified_controls_layout.addWidget(self.unified_practice_btn)
 
@@ -639,10 +640,10 @@ class StatsPanel(QWidget):
         self.digraph_copy_btn.clicked.connect(self.copy_digraphs_by_mode)
         digraph_controls_layout.addWidget(self.digraph_copy_btn)
 
-        self.digraph_practice_btn = QPushButton("⌨️ Practice")
+        self.digraph_practice_btn = QPushButton("🐵 Practice (Monkeytype)")
         self.digraph_practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.digraph_practice_btn.setToolTip(
-            "Open words containing selected digraphs for typing practice"
+            "Open Monkeytype with words containing selected digraphs"
         )
         self.digraph_practice_btn.clicked.connect(self.practice_digraphs_by_mode)
         digraph_controls_layout.addWidget(self.digraph_practice_btn)
@@ -1355,8 +1356,6 @@ class StatsPanel(QWidget):
 
     def practice_text(self) -> None:
         """Open clipboard text for typing practice."""
-        import subprocess
-
         from PySide6.QtGui import QClipboard
 
         # Get text from clipboard
@@ -1371,50 +1370,29 @@ class StatsPanel(QWidget):
                 )
             return
 
-        # Get the script path
-        from pathlib import Path
-
-        script_path = Path(__file__).parent.parent / "scripts" / "practice.py"
-
-        if not script_path.exists():
-            log.error(f"practice.py not found at {script_path}")
-            app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Practice Error", "practice.py script not found")
-            return
-
-        # Run the practice script
+        # Import directly and open Monkeytype
         try:
-            # Truncate text if too long (for command line)
+            from utils.monkeytype_url import generate_custom_text_url
+
+            # Truncate text if too long
             words = clipboard_text.split()[:100]  # Limit to 100 words
             text_to_practice = " ".join(words)
 
             log.info(f"Opening typing practice: {len(words)} words")
-            result = subprocess.run(
-                ["python3", str(script_path), text_to_practice],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            url = generate_custom_text_url(text_to_practice)
+            webbrowser.open(url)
 
-            if result.returncode == 0:
-                log.info("Successfully opened typing practice")
-                app = QApplication.instance()
-                if app and hasattr(app, "tray_icon"):
-                    app.tray_icon.show_notification(
-                        "Typing Practice", f"Opened with {len(words)} words from clipboard"
-                    )
-            else:
-                log.error(f"Failed to open practice: {result.stderr}")
-                app = QApplication.instance()
-                if app and hasattr(app, "tray_icon"):
-                    app.tray_icon.show_notification(
-                        "Practice Error", "Failed to open practice. See logs."
-                    )
-        except subprocess.TimeoutExpired:
-            log.error("practice.py timed out")
+            log.info("Successfully opened typing practice")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification(
+                    "Typing Practice", f"Opened with {len(words)} words from clipboard"
+                )
         except Exception as e:
-            log.error(f"Error running practice.py: {e}")
+            log.error(f"Error opening practice: {e}")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
 
     def set_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words for clipboard.
@@ -1734,51 +1712,34 @@ class StatsPanel(QWidget):
     def launch_practice_with_highlighting(self, text: str, highlight_words: dict) -> None:
         """Launch typing practice with word highlighting.
 
+        Note: Monkeytype doesn't support word highlighting, so this just opens
+        the text for practice without highlighting.
+
         Args:
             text: Text to practice
             highlight_words: Dict with 'hardest' and/or 'fastest' keys containing word lists
+                (Not supported by Monkeytype, logged for reference)
         """
-        import subprocess
-        from pathlib import Path
-
-        script_path = Path(__file__).parent.parent / "scripts" / "practice.py"
-
-        if not script_path.exists():
-            log.error(f"practice.py not found at {script_path}")
-            app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Practice Error", "practice.py script not found")
-            return
-
         try:
-            # Build command arguments
-            cmd = ["python3", str(script_path), "--file", "-"]
+            from utils.monkeytype_url import generate_custom_text_url
 
-            # Add word lists for highlighting
+            # Log highlight words (Monkeytype doesn't support them)
             if highlight_words.get("hardest"):
-                cmd.extend(["--hardest", ",".join(highlight_words["hardest"])])
+                log.debug(f"Hardest words (not highlighted in Monkeytype): {highlight_words['hardest'][:5]}...")
             if highlight_words.get("fastest"):
-                cmd.extend(["--fastest", ",".join(highlight_words["fastest"])])
+                log.debug(f"Fastest words (not highlighted in Monkeytype): {highlight_words['fastest'][:5]}...")
 
             log.info(f"Opening typing practice with mode {self._current_mode}")
-            result = subprocess.run(
-                cmd,
-                input=text,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            url = generate_custom_text_url(text)
+            webbrowser.open(url)
 
-            if result.returncode != 0:
-                log.error(f"Practice script failed: {result.stderr}")
-                app = QApplication.instance()
-                if app and hasattr(app, "tray_icon"):
-                    app.tray_icon.show_notification(
-                        "Practice Error", f"Failed to open practice: {result.stderr}"
-                    )
+            log.info("Successfully opened typing practice")
+            app = QApplication.instance()
+            if app and hasattr(app, "tray_icon"):
+                app.tray_icon.show_notification("Typing Practice", "Opened Monkeytype with custom text")
 
         except Exception as e:
-            log.error(f"Error launching practice: {e}")
+            log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
                 app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
@@ -1868,49 +1829,30 @@ class StatsPanel(QWidget):
     def launch_practice_with_digraph_highlighting(self, text: str, digraphs: list) -> None:
         """Launch typing practice with digraph-based word highlighting.
 
+        Note: Monkeytype doesn't support digraph highlighting, so this just opens
+        the text for practice without highlighting.
+
         Args:
             text: Text to practice
             digraphs: List of digraph strings (e.g., ['th', 'he', 'in'])
+                (Not supported by Monkeytype, logged for reference)
         """
-        import subprocess
-        from pathlib import Path
+        try:
+            from utils.monkeytype_url import generate_custom_text_url
 
-        script_path = Path(__file__).parent.parent / "scripts" / "practice.py"
+            # Log digraphs (Monkeytype doesn't support them)
+            log.info(f"Opening typing practice with digraphs: {digraphs} (not highlighted in Monkeytype)")
 
-        if not script_path.exists():
-            log.error(f"practice.py not found at {script_path}")
+            url = generate_custom_text_url(text)
+            webbrowser.open(url)
+
+            log.info("Successfully opened typing practice")
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Practice Error", "practice.py script not found")
-            return
-
-        try:
-            # Build command arguments
-            cmd = ["python3", str(script_path), "--file", "-"]
-
-            # Add digraphs for highlighting
-            if digraphs:
-                cmd.extend(["--digraphs", ",".join(digraphs)])
-
-            log.info(f"Opening typing practice with digraphs: {digraphs}")
-            result = subprocess.run(
-                cmd,
-                input=text,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            if result.returncode != 0:
-                log.error(f"Practice script failed: {result.stderr}")
-                app = QApplication.instance()
-                if app and hasattr(app, "tray_icon"):
-                    app.tray_icon.show_notification(
-                        "Practice Error", f"Failed to open practice: {result.stderr}"
-                    )
+                app.tray_icon.show_notification("Typing Practice", "Opened Monkeytype with custom text")
 
         except Exception as e:
-            log.error(f"Error launching practice: {e}")
+            log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
                 app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")

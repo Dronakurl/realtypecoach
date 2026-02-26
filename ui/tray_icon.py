@@ -72,18 +72,23 @@ class TrayIcon(QSystemTrayIcon):
         menu.addAction(show_stats_action)
 
         # Always show Practice Digraphs
-        practice_digraphs_action = QAction("⌨️ Practice Digraphs", self)
+        monkeytype_icon_path = str(Path(__file__).parent.parent / "icons" / "monkeytype.png")
+        practice_digraphs_action = QAction("🐵 Practice Digraphs (Monkeytype)", self)
+        practice_digraphs_action.setIcon(QIcon(monkeytype_icon_path))
         practice_digraphs_action.triggered.connect(self.practice_digraphs)
         menu.addAction(practice_digraphs_action)
 
         # Always show Practice Words
-        practice_words_action = QAction("⌨️ Practice Words", self)
+        practice_words_action = QAction("🐵 Practice Words (Monkeytype)", self)
+        practice_words_action.setIcon(QIcon(monkeytype_icon_path))
         practice_words_action.triggered.connect(self.practice_words)
         menu.addAction(practice_words_action)
 
         # Only show AI Practice when Ollama is available
         if self.ollama_available:
-            practice_ai_action = QAction("✨ AI Practice", self)
+            monkeytype_icon_path = str(Path(__file__).parent.parent / "icons" / "monkeytype.png")
+            practice_ai_action = QAction("✨ AI Practice (Monkeytype)", self)
+            practice_ai_action.setIcon(QIcon(monkeytype_icon_path))
             practice_ai_action.triggered.connect(self.practice_ai)
             menu.addAction(practice_ai_action)
 

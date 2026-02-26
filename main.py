@@ -1473,9 +1473,6 @@ class Application(QObject):
         Generates text using Ollama, then opens typing practice page.
         Uses the 50 hardest words as input for the prompt.
         """
-        import subprocess
-        from pathlib import Path
-
         def generate_and_practice():
             try:
                 # Always use 50 hardest words for the prompt
@@ -1567,61 +1564,21 @@ class Application(QObject):
                 # Dismiss the "generating" notification
                 self.tray_icon.dismiss_notification()
 
-                # Get the script path
-                script_path = Path(__file__).parent / "scripts" / "practice.py"
+                # Import directly and open Monkeytype
+                from utils.monkeytype_url import generate_custom_text_url
 
-                if not script_path.exists():
-                    log.error(f"practice.py not found at {script_path}")
-                    self.tray_icon.dismiss_notification()
-                    self.tray_icon.show_notification(
-                        "Typing Practice Error", "practice.py script not found", "error"
-                    )
-                    return
-
-                # Write text to temp file for practice script
-                import tempfile
-
-                with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-                    f.write(generated_text)
-                    temp_file = f.name
-
-                hardest_words_str = ",".join(hardest_words)
-
+                # Note: Monkeytype doesn't support word highlighting
                 log.info(
-                    f"Opening typing practice with: {actual_word_count} words, {len(hardest_words)} highlighted"
+                    f"Opening typing practice with: {actual_word_count} words, {len(hardest_words)} words (not highlighted in Monkeytype)"
                 )
 
-                # Run the practice script with hardest words
-                result = subprocess.run(
-                    ["python3", str(script_path), "--hardest", temp_file, hardest_words_str],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
+                url = generate_custom_text_url(generated_text)
+                import webbrowser
 
-                # Clean up temp file
-                try:
-                    Path(temp_file).unlink()
-                except OSError:
-                    pass
+                webbrowser.open(url)
 
-                if result.returncode == 0:
-                    log.info("Successfully opened typing practice with generated text")
-                else:
-                    log.error(f"Failed to open practice: {result.stderr}")
-                    self.tray_icon.show_notification(
-                        "Typing Practice Error",
-                        "Failed to open practice. See logs.",
-                        "error",
-                        timeout_ms=6000,
-                    )
+                log.info("Successfully opened typing practice with generated text")
 
-            except subprocess.TimeoutExpired:
-                log.error("Practice operation timed out")
-                self.tray_icon.dismiss_notification()
-                self.tray_icon.show_notification(
-                    "Typing Practice Error", "Operation timed out", "error", timeout_ms=6000
-                )
             except Exception as e:
                 log.error(f"Error in practice_hardest_words: {e}")
                 self.tray_icon.dismiss_notification()
@@ -1658,9 +1615,6 @@ class Application(QObject):
         When Ollama is unavailable, uses 50 random common words.
         """
         import random
-        import subprocess
-        import tempfile
-        from pathlib import Path
 
         def practice_with_words():
             try:
@@ -1703,52 +1657,17 @@ class Application(QObject):
                     practice_text = " ".join(word_list)
 
                     # Build highlight list (all words as "hardest" to enable highlighting)
-                    highlight_words = {"hardest": word_list}
+                    # Note: Monkeytype doesn't support word highlighting
+                    log.info(f"Opening typing practice with {len(word_list)} common words (not highlighted in Monkeytype)")
 
-                    # Write text to temp file for practice script
-                    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-                        f.write(practice_text)
-                        temp_file = f.name
+                    # Import directly and open Monkeytype
+                    from utils.monkeytype_url import generate_custom_text_url
+                    import webbrowser
 
-                    # Get the script path
-                    script_path = Path(__file__).parent / "scripts" / "practice.py"
+                    url = generate_custom_text_url(practice_text)
+                    webbrowser.open(url)
 
-                    if not script_path.exists():
-                        log.error(f"practice.py not found at {script_path}")
-                        self.tray_icon.show_notification(
-                            "Typing Practice Error", "practice.py script not found", "error"
-                        )
-                        return
-
-                    # Build hardest words string for highlighting
-                    hardest_words_str = ",".join(word_list)
-
-                    log.info(f"Opening typing practice with {len(word_list)} common words")
-
-                    # Run the practice script with hardest words flag
-                    result = subprocess.run(
-                        ["python3", str(script_path), "--hardest", temp_file, hardest_words_str],
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-
-                    # Clean up temp file
-                    try:
-                        Path(temp_file).unlink()
-                    except OSError:
-                        pass
-
-                    if result.returncode == 0:
-                        log.info("Successfully opened typing practice with common words")
-                    else:
-                        log.error(f"Failed to open practice: {result.stderr}")
-                        self.tray_icon.show_notification(
-                            "Typing Practice Error",
-                            "Failed to open practice. See logs.",
-                            "error",
-                            timeout_ms=6000,
-                        )
+                    log.info("Successfully opened typing practice with common words")
                 else:
                     # Ollama available - use statistics-based word selection
                     log.info("Tray icon: Ollama available, using statistics-based words")
@@ -1764,11 +1683,6 @@ class Application(QObject):
                     # Call existing fetch_word_highlight_list with text=None for auto-fetch
                     self.fetch_word_highlight_list(mode, count, None, special_chars, numbers)
 
-            except subprocess.TimeoutExpired:
-                log.error("Practice operation timed out")
-                self.tray_icon.show_notification(
-                    "Typing Practice Error", "Operation timed out", "error", timeout_ms=6000
-                )
             except Exception as e:
                 log.error(f"Error in practice_words_from_tray: {e}")
                 self.tray_icon.show_notification(
