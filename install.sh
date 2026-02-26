@@ -132,6 +132,8 @@ cp -r "$SCRIPT_DIR"/scripts "$INSTALL_DIR/"
 cp -r "$SCRIPT_DIR"/migrations "$INSTALL_DIR/"
 # Copy alembic.ini for migration configuration
 cp "$SCRIPT_DIR"/alembic.ini "$INSTALL_DIR/"
+# Copy icons folder for tray icons
+cp -r "$SCRIPT_DIR"/icons "$INSTALL_DIR/"
 print_status "OK" "Application files copied to: $INSTALL_DIR"
 
 # Copy prompt template if it doesn't exist (don't overwrite user customization)
