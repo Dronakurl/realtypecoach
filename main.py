@@ -290,6 +290,10 @@ class Application(QObject):
 
         self.stats_panel = StatsPanel(icon_path=str(self.icon_path), config=self.config)
 
+        # Store clipboard reference for tray menu access
+        from PySide6.QtWidgets import QApplication
+        self._clipboard = QApplication.clipboard()
+
         # Hide digraph practice controls if no dictionaries are configured
         # (in accept_all_mode, there's no word list to search for matching digraphs)
         self.stats_panel.set_digraph_controls_enabled(not accept_all_mode)
@@ -1698,20 +1702,17 @@ class Application(QObject):
 
         Gets text from system clipboard and opens Monkeytype with that text.
         """
-        from PySide6.QtWidgets import QApplication
         from PySide6.QtGui import QClipboard
 
         # Access clipboard on main thread (required for Wayland)
-        clipboard = QApplication.clipboard()
-
-        # Try both clipboard modes (Wayland may use Selection)
-        clipboard_text = clipboard.text(QClipboard.Mode.Clipboard)
-        log.info(f"Clipboard mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
+        # Use stored clipboard reference (same as stats_panel)
+        clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
+        log.info(f"Clipboard mode: '{clipboard_text[:50] if clipboard_text else 'None'}")
 
         if not clipboard_text or not clipboard_text.strip():
             # Try Selection mode as fallback (X11/Wayland primary selection)
-            clipboard_text = clipboard.text(QClipboard.Mode.Selection)
-            log.info(f"Selection mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
+            clipboard_text = self._clipboard.text(QClipboard.Mode.Selection)
+            log.info(f"Selection mode: '{clipboard_text[:50] if clipboard_text else 'None'}")
 
         if not clipboard_text or not clipboard_text.strip():
             log.warning("Clipboard is empty")
