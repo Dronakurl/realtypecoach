@@ -1706,12 +1706,12 @@ class Application(QObject):
 
         # Try both clipboard modes (Wayland may use Selection)
         clipboard_text = clipboard.text(QClipboard.Mode.Clipboard)
-        log.debug(f"Clipboard mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
+        log.info(f"Clipboard mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
 
         if not clipboard_text or not clipboard_text.strip():
             # Try Selection mode as fallback (X11/Wayland primary selection)
             clipboard_text = clipboard.text(QClipboard.Mode.Selection)
-            log.debug(f"Selection mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
+            log.info(f"Selection mode: '{clipboard_text[:50] if clipboard_text else 'None'}'")
 
         if not clipboard_text or not clipboard_text.strip():
             log.warning("Clipboard is empty")
