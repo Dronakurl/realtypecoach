@@ -494,24 +494,6 @@ class SettingsDialog(QDialog):
             self.number_probability_spin,
         )
 
-        self.digraph_frequency_threshold_spin = QSpinBox()
-        self.digraph_frequency_threshold_spin.setRange(1, 10000)
-        self.digraph_frequency_threshold_spin.setSuffix(" words")
-        self.digraph_frequency_threshold_spin.setValue(100)
-        self.digraph_frequency_threshold_spin.setToolTip(
-            "Minimum word count for a digraph to be considered 'common'. "
-            "Higher values = fewer digraphs considered common."
-        )
-        practice_layout.addRow(
-            self._create_labeled_icon_widget(
-                "Digraph frequency threshold:",
-                "Minimum number of words containing a digraph for it to be considered 'common'.\n"
-                "Used when filtering digraphs in statistics and practice.\n"
-                "100 = digraphs appearing in 100+ words are common.",
-            ),
-            self.digraph_frequency_threshold_spin,
-        )
-
         practice_group.setLayout(practice_layout)
         layout.addWidget(practice_group)
 
@@ -2037,9 +2019,6 @@ class SettingsDialog(QDialog):
         self.number_probability_spin.setValue(
             int(self.current_settings.get("number_probability", 15) or 15)
         )
-        self.digraph_frequency_threshold_spin.setValue(
-            int(self.current_settings.get("digraph_frequency_threshold", 100) or 100)
-        )
 
     def get_settings(self) -> dict[str, Any]:
         """Get settings from UI.
@@ -2119,7 +2098,6 @@ class SettingsDialog(QDialog):
             # Practice text settings
             "special_char_probability": str(self.special_char_probability_spin.value()),
             "number_probability": str(self.number_probability_spin.value()),
-            "digraph_frequency_threshold": str(self.digraph_frequency_threshold_spin.value()),
         }
 
     def accept(self) -> None:

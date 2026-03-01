@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -543,11 +544,24 @@ class StatsPanel(QWidget):
 
         self.digraphs_show_common_only_checkbox = QCheckBox("Only Common Digraphs")
         self.digraphs_show_common_only_checkbox.setToolTip(
-            "Show only commonly occurring digraphs in the tables below. "
-            "Digraphs that appear in 100+ words are considered common."
+            "Show only commonly occurring digraphs in the tables below."
         )
         self.digraphs_show_common_only_checkbox.setChecked(False)
         filter_layout.addWidget(self.digraphs_show_common_only_checkbox)
+
+        # Frequency threshold spinbox
+        threshold_label = QLabel("Threshold:")
+        threshold_label.setStyleSheet("font-size: 11px; color: #666;")
+        filter_layout.addWidget(threshold_label)
+
+        self.digraph_frequency_threshold_spin = QSpinBox()
+        self.digraph_frequency_threshold_spin.setRange(1, 10000)
+        self.digraph_frequency_threshold_spin.setSuffix(" words")
+        self.digraph_frequency_threshold_spin.setToolTip(
+            "Minimum number of words containing a digraph for it to be considered 'common'.\n"
+            "Higher values = fewer digraphs considered common."
+        )
+        filter_layout.addWidget(self.digraph_frequency_threshold_spin)
 
         filter_layout.addStretch()
         digraphs_layout.addLayout(filter_layout)
@@ -807,6 +821,11 @@ class StatsPanel(QWidget):
                     self.digraph_word_count_combo.setCurrentIndex(i)
                     break
 
+            # Digraph frequency threshold
+            saved_threshold = config.get_int("digraph_frequency_threshold", 100)
+            log.info(f"Loading digraph_frequency_threshold = {saved_threshold}")
+            self.digraph_frequency_threshold_spin.setValue(saved_threshold)
+
         # Connect Words tab checkbox signals
         self.words_special_chars_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_words_special_chars_enabled", s)
@@ -832,6 +851,9 @@ class StatsPanel(QWidget):
             lambda s: self._update_practice_config("practice_digraphs_common_only_enabled", s)
         )
         self.digraphs_show_common_only_checkbox.stateChanged.connect(self._on_digraph_filter_changed)
+        self.digraph_frequency_threshold_spin.valueChanged.connect(
+            lambda v: self._update_practice_config_int("digraph_frequency_threshold", v)
+        )
 
         # Connect Digraphs tab combo box signals (after loading settings to avoid triggering during init)
         self.digraph_mode_combo.currentTextChanged.connect(
