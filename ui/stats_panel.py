@@ -1878,11 +1878,6 @@ class StatsPanel(QWidget):
         if not self._check_monkeytype_confirmation():
             return
 
-        from PySide6.QtGui import QClipboard
-
-        # Get text from clipboard
-        clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
-
         digraph_count = self.digraph_count_combo.currentData()
         word_count = self.digraph_word_count_combo.currentData()
         mode = self.digraph_mode_combo.currentData()
@@ -1892,18 +1887,10 @@ class StatsPanel(QWidget):
         numbers = self.digraphs_numbers_checkbox.isChecked()
         common_only = self.digraphs_common_only_checkbox.isChecked()
 
-        if not clipboard_text or not clipboard_text.strip():
-            # Auto-fetch words based on mode if clipboard is empty
-            if hasattr(self, "_request_digraph_practice_callback"):
-                self._request_digraph_practice_callback(
-                    mode, digraph_count, word_count, None, special_chars, numbers, common_only
-                )
-            return
-
-        # If clipboard has text, use it for practice with digraph-based highlighting
+        # Always fetch words based on selected digraphs for practice
         if hasattr(self, "_request_digraph_practice_callback"):
             self._request_digraph_practice_callback(
-                mode, digraph_count, word_count, clipboard_text, special_chars, numbers, common_only
+                mode, digraph_count, word_count, None, special_chars, numbers, common_only
             )
 
     def set_digraph_words_clipboard_callback(self, callback) -> None:
