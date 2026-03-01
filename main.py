@@ -99,7 +99,7 @@ class Application(QObject):
     signal_text_generation_failed = Signal(str)  # For Ollama errors
     signal_ollama_available = Signal(bool)  # Ollama availability status
     signal_practice_with_highlighting = Signal(str, dict)  # For practice with word highlighting
-    signal_digraph_words_ready = Signal(list)  # For digraph words clipboard copy
+    signal_digraph_words_ready = Signal(list, list)  # For digraph words clipboard copy (words, digraphs)
     signal_digraph_practice_ready = Signal(str, list)  # For digraph practice (text, digraphs)
 
     def __init__(self) -> None:
@@ -825,18 +825,30 @@ class Application(QObject):
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_data)
 
-    def provide_digraph_data(self) -> None:
-        """Provide digraph data to stats panel."""
+    def provide_digraph_data(self, common_only: bool = False) -> None:
+        """Provide digraph data to stats panel.
+
+        Args:
+            common_only: If True, filter to only common digraphs
+        """
 
         def fetch_data():
             try:
-                log.info("Fetching digraph data")
-                fastest = self.analyzer.get_fastest_digraphs(
-                    limit=10, layout=self.get_current_layout()
-                )
-                slowest = self.analyzer.get_slowest_digraphs(
-                    limit=10, layout=self.get_current_layout()
-                )
+                log.info(f"Fetching digraph data (common_only={common_only})")
+                if common_only:
+                    fastest = self.analyzer.get_fastest_digraphs_common_only(
+                        limit=10, layout=self.get_current_layout()
+                    )
+                    slowest = self.analyzer.get_slowest_digraphs_common_only(
+                        limit=10, layout=self.get_current_layout()
+                    )
+                else:
+                    fastest = self.analyzer.get_fastest_digraphs(
+                        limit=10, layout=self.get_current_layout()
+                    )
+                    slowest = self.analyzer.get_slowest_digraphs(
+                        limit=10, layout=self.get_current_layout()
+                    )
                 log.info(
                     f"Got {len(fastest)} fastest and {len(slowest)} slowest digraphs, emitting signal"
                 )
@@ -1238,7 +1250,7 @@ class Application(QObject):
                     random.shuffle(digraph_stats)
                 else:
                     log.error(f"Unknown digraph mode: {mode}")
-                    self.signal_digraph_words_ready.emit([])
+                    self.signal_digraph_words_ready.emit([], [])
                     return
 
                 # Extract digraph strings
@@ -1247,7 +1259,7 @@ class Application(QObject):
                 if not digraphs:
                     filter_msg = "common " if common_only else ""
                     log.warning(f"No {filter_msg}digraphs available")
-                    self.signal_digraph_words_ready.emit([])
+                    self.signal_digraph_words_ready.emit([], [])
                     return
 
                 # Check if fallback digraphs are being used (avg_interval_ms = 0.0 indicates no statistics)
@@ -1272,11 +1284,12 @@ class Application(QObject):
                 # Apply enhancements (special chars and numbers)
                 enhanced_words = self._apply_text_enhancements(capitalized_words, special_chars, numbers)
 
-                self.signal_digraph_words_ready.emit(enhanced_words)
+                # Emit both words and digraphs for notification
+                self.signal_digraph_words_ready.emit(enhanced_words, digraphs)
 
             except Exception as e:
                 log.error(f"Error fetching digraph words: {e}")
-                self.signal_digraph_words_ready.emit([])
+                self.signal_digraph_words_ready.emit([], [])
 
         self._executor.submit(fetch_in_thread)
 

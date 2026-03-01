@@ -537,6 +537,21 @@ class StatsPanel(QWidget):
         digraphs_tab = QWidget()
         digraphs_layout = QVBoxLayout(digraphs_tab)
 
+        # Common digraphs filter checkbox (at the top)
+        filter_layout = QHBoxLayout()
+        filter_layout.addStretch()
+
+        self.digraphs_show_common_only_checkbox = QCheckBox("Only Common Digraphs")
+        self.digraphs_show_common_only_checkbox.setToolTip(
+            "Show only commonly occurring digraphs in the tables below. "
+            "Digraphs that appear in 100+ words are considered common."
+        )
+        self.digraphs_show_common_only_checkbox.setChecked(False)
+        filter_layout.addWidget(self.digraphs_show_common_only_checkbox)
+
+        filter_layout.addStretch()
+        digraphs_layout.addLayout(filter_layout)
+
         # Tables section (side by side)
         tables_layout = QHBoxLayout()
 
@@ -816,6 +831,7 @@ class StatsPanel(QWidget):
         self.digraphs_common_only_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_digraphs_common_only_enabled", s)
         )
+        self.digraphs_show_common_only_checkbox.stateChanged.connect(self._on_digraph_filter_changed)
 
         # Connect Digraphs tab combo box signals (after loading settings to avoid triggering during init)
         self.digraph_mode_combo.currentTextChanged.connect(
@@ -1288,9 +1304,10 @@ class StatsPanel(QWidget):
         # Tab 3 is Digraphs (index 3)
         if index == 3 and not self._digraph_data_loaded:
             self._digraph_data_loaded = True
-            # Trigger data load via callback
+            # Trigger data load via callback with common_only filter state
             if hasattr(self, "_digraph_data_callback") and self._digraph_data_callback is not None:
-                self._digraph_data_callback()
+                common_only = self.digraphs_show_common_only_checkbox.isChecked()
+                self._digraph_data_callback(common_only)
 
         # Tab 4 is Trends (index 4)
         if index == 4 and not self._trend_data_loaded:
@@ -1318,11 +1335,12 @@ class StatsPanel(QWidget):
         if hasattr(self, "_request_words_for_clipboard_callback"):
             self._request_words_for_clipboard_callback(count, hardest=True)
 
-    def copy_words_to_clipboard(self, words) -> None:
+    def copy_words_to_clipboard(self, words, digraphs=None) -> None:
         """Copy words to clipboard.
 
         Args:
             words: List of WordStatisticsLite models or list of strings (enhanced words)
+            digraphs: Optional list of digraph strings that were used to select words
         """
         if words:
             # Handle both WordStatisticsLite objects and plain strings
@@ -1338,6 +1356,18 @@ class StatsPanel(QWidget):
             self._clipboard.setText(clipboard_text, QClipboard.Mode.Selection)
             # Also set clipboard for standard Ctrl+V
             self._clipboard.setText(clipboard_text, QClipboard.Mode.Clipboard)
+
+            # Show notification with digraphs if provided
+            if digraphs:
+                app = QApplication.instance()
+                if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                    digraph_list_str = ", ".join(digraphs[:8])  # Show up to 8 digraphs
+                    if len(digraphs) > 8:
+                        digraph_list_str += f" (+{len(digraphs) - 8} more)"
+                    app.application.tray_icon.show_notification(
+                        "Words Copied",
+                        f"{len(words)} words with digraphs: {digraph_list_str}"
+                    )
 
             self._show_copy_notification(len(words))
         else:
@@ -1355,8 +1385,8 @@ class StatsPanel(QWidget):
             message = "No words available to copy"
         # Show tray notification through QApplication
         app = QApplication.instance()
-        if app and hasattr(app, "tray_icon"):
-            app.tray_icon.show_notification("Copy Words", message)
+        if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+            app.application.tray_icon.show_notification("Copy Words", message)
 
     def copy_fastest_words_to_clipboard(self) -> None:
         """Copy the n fastest words to clipboard."""
@@ -1384,8 +1414,8 @@ class StatsPanel(QWidget):
         if not clipboard_text or not clipboard_text.strip():
             # Show error if clipboard is empty
             app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification(
+            if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                app.application.tray_icon.show_notification(
                     "Practice Error", "Clipboard is empty. Copy some text first."
                 )
             return
@@ -1402,15 +1432,15 @@ class StatsPanel(QWidget):
             webbrowser.open(url)
 
             app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification(
+            if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                app.application.tray_icon.show_notification(
                     "Typing Practice", f"Opened with {len(words)} words from clipboard"
                 )
         except Exception as e:
             log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+            if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                app.application.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
 
     def set_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words for clipboard.
@@ -1424,9 +1454,21 @@ class StatsPanel(QWidget):
         """Set callback for requesting digraph data.
 
         Args:
-            callback: Function to call when new data is needed
+            callback: Function to call when new data is needed, accepts common_only bool parameter
         """
         self._digraph_data_callback = callback
+
+    def _on_digraph_filter_changed(self, state: int) -> None:
+        """Handle digraph filter checkbox change.
+
+        Args:
+            state: Qt.CheckState value
+        """
+        from PySide6.QtCore import Qt
+
+        common_only = state == Qt.CheckState.Checked.value
+        if hasattr(self, "_digraph_data_callback"):
+            self._digraph_data_callback(common_only)
 
     def set_fastest_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching fastest words for clipboard.
@@ -1518,8 +1560,8 @@ class StatsPanel(QWidget):
 
         # Show notification
         app = QApplication.instance()
-        if app and hasattr(app, "tray_icon"):
-            app.tray_icon.show_notification(
+        if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+            app.application.tray_icon.show_notification(
                 "Text Generated", f"Copied {word_count} words to clipboard"
             )
 
@@ -1582,8 +1624,8 @@ class StatsPanel(QWidget):
 
         # Also show tray notification if available
         app = QApplication.instance()
-        if app and hasattr(app, "tray_icon"):
-            app.tray_icon.show_notification("Generation Failed", f"Error: {error}")
+        if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+            app.application.tray_icon.show_notification("Generation Failed", f"Error: {error}")
 
     def _copy_error_to_clipboard(self, error_text: str, dialog: QDialog) -> None:
         """Copy error text to clipboard.
@@ -1761,14 +1803,14 @@ class StatsPanel(QWidget):
 
             log.info("Successfully opened typing practice")
             app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Typing Practice", "Opened practice with custom text")
+            if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                app.application.tray_icon.show_notification("Typing Practice", "Opened practice with custom text")
 
         except Exception as e:
             log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+            if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                app.application.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
 
     def set_words_by_mode_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words by mode for clipboard.
@@ -1879,19 +1921,30 @@ class StatsPanel(QWidget):
             # Log digraphs (Monkeytype doesn't support them)
             log.info(f"Opening typing practice with digraphs: {digraphs} (not highlighted in Monkeytype)")
 
+            # Show notification BEFORE opening browser so it stays visible
+            app = QApplication.instance()
+            if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                # Show which digraphs are being practiced
+                digraph_list_str = ", ".join(digraphs[:8])  # Show up to 8 digraphs
+                if len(digraphs) > 8:
+                    digraph_list_str += f" (+{len(digraphs) - 8} more)"
+                log.info(f"Showing tray notification: Practicing {len(digraphs)} digraphs: {digraph_list_str}")
+                app.application.tray_icon.show_notification(
+                    "Typing Practice",
+                    f"Practicing {len(digraphs)} digraphs: {digraph_list_str}",
+                    timeout_ms=10000  # 10 seconds to ensure it's visible
+                )
+
             url = generate_custom_text_url(text)
             webbrowser.open(url)
 
             log.info("Successfully opened typing practice")
-            app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Typing Practice", "Opened practice with custom text")
 
         except Exception as e:
             log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
-            if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+            if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
+                app.application.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
 
     def set_digraph_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable digraph controls based on dictionary availability.

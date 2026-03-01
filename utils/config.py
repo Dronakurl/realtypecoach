@@ -160,6 +160,15 @@ class AppSettings(BaseModel):
         default="hardest",
         description="Practice mode for digraphs (hardest, fastest, mixed)",
     )
+    practice_digraphs_common_only_enabled: bool = Field(
+        default=False,
+        description="Enable filtering to only common digraphs in digraphs practice",
+    )
+    digraph_frequency_threshold: int = Field(
+        default=100,
+        ge=1,
+        description="Minimum word count for a digraph to be considered 'common' (filters rare digraphs)",
+    )
 
     # UI settings
     stats_update_interval_sec: int = Field(

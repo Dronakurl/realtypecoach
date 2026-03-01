@@ -104,6 +104,9 @@ class Storage:
         # Reference to analyzer (set later)
         self._analyzer: Analyzer | None = None
 
+        # Digraph frequency cache for common-only filtering
+        self._digraph_frequency_cache: dict[str, int] | None = None
+
     def _create_adapter(self) -> DatabaseAdapter:
         """Create and initialize SQLite database adapter.
 
@@ -563,6 +566,179 @@ class Storage:
         """
         return self.adapter.get_fastest_digraphs(limit, layout)
 
+    def _ensure_digraph_frequency_cache(self) -> None:
+        """Ensure digraph frequency cache is populated.
+
+        Calculates frequencies across all loaded languages if cache is empty.
+        """
+        if self._digraph_frequency_cache is None:
+            self._digraph_frequency_cache = self.dictionary.calculate_digraph_frequencies()
+            log.info(f"Built digraph frequency cache with {len(self._digraph_frequency_cache)} entries")
+
+    def get_digraph_frequency(
+        self, digraphs: list[str], language: str | None = None
+    ) -> dict[str, int]:
+        """Get word count frequency for requested digraphs.
+
+        Args:
+            digraphs: List of 2-character strings to look up
+            language: Optional language code filter (for cache invalidation)
+
+        Returns:
+            Dict mapping digraph to word count (e.g., {'th': 5423, 'uu': 12})
+        """
+        self._ensure_digraph_frequency_cache()
+        return {
+            d: self._digraph_frequency_cache.get(d.lower(), 0)
+            for d in digraphs
+        }
+
+    def _get_most_common_digraphs_from_dictionary(
+        self, limit: int = 5
+    ) -> list[tuple[str, int]]:
+        """Get the most common digraphs from the dictionary by word frequency.
+
+        This is used as a fallback when no digraph statistics are available
+        in the database or when filtering yields no results.
+
+        Args:
+            limit: Maximum number of digraphs to return
+
+        Returns:
+            List of (digraph, frequency) tuples sorted by frequency (descending).
+            Example: [('th', 5423), ('he', 4891), ('in', 4234), ...]
+        """
+        self._ensure_digraph_frequency_cache()
+
+        # Sort by frequency and return top N
+        sorted_digraphs = sorted(
+            self._digraph_frequency_cache.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        return sorted_digraphs[:limit]
+
+    def get_slowest_digraphs_common_only(
+        self, limit: int = 10, layout: str | None = None, frequency_threshold: int = 100
+    ) -> list[DigraphPerformance]:
+        """Get slowest digraphs filtered to only common ones.
+
+        Fetches 3x more candidates than needed, then filters out digraphs
+        below the frequency threshold.
+
+        Args:
+            limit: Maximum number of digraphs to return
+            layout: Filter by layout (None for all layouts)
+            frequency_threshold: Minimum word count to be considered "common" (default: 100)
+
+        Returns:
+            List of DigraphPerformance models (only common digraphs)
+        """
+        # Fetch extra candidates to filter from
+        fetch_limit = limit * 3
+        candidates = self.adapter.get_slowest_digraphs(fetch_limit, layout)
+
+        # Get frequency for all candidates
+        digraph_list = [f"{d.first_key}{d.second_key}" for d in candidates]
+        frequencies = self.get_digraph_frequency(digraph_list)
+
+        # Filter by frequency threshold
+        common_digraphs = [
+            d for d in candidates
+            if frequencies.get(f"{d.first_key}{d.second_key}".lower(), 0) >= frequency_threshold
+        ]
+
+        result = common_digraphs[:limit]
+
+        # Edge case: No common digraphs found - use most common from dictionary
+        if not result:
+            log.warning(
+                f"No common digraphs found in database (threshold={frequency_threshold}), "
+                f"using most common digraphs from dictionary as fallback"
+            )
+            # Get most common digraphs from dictionary
+            from core.models import DigraphPerformance
+            common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
+            # Create DigraphPerformance objects with placeholder values
+            result = [
+                DigraphPerformance(
+                    first_key=digraph[0],
+                    second_key=digraph[1],
+                    avg_interval_ms=0.0,  # No statistics available
+                    count=0,  # No statistics available
+                    layout=layout or "unknown"
+                )
+                for digraph, _ in common_fallback
+            ]
+        elif len(result) < limit:
+            log.warning(
+                f"Only found {len(result)} common digraphs (threshold={frequency_threshold}), "
+                f"requested {limit}"
+            )
+
+        return result
+
+    def get_fastest_digraphs_common_only(
+        self, limit: int = 10, layout: str | None = None, frequency_threshold: int = 100
+    ) -> list[DigraphPerformance]:
+        """Get fastest digraphs filtered to only common ones.
+
+        Fetches 3x more candidates than needed, then filters out digraphs
+        below the frequency threshold.
+
+        Args:
+            limit: Maximum number of digraphs to return
+            layout: Filter by layout (None for all layouts)
+            frequency_threshold: Minimum word count to be considered "common" (default: 100)
+
+        Returns:
+            List of DigraphPerformance models (only common digraphs)
+        """
+        # Fetch extra candidates to filter from
+        fetch_limit = limit * 3
+        candidates = self.adapter.get_fastest_digraphs(fetch_limit, layout)
+
+        # Get frequency for all candidates
+        digraph_list = [f"{d.first_key}{d.second_key}" for d in candidates]
+        frequencies = self.get_digraph_frequency(digraph_list)
+
+        # Filter by frequency threshold
+        common_digraphs = [
+            d for d in candidates
+            if frequencies.get(f"{d.first_key}{d.second_key}".lower(), 0) >= frequency_threshold
+        ]
+
+        result = common_digraphs[:limit]
+
+        # Edge case: No common digraphs found - use most common from dictionary
+        if not result:
+            log.warning(
+                f"No common digraphs found in database (threshold={frequency_threshold}), "
+                f"using most common digraphs from dictionary as fallback"
+            )
+            # Get most common digraphs from dictionary
+            from core.models import DigraphPerformance
+            common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
+            # Create DigraphPerformance objects with placeholder values
+            result = [
+                DigraphPerformance(
+                    first_key=digraph[0],
+                    second_key=digraph[1],
+                    avg_interval_ms=0.0,  # No statistics available
+                    count=0,  # No statistics available
+                    layout=layout or "unknown"
+                )
+                for digraph, _ in common_fallback
+            ]
+        elif len(result) < limit:
+            log.warning(
+                f"Only found {len(result)} common digraphs (threshold={frequency_threshold}), "
+                f"requested {limit}"
+            )
+
+        return result
+
     def find_words_with_digraphs(
         self, digraphs: list[str], language: str | None = None
     ) -> list[str]:
@@ -598,13 +774,16 @@ class Storage:
     def _is_abbreviation(self, word: str) -> bool:
         """Check if word is an abbreviation (>1 capital letter).
 
+        Uses the dictionary's stored original word forms to detect acronyms,
+        since dictionary words are stored in lowercase.
+
         Args:
-            word: The word to check
+            word: The word to check (lowercase, as stored in dictionary)
 
         Returns:
-            True if word has more than 1 capital letter (i.e., 2+ uppercase)
+            True if the word was originally an abbreviation/acronym (2+ uppercase letters)
         """
-        return sum(1 for c in word if c.isupper()) > 1
+        return self.dictionary.is_abbreviation_from_dictionary(word)
 
     def _is_roman_numeral(self, word: str) -> bool:
         """Check if word is a Roman numeral (e.g., iii, vii, xii, xvii).

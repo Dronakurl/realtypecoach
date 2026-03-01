@@ -347,6 +347,34 @@ class Dictionary:
 
         return False
 
+    def is_abbreviation_from_dictionary(self, word_lower: str) -> bool:
+        """Check if word (lowercase) was originally an abbreviation in the dictionary.
+
+        An abbreviation is defined as a word whose original form in the dictionary
+        has 2+ uppercase letters AND the word isn't just a normally capitalized word
+        (i.e., it's an acronym like "BTX", not a proper noun like "Haus").
+
+        Args:
+            word_lower: The lowercase word to check
+
+        Returns:
+            True if the word was originally an abbreviation/acronym
+        """
+        if not word_lower or self.accept_all_mode:
+            return False
+
+        # Check all loaded languages for the original capitalized form
+        for lang_code, mapping in self._capitalized_words.items():
+            if word_lower in mapping:
+                original = mapping[word_lower]
+                # Count uppercase letters (excluding first character)
+                uppercase_count = sum(1 for c in original[1:] if c.isupper())
+                # It's an abbreviation if 2+ letters are uppercase (not counting first)
+                # This catches "BTX" (3 caps) but not "Haus" (only first letter cap)
+                return uppercase_count >= 2
+
+        return False
+
     def get_loaded_languages(self) -> list[str]:
         """Get list of successfully loaded language codes.
 
@@ -400,6 +428,45 @@ class Dictionary:
 
         # Not found in any dictionary, return original
         return word
+
+    def calculate_digraph_frequencies(self, language: str | None = None) -> dict[str, int]:
+        """Calculate how many words contain each 2-character combination (digraph).
+
+        Iterates through all dictionary words and counts how many words contain
+        each 2-character combination. Used to determine "common" digraphs for
+        practice filtering.
+
+        Args:
+            language: Specific language to calculate for (e.g., 'en', 'de'),
+                     or None to calculate across all loaded languages
+
+        Returns:
+            Dict mapping digraph (2-char string) to word count.
+            Example: {'th': 5423, 'he': 4891, 'uu': 12}
+        """
+        frequencies: dict[str, int] = {}
+
+        # Get languages to process
+        if language:
+            languages_to_process = [language] if language in self.words else []
+        else:
+            languages_to_process = list(self.words.keys())
+
+        # Count digraph occurrences
+        for lang in languages_to_process:
+            word_set = self.words[lang]
+            for word in word_set:
+                word_lower = word.lower()
+                # Extract all 2-character combinations from this word
+                for i in range(len(word_lower) - 1):
+                    digraph = word_lower[i:i+2]
+                    # Only count 2-letter combinations (no spaces, special chars)
+                    if digraph.isalpha():
+                        frequencies[digraph] = frequencies.get(digraph, 0) + 1
+
+        log.info(f"Calculated digraph frequencies for {len(frequencies)} digraphs "
+                 f"across {len(languages_to_process)} language(s)")
+        return frequencies
 
     def reload_languages(self, config: DictionaryConfig) -> None:
         """Reload dictionaries with new configuration.
