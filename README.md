@@ -62,9 +62,12 @@ The application runs in your system tray:
 - **Left-click**: Show real-time statistics (current WPM, slowest keys, today's stats)
 - **Right-click**: Menu with options
   - Show Statistics
+  - Practice (Digraphs, Words, Clipboard, AI)
   - Pause/Resume monitoring
   - Settings (burst filter, notification preferences)
   - Quit
+
+> **Note**: The practice feature opens [Monkeytype](https://monkeytype.com) in your browser—a minimal, customizable typing test website. Custom text from your statistics is loaded automatically for focused practice sessions.
 
 ### How It Works
 

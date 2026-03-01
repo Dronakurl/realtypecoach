@@ -1182,7 +1182,7 @@ class Application(QObject):
 
         self._executor.submit(generate_in_thread)
 
-    def fetch_digraph_words(self, mode: str, digraph_count: int, word_count: int, special_chars: bool = False, numbers: bool = False) -> None:
+    def fetch_digraph_words(self, mode: str, digraph_count: int, word_count: int, special_chars: bool = False, numbers: bool = False, common_only: bool = False) -> None:
         """Fetch words containing selected digraphs for clipboard.
 
         Args:
@@ -1191,30 +1191,49 @@ class Application(QObject):
             word_count: Number of words to return
             special_chars: Whether to add special characters to text
             numbers: Whether to add random numbers to text
+            common_only: Whether to filter to only common digraphs
         """
 
         def fetch_in_thread():
             try:
-                # Get digraphs based on mode
+                # Get digraphs based on mode and common_only filter
                 digraphs = []
                 if mode == "hardest":
-                    digraph_stats = self.storage.get_slowest_digraphs(
-                        limit=digraph_count, layout=self.get_current_layout()
-                    )
+                    if common_only:
+                        digraph_stats = self.storage.get_slowest_digraphs_common_only(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
+                    else:
+                        digraph_stats = self.storage.get_slowest_digraphs(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
                 elif mode == "fastest":
-                    digraph_stats = self.storage.get_fastest_digraphs(
-                        limit=digraph_count, layout=self.get_current_layout()
-                    )
+                    if common_only:
+                        digraph_stats = self.storage.get_fastest_digraphs_common_only(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
+                    else:
+                        digraph_stats = self.storage.get_fastest_digraphs(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
                 elif mode == "mixed":
                     import random
 
                     half = digraph_count // 2
-                    fastest = self.storage.get_fastest_digraphs(
-                        limit=half, layout=self.get_current_layout()
-                    )
-                    slowest = self.storage.get_slowest_digraphs(
-                        limit=half, layout=self.get_current_layout()
-                    )
+                    if common_only:
+                        fastest = self.storage.get_fastest_digraphs_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        slowest = self.storage.get_slowest_digraphs_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                    else:
+                        fastest = self.storage.get_fastest_digraphs(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        slowest = self.storage.get_slowest_digraphs(
+                            limit=half, layout=self.get_current_layout()
+                        )
                     digraph_stats = fastest + slowest
                     random.shuffle(digraph_stats)
                 else:
@@ -1226,9 +1245,15 @@ class Application(QObject):
                 digraphs = [f"{d.first_key}{d.second_key}" for d in digraph_stats]
 
                 if not digraphs:
-                    log.warning("No digraphs available")
+                    filter_msg = "common " if common_only else ""
+                    log.warning(f"No {filter_msg}digraphs available")
                     self.signal_digraph_words_ready.emit([])
                     return
+
+                # Check if fallback digraphs are being used (avg_interval_ms = 0.0 indicates no statistics)
+                using_fallback = any(d.avg_interval_ms == 0.0 for d in digraph_stats)
+                if using_fallback:
+                    log.info(f"No digraph statistics found - using {len(digraphs)} most common digraphs from dictionary: {', '.join(digraphs[:5])}")
 
                 # Find words containing these digraphs
                 words = self.storage.get_random_words_with_digraphs(
@@ -1263,6 +1288,7 @@ class Application(QObject):
         text: str | None,
         special_chars: bool = False,
         numbers: bool = False,
+        common_only: bool = False,
     ) -> None:
         """Fetch digraphs and words for practice session.
 
@@ -1273,6 +1299,7 @@ class Application(QObject):
             text: Text to practice (None to auto-fetch)
             special_chars: Whether to add special characters to text
             numbers: Whether to add random numbers to text
+            common_only: Whether to filter to only common digraphs
         """
         from PySide6.QtGui import QClipboard
 
@@ -1282,26 +1309,44 @@ class Application(QObject):
                 loaded_languages = self.storage.dictionary.get_loaded_languages()
                 use_german_capitalization = "de" in loaded_languages
 
-                # Get digraphs based on mode
+                # Get digraphs based on mode and common_only filter
                 digraphs = []
                 if mode == "hardest":
-                    digraph_stats = self.storage.get_slowest_digraphs(
-                        limit=digraph_count, layout=self.get_current_layout()
-                    )
+                    if common_only:
+                        digraph_stats = self.storage.get_slowest_digraphs_common_only(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
+                    else:
+                        digraph_stats = self.storage.get_slowest_digraphs(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
                 elif mode == "fastest":
-                    digraph_stats = self.storage.get_fastest_digraphs(
-                        limit=digraph_count, layout=self.get_current_layout()
-                    )
+                    if common_only:
+                        digraph_stats = self.storage.get_fastest_digraphs_common_only(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
+                    else:
+                        digraph_stats = self.storage.get_fastest_digraphs(
+                            limit=digraph_count, layout=self.get_current_layout()
+                        )
                 elif mode == "mixed":
                     import random
 
                     half = digraph_count // 2
-                    fastest = self.storage.get_fastest_digraphs(
-                        limit=half, layout=self.get_current_layout()
-                    )
-                    slowest = self.storage.get_slowest_digraphs(
-                        limit=half, layout=self.get_current_layout()
-                    )
+                    if common_only:
+                        fastest = self.storage.get_fastest_digraphs_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        slowest = self.storage.get_slowest_digraphs_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                    else:
+                        fastest = self.storage.get_fastest_digraphs(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        slowest = self.storage.get_slowest_digraphs(
+                            limit=half, layout=self.get_current_layout()
+                        )
                     digraph_stats = fastest + slowest
                     random.shuffle(digraph_stats)
                 else:
@@ -1312,8 +1357,23 @@ class Application(QObject):
                 digraphs = [f"{d.first_key}{d.second_key}" for d in digraph_stats]
 
                 if not digraphs:
-                    log.warning("No digraphs available")
+                    filter_msg = "common " if common_only else ""
+                    log.warning(f"No {filter_msg}digraphs available")
                     return
+
+                # Check if fallback digraphs are being used (avg_interval_ms = 0.0 indicates no statistics)
+                using_fallback = any(d.avg_interval_ms == 0.0 for d in digraph_stats)
+
+                # Show detailed notification
+                if using_fallback:
+                    filter_label = "most common (dictionary fallback) "
+                    log.info(f"No digraph statistics found - using {len(digraphs)} most common digraphs from dictionary: {', '.join(digraphs[:5])}")
+                else:
+                    filter_label = "common " if common_only else ""
+                    digraph_list_str = ", ".join(digraphs[:5])  # Show first 5
+                    if len(digraphs) > 5:
+                        digraph_list_str += f", ... (+{len(digraphs) - 5} more)"
+                    log.info(f"Practicing {len(digraphs)} {filter_label}{mode} digraphs: {digraph_list_str}")
 
                 # If no text provided, auto-fetch words containing these digraphs
                 practice_text = text
@@ -1478,6 +1538,10 @@ class Application(QObject):
         Generates text using Ollama, then opens typing practice page.
         Uses the 50 hardest words as input for the prompt.
         """
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
+
         def generate_and_practice():
             try:
                 # Always use 50 hardest words for the prompt
@@ -1599,19 +1663,23 @@ class Application(QObject):
 
         Reads config settings and launches digraph practice with auto-fetched words.
         """
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
         # Read config settings with defaults
         mode = self.config.get("practice_digraphs_mode", "hardest")
         digraph_count = self.config.get_int("practice_digraphs_digraph_count", 5)
         word_count = self.config.get_int("practice_digraphs_word_count", 10)
         special_chars = self.config.get_bool("practice_digraphs_special_chars_enabled", False)
         numbers = self.config.get_bool("practice_digraphs_numbers_enabled", False)
+        common_only = self.config.get_bool("practice_digraphs_common_only_enabled", False)
 
         log.info(
-            f"Tray icon: Starting digraph practice (mode={mode}, digraphs={digraph_count}, words={word_count})"
+            f"Tray icon: Starting digraph practice (mode={mode}, digraphs={digraph_count}, words={word_count}, common_only={common_only})"
         )
 
         # Call existing fetch_digraph_practice with text=None for auto-fetch
-        self.fetch_digraph_practice(mode, digraph_count, word_count, None, special_chars, numbers)
+        self.fetch_digraph_practice(mode, digraph_count, word_count, None, special_chars, numbers, common_only)
 
     def practice_words_from_tray(self) -> None:
         """Practice words using settings from statistics panel.
@@ -1619,6 +1687,9 @@ class Application(QObject):
         When Ollama is available, uses statistics-based word selection.
         When Ollama is unavailable, uses 50 random common words.
         """
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
         import random
 
         def practice_with_words():
@@ -1699,6 +1770,9 @@ class Application(QObject):
 
     def practice_clipboard_from_tray(self) -> None:
         """Practice with clipboard contents."""
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
         from utils.clipboard import get_clipboard_content_wayland, is_wayland
 
         clipboard_text = None
@@ -2034,6 +2108,80 @@ class Application(QObject):
                     self.ollama_client.stop_model()
                     self.ollama_client.model = new_model
                     log.info(f"LLM model changed to: {new_model}")
+
+    def _check_monkeytype_confirmation(self) -> bool:
+        """Check if user has confirmed Monkeytype usage, show dialog if not.
+
+        Returns:
+            True if practice should proceed, False if user cancelled
+        """
+        # Check if already confirmed
+        if self.config.get_bool("practice_monkeytype_confirmed", False):
+            return True
+
+        # Show confirmation dialog
+        from PySide6.QtWidgets import (
+            QDialog,
+            QLabel,
+            QPushButton,
+            QVBoxLayout,
+            QCheckBox,
+        )
+
+        dialog = QDialog()
+        dialog.setWindowTitle("Practice Confirmation")
+        dialog.setMinimumWidth(450)
+
+        layout = QVBoxLayout()
+        dialog.setLayout(layout)
+
+        # Title
+        title = QLabel("<h3>Open typing practice?</h3>")
+        layout.addWidget(title)
+
+        # Explanation
+        explanation = QLabel(
+            "This will open <b>Monkeytype</b> in your default browser with custom text "
+            "for typing practice based on your statistics."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+
+        # Monkeytype info
+        info = QLabel(
+            "<i>Monkeytype is a minimal, customizable typing test website "
+            "(<a href='https://monkeytype.com'>monkeytype.com</a>).</i>"
+        )
+        info.setWordWrap(True)
+        info.setOpenExternalLinks(True)
+        layout.addWidget(info)
+
+        # Checkbox to remember choice
+        confirm_checkbox = QCheckBox("Don't ask again")
+        layout.addWidget(confirm_checkbox)
+
+        # Buttons
+        button_layout = QVBoxLayout()
+        layout.addLayout(button_layout)
+
+        proceed_btn = QPushButton("🐵 Open Practice")
+        proceed_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(proceed_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+
+        result = dialog.exec()
+
+        if result == QDialog.DialogCode.Accepted:
+            # User confirmed - save their choice if checkbox is checked
+            if confirm_checkbox.isChecked():
+                self.config.set("practice_monkeytype_confirmed", True)
+            return True
+        else:
+            # User cancelled
+            return False
 
     def show_about_dialog(self) -> None:
         """Show about dialog."""

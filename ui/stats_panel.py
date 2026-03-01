@@ -496,11 +496,11 @@ class StatsPanel(QWidget):
         self.unified_copy_btn.clicked.connect(self.copy_words_by_mode)
         unified_controls_layout.addWidget(self.unified_copy_btn)
 
-        self.unified_practice_btn = QPushButton("🐵 Practice (Monkeytype)")
+        self.unified_practice_btn = QPushButton("🐵 Practice")
         self.unified_practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.unified_practice_btn.clicked.connect(self.practice_text_by_mode)
         self.unified_practice_btn.setToolTip(
-            "Open Monkeytype with custom text for typing practice"
+            "Open typing practice in your browser"
         )
         unified_controls_layout.addWidget(self.unified_practice_btn)
 
@@ -640,10 +640,10 @@ class StatsPanel(QWidget):
         self.digraph_copy_btn.clicked.connect(self.copy_digraphs_by_mode)
         digraph_controls_layout.addWidget(self.digraph_copy_btn)
 
-        self.digraph_practice_btn = QPushButton("🐵 Practice (Monkeytype)")
+        self.digraph_practice_btn = QPushButton("🐵 Practice")
         self.digraph_practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.digraph_practice_btn.setToolTip(
-            "Open Monkeytype with words containing selected digraphs"
+            "Open typing practice with words containing selected digraphs"
         )
         self.digraph_practice_btn.clicked.connect(self.practice_digraphs_by_mode)
         digraph_controls_layout.addWidget(self.digraph_practice_btn)
@@ -663,6 +663,16 @@ class StatsPanel(QWidget):
         )
         self.digraphs_numbers_checkbox.setChecked(False)
         digraph_controls_layout.addWidget(self.digraphs_numbers_checkbox)
+
+        # Only Common checkbox
+        self.digraphs_common_only_checkbox = QCheckBox("Only Common")
+        self.digraphs_common_only_checkbox.setToolTip(
+            "Restrict digraph practice to only commonly occurring digraphs. "
+            "Digraphs that appear in more words (like 'th', 'he') are considered common. "
+            "Rare digraphs (like 'uu', 'qq') will be skipped even if they are your slowest."
+        )
+        self.digraphs_common_only_checkbox.setChecked(False)
+        digraph_controls_layout.addWidget(self.digraphs_common_only_checkbox)
 
         digraph_controls_layout.addStretch()
         digraphs_layout.addLayout(digraph_controls_layout)
@@ -736,6 +746,9 @@ class StatsPanel(QWidget):
             digraphs_numbers = config.get_bool("practice_digraphs_numbers_enabled", False)
             log.info(f"Loading practice_digraphs_numbers_enabled = {digraphs_numbers}")
             self.digraphs_numbers_checkbox.setChecked(digraphs_numbers)
+            digraphs_common_only = config.get_bool("practice_digraphs_common_only_enabled", False)
+            log.info(f"Loading practice_digraphs_common_only_enabled = {digraphs_common_only}")
+            self.digraphs_common_only_checkbox.setChecked(digraphs_common_only)
 
             # Load saved combo box values
             # Words mode
@@ -799,6 +812,9 @@ class StatsPanel(QWidget):
         )
         self.digraphs_numbers_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_digraphs_numbers_enabled", s)
+        )
+        self.digraphs_common_only_checkbox.stateChanged.connect(
+            lambda s: self._update_practice_config("practice_digraphs_common_only_enabled", s)
         )
 
         # Connect Digraphs tab combo box signals (after loading settings to avoid triggering during init)
@@ -1356,6 +1372,10 @@ class StatsPanel(QWidget):
 
     def practice_text(self) -> None:
         """Open clipboard text for typing practice."""
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
+
         from PySide6.QtGui import QClipboard
 
         # Get text from clipboard
@@ -1370,7 +1390,7 @@ class StatsPanel(QWidget):
                 )
             return
 
-        # Import directly and open Monkeytype
+        # Import directly and open typing practice
         try:
             from utils.monkeytype_url import generate_custom_text_url
 
@@ -1664,6 +1684,10 @@ class StatsPanel(QWidget):
 
     def practice_text_by_mode(self) -> None:
         """Open clipboard text for typing practice with word highlighting."""
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
+
         from PySide6.QtGui import QClipboard
 
         # Get text from clipboard
@@ -1718,6 +1742,10 @@ class StatsPanel(QWidget):
             highlight_words: Dict with 'hardest' and/or 'fastest' keys containing word lists
                 (Not supported by Monkeytype, logged for reference)
         """
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
+
         try:
             from utils.monkeytype_url import generate_custom_text_url
 
@@ -1734,7 +1762,7 @@ class StatsPanel(QWidget):
             log.info("Successfully opened typing practice")
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Typing Practice", "Opened Monkeytype with custom text")
+                app.tray_icon.show_notification("Typing Practice", "Opened practice with custom text")
 
         except Exception as e:
             log.error(f"Error opening practice: {e}")
@@ -1775,12 +1803,17 @@ class StatsPanel(QWidget):
         mode = self.digraph_mode_combo.currentData()
         special_chars = self.digraphs_special_chars_checkbox.isChecked()
         numbers = self.digraphs_numbers_checkbox.isChecked()
+        common_only = self.digraphs_common_only_checkbox.isChecked()
 
         if hasattr(self, "_request_digraph_words_callback"):
-            self._request_digraph_words_callback(mode, digraph_count, word_count, special_chars, numbers)
+            self._request_digraph_words_callback(mode, digraph_count, word_count, special_chars, numbers, common_only)
 
     def practice_digraphs_by_mode(self) -> None:
         """Launch practice with words containing selected digraphs."""
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
+
         from PySide6.QtGui import QClipboard
 
         # Get text from clipboard
@@ -1793,26 +1826,27 @@ class StatsPanel(QWidget):
         # Get checkbox states
         special_chars = self.digraphs_special_chars_checkbox.isChecked()
         numbers = self.digraphs_numbers_checkbox.isChecked()
+        common_only = self.digraphs_common_only_checkbox.isChecked()
 
         if not clipboard_text or not clipboard_text.strip():
             # Auto-fetch words based on mode if clipboard is empty
             if hasattr(self, "_request_digraph_practice_callback"):
                 self._request_digraph_practice_callback(
-                    mode, digraph_count, word_count, None, special_chars, numbers
+                    mode, digraph_count, word_count, None, special_chars, numbers, common_only
                 )
             return
 
         # If clipboard has text, use it for practice with digraph-based highlighting
         if hasattr(self, "_request_digraph_practice_callback"):
             self._request_digraph_practice_callback(
-                mode, digraph_count, word_count, clipboard_text, special_chars, numbers
+                mode, digraph_count, word_count, clipboard_text, special_chars, numbers, common_only
             )
 
     def set_digraph_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words containing digraphs for clipboard.
 
         Args:
-            callback: Function to call with (mode, digraph_count, word_count, special_chars, numbers) parameters
+            callback: Function to call with (mode, digraph_count, word_count, special_chars, numbers, common_only) parameters
         """
         self._request_digraph_words_callback = callback
 
@@ -1820,7 +1854,7 @@ class StatsPanel(QWidget):
         """Set callback for launching practice with digraph-based word highlighting.
 
         Args:
-            callback: Function to call with (mode, digraph_count, word_count, text, special_chars, numbers) parameters
+            callback: Function to call with (mode, digraph_count, word_count, text, special_chars, numbers, common_only) parameters
         """
         self._request_digraph_practice_callback = callback
 
@@ -1835,6 +1869,10 @@ class StatsPanel(QWidget):
             digraphs: List of digraph strings (e.g., ['th', 'he', 'in'])
                 (Not supported by Monkeytype, logged for reference)
         """
+        # Check if user has confirmed Monkeytype usage
+        if not self._check_monkeytype_confirmation():
+            return
+
         try:
             from utils.monkeytype_url import generate_custom_text_url
 
@@ -1847,7 +1885,7 @@ class StatsPanel(QWidget):
             log.info("Successfully opened typing practice")
             app = QApplication.instance()
             if app and hasattr(app, "tray_icon"):
-                app.tray_icon.show_notification("Typing Practice", "Opened Monkeytype with custom text")
+                app.tray_icon.show_notification("Typing Practice", "Opened practice with custom text")
 
         except Exception as e:
             log.error(f"Error opening practice: {e}")
@@ -1871,6 +1909,14 @@ class StatsPanel(QWidget):
             self.digraph_word_count_combo.setVisible(enabled)
             self.digraph_copy_btn.setVisible(enabled)
             self.digraph_practice_btn.setVisible(enabled)
+
+            # Also hide the enhancement checkboxes (Special Chars, Numbers, Only Common)
+            if hasattr(self, "digraphs_special_chars_checkbox"):
+                self.digraphs_special_chars_checkbox.setVisible(enabled)
+            if hasattr(self, "digraphs_numbers_checkbox"):
+                self.digraphs_numbers_checkbox.setVisible(enabled)
+            if hasattr(self, "digraphs_common_only_checkbox"):
+                self.digraphs_common_only_checkbox.setVisible(enabled)
 
             # Also hide the labels if we're hiding the controls
             # Find the labels by their text content
@@ -1934,3 +1980,82 @@ class StatsPanel(QWidget):
             config.set(key, value)
         else:
             log.warning(f"Cannot update config {key}: config not available")
+
+    def _check_monkeytype_confirmation(self) -> bool:
+        """Check if user has confirmed Monkeytype usage, show dialog if not.
+
+        Returns:
+            True if practice should proceed, False if user cancelled
+        """
+        config = self._get_config()
+        if not config:
+            # If no config available, proceed without confirmation
+            return True
+
+        # Check if already confirmed
+        if config.get_bool("practice_monkeytype_confirmed", False):
+            return True
+
+        # Show confirmation dialog
+        from PySide6.QtWidgets import (
+            QDialog,
+            QLabel,
+            QPushButton,
+            QVBoxLayout,
+            QCheckBox,
+        )
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Practice Confirmation")
+        dialog.setMinimumWidth(450)
+
+        layout = QVBoxLayout()
+        dialog.setLayout(layout)
+
+        # Title
+        title = QLabel("<h3>Open typing practice?</h3>")
+        layout.addWidget(title)
+
+        # Explanation
+        explanation = QLabel(
+            "This will open <b>Monkeytype</b> in your default browser with custom text "
+            "for typing practice based on your statistics."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+
+        # Monkeytype info
+        info = QLabel(
+            "<i>Monkeytype is a minimal, customizable typing test website "
+            "(<a href='https://monkeytype.com'>monkeytype.com</a>).</i>"
+        )
+        info.setWordWrap(True)
+        info.setOpenExternalLinks(True)
+        layout.addWidget(info)
+
+        # Checkbox to remember choice
+        confirm_checkbox = QCheckBox("Don't ask again")
+        layout.addWidget(confirm_checkbox)
+
+        # Buttons
+        button_layout = QVBoxLayout()
+        layout.addLayout(button_layout)
+
+        proceed_btn = QPushButton("🐵 Open Practice")
+        proceed_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(proceed_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+
+        result = dialog.exec()
+
+        if result == QDialog.DialogCode.Accepted:
+            # User confirmed - save their choice if checkbox is checked
+            if confirm_checkbox.isChecked():
+                config.set("practice_monkeytype_confirmed", True)
+            return True
+        else:
+            # User cancelled
+            return False
