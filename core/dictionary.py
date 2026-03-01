@@ -367,10 +367,12 @@ class Dictionary:
         for lang_code, mapping in self._capitalized_words.items():
             if word_lower in mapping:
                 original = mapping[word_lower]
-                # Count uppercase letters (excluding first character)
-                uppercase_count = sum(1 for c in original[1:] if c.isupper())
-                # It's an abbreviation if 2+ letters are uppercase (not counting first)
-                # This catches "BTX" (3 caps) but not "Haus" (only first letter cap)
+                # Count ALL uppercase letters in the word
+                # Then exclude the first character IF the word is normally capitalized
+                # (i.e., if only first letter is cap, it's a noun like "Haus", not an acronym)
+                uppercase_count = sum(1 for c in original if c.isupper())
+                # It's an abbreviation if 2+ letters are uppercase total
+                # This catches "PC" (2 caps), "USB" (3 caps) but not "Haus" (1 cap)
                 return uppercase_count >= 2
 
         return False
