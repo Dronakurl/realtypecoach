@@ -99,7 +99,9 @@ class Application(QObject):
     signal_text_generation_failed = Signal(str)  # For Ollama errors
     signal_ollama_available = Signal(bool)  # Ollama availability status
     signal_practice_with_highlighting = Signal(str, dict)  # For practice with word highlighting
-    signal_digraph_words_ready = Signal(list, list)  # For digraph words clipboard copy (words, digraphs)
+    signal_digraph_words_ready = Signal(
+        list, list
+    )  # For digraph words clipboard copy (words, digraphs)
     signal_digraph_practice_ready = Signal(str, list)  # For digraph practice (text, digraphs)
 
     def __init__(self) -> None:
@@ -114,6 +116,8 @@ class Application(QObject):
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="data_fetcher")
         # Thread-safe flag for stats panel visibility (avoid calling Qt methods from background threads)
         self._stats_panel_visible: bool = False
+        # Cached keyboard layout to avoid database access on every key event
+        self._cached_keyboard_layout: str = "auto"
 
         self.init_data_directory()
         self.init_components()
@@ -207,6 +211,9 @@ class Application(QObject):
                 sys.exit(1)
             raise
 
+        # Initialize cached keyboard layout from config (avoids database access on every key event)
+        self._cached_keyboard_layout = self.config.get("keyboard_layout", "auto")
+
         # Build dictionary configuration
         enabled_languages = self.config.get_list("enabled_languages")
         enabled_dictionaries = self.config.get("enabled_dictionaries", "")
@@ -292,6 +299,7 @@ class Application(QObject):
 
         # Store clipboard reference for tray menu access
         from PySide6.QtWidgets import QApplication
+
         self._clipboard = QApplication.clipboard()
 
         # Hide digraph practice controls if no dictionaries are configured
@@ -476,8 +484,11 @@ class Application(QObject):
         self.sync_handler.signal_sync_failed.connect(self._on_sync_failed)
 
     def get_current_layout(self) -> str:
-        """Get current keyboard layout."""
-        layout = self.config.get("keyboard_layout", "auto")
+        """Get current keyboard layout.
+
+        Uses cached value to avoid database access during key events.
+        """
+        layout = self._cached_keyboard_layout
         if layout == "auto":
             return get_current_layout()
         return layout
@@ -667,6 +678,10 @@ class Application(QObject):
         for key, value in new_settings.items():
             if key not in special_keys:
                 self.config.set(key, value)
+
+        # Update cached keyboard layout if changed
+        if "keyboard_layout" in new_settings:
+            self._cached_keyboard_layout = new_settings["keyboard_layout"]
 
         # Save exclude_names_enabled to database settings table for sync
         if "exclude_names_enabled" in new_settings:
@@ -947,7 +962,9 @@ class Application(QObject):
 
         self._executor.submit(check_in_thread)
 
-    def fetch_words_by_mode(self, mode: str, count: int, special_chars: bool = False, numbers: bool = False) -> None:
+    def fetch_words_by_mode(
+        self, mode: str, count: int, special_chars: bool = False, numbers: bool = False
+    ) -> None:
         """Fetch words by mode in background thread and emit signal.
 
         Args:
@@ -964,7 +981,9 @@ class Application(QObject):
                     words = self.analyzer.get_slowest_words(
                         limit=count, layout=self.get_current_layout()
                     )
-                    word_list = [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
+                    word_list = [
+                        self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
+                    ]
                     # Apply enhancements
                     word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
                     self.signal_clipboard_words_ready.emit(word_list)
@@ -972,7 +991,9 @@ class Application(QObject):
                     words = self.analyzer.get_fastest_words(
                         limit=count, layout=self.get_current_layout()
                     )
-                    word_list = [self.storage.dictionary.get_capitalized_form(w.word, None) for w in words]
+                    word_list = [
+                        self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
+                    ]
                     # Apply enhancements
                     word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
                     self.signal_clipboard_fastest_words_ready.emit(word_list)
@@ -988,7 +1009,9 @@ class Application(QObject):
                     )
                     combined = fastest + hardest
                     random.shuffle(combined)
-                    word_list = [self.storage.dictionary.get_capitalized_form(w.word, None) for w in combined]
+                    word_list = [
+                        self.storage.dictionary.get_capitalized_form(w.word, None) for w in combined
+                    ]
                     # Apply enhancements
                     word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
                     self.signal_clipboard_mixed_words_ready.emit(word_list)
@@ -1194,7 +1217,15 @@ class Application(QObject):
 
         self._executor.submit(generate_in_thread)
 
-    def fetch_digraph_words(self, mode: str, digraph_count: int, word_count: int, special_chars: bool = False, numbers: bool = False, common_only: bool = False) -> None:
+    def fetch_digraph_words(
+        self,
+        mode: str,
+        digraph_count: int,
+        word_count: int,
+        special_chars: bool = False,
+        numbers: bool = False,
+        common_only: bool = False,
+    ) -> None:
         """Fetch words containing selected digraphs for clipboard.
 
         Args:
@@ -1265,7 +1296,9 @@ class Application(QObject):
                 # Check if fallback digraphs are being used (avg_interval_ms = 0.0 indicates no statistics)
                 using_fallback = any(d.avg_interval_ms == 0.0 for d in digraph_stats)
                 if using_fallback:
-                    log.info(f"No digraph statistics found - using {len(digraphs)} most common digraphs from dictionary: {', '.join(digraphs[:5])}")
+                    log.info(
+                        f"No digraph statistics found - using {len(digraphs)} most common digraphs from dictionary: {', '.join(digraphs[:5])}"
+                    )
 
                 # Find words containing these digraphs
                 words = self.storage.get_random_words_with_digraphs(
@@ -1282,7 +1315,9 @@ class Application(QObject):
                 ]
 
                 # Apply enhancements (special chars and numbers)
-                enhanced_words = self._apply_text_enhancements(capitalized_words, special_chars, numbers)
+                enhanced_words = self._apply_text_enhancements(
+                    capitalized_words, special_chars, numbers
+                )
 
                 # Emit both words and digraphs for notification
                 self.signal_digraph_words_ready.emit(enhanced_words, digraphs)
@@ -1380,13 +1415,17 @@ class Application(QObject):
                 # Show detailed notification
                 if using_fallback:
                     filter_label = "most common (dictionary fallback) "
-                    log.info(f"No digraph statistics found - using {len(digraphs)} most common digraphs from dictionary: {', '.join(digraphs[:5])}")
+                    log.info(
+                        f"No digraph statistics found - using {len(digraphs)} most common digraphs from dictionary: {', '.join(digraphs[:5])}"
+                    )
                 else:
                     filter_label = "common " if common_only else ""
                     digraph_list_str = ", ".join(digraphs[:5])  # Show first 5
                     if len(digraphs) > 5:
                         digraph_list_str += f", ... (+{len(digraphs) - 5} more)"
-                    log.info(f"Practicing {len(digraphs)} {filter_label}{mode} digraphs: {digraph_list_str}")
+                    log.info(
+                        f"Practicing {len(digraphs)} {filter_label}{mode} digraphs: {digraph_list_str}"
+                    )
 
                 # If no text provided, auto-fetch words containing these digraphs
                 practice_text = text
@@ -1692,7 +1731,9 @@ class Application(QObject):
         )
 
         # Call existing fetch_digraph_practice with text=None for auto-fetch
-        self.fetch_digraph_practice(mode, digraph_count, word_count, None, special_chars, numbers, common_only)
+        self.fetch_digraph_practice(
+            mode, digraph_count, word_count, None, special_chars, numbers, common_only
+        )
 
     def practice_words_from_tray(self) -> None:
         """Practice words using settings from statistics panel.
@@ -1733,7 +1774,9 @@ class Application(QObject):
                     random_words = random.sample(all_words, word_count)
 
                     # Get config settings for enhancements
-                    special_chars = self.config.get_bool("practice_words_special_chars_enabled", False)
+                    special_chars = self.config.get_bool(
+                        "practice_words_special_chars_enabled", False
+                    )
                     numbers = self.config.get_bool("practice_words_numbers_enabled", False)
 
                     # Apply capitalization
@@ -1747,11 +1790,14 @@ class Application(QObject):
 
                     # Build highlight list (all words as "hardest" to enable highlighting)
                     # Note: Monkeytype doesn't support word highlighting
-                    log.info(f"Opening typing practice with {len(word_list)} common words (not highlighted in Monkeytype)")
+                    log.info(
+                        f"Opening typing practice with {len(word_list)} common words (not highlighted in Monkeytype)"
+                    )
 
                     # Import directly and open Monkeytype
-                    from utils.monkeytype_url import generate_custom_text_url
                     import webbrowser
+
+                    from utils.monkeytype_url import generate_custom_text_url
 
                     url = generate_custom_text_url(practice_text)
                     webbrowser.open(url)
@@ -1764,7 +1810,9 @@ class Application(QObject):
                     # Read config settings with defaults
                     mode = self.config.get("practice_words_mode", "hardest")
                     count = self.config.get_int("practice_words_count", 50)
-                    special_chars = self.config.get_bool("practice_words_special_chars_enabled", False)
+                    special_chars = self.config.get_bool(
+                        "practice_words_special_chars_enabled", False
+                    )
                     numbers = self.config.get_bool("practice_words_numbers_enabled", False)
 
                     log.info(f"Starting word practice (mode={mode}, count={count})")
@@ -1797,6 +1845,7 @@ class Application(QObject):
         # Fallback to Qt clipboard
         if not clipboard_text:
             from PySide6.QtGui import QClipboard
+
             clipboard_text = self._clipboard.text(QClipboard.Mode.Clipboard)
 
         if not clipboard_text or not clipboard_text.strip():
@@ -1816,8 +1865,9 @@ class Application(QObject):
 
         def practice_with_clipboard():
             try:
-                from utils.monkeytype_url import generate_custom_text_url
                 import webbrowser
+
+                from utils.monkeytype_url import generate_custom_text_url
 
                 url = generate_custom_text_url(practice_text)
                 webbrowser.open(url)
@@ -2134,11 +2184,11 @@ class Application(QObject):
 
         # Show confirmation dialog
         from PySide6.QtWidgets import (
+            QCheckBox,
             QDialog,
             QLabel,
             QPushButton,
             QVBoxLayout,
-            QCheckBox,
         )
 
         dialog = QDialog()
