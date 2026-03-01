@@ -339,10 +339,6 @@ calibrate-length *args:
     @.venv/bin/python3 scripts/calibrate_length_penalty.py {{args}}
 
 # Burst Outlier Detection
-# Show statistical outliers in burst history (WPM outliers by default)
-burst-outliers metric="wpm" top="":
-    @if [ -n "{{top}}" ]; then \
-        .venv/bin/python3 scripts/burst_outliers.py --metric {{metric}} --top {{top}}; \
-    else \
-        .venv/bin/python3 scripts/burst_outliers.py --metric {{metric}}; \
-    fi
+# Show statistical outliers in burst history using Isolation Forest
+burst-outliers *args:
+    @.venv/bin/python3 scripts/burst_outliers.py {{args}}
