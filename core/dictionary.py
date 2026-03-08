@@ -1,6 +1,7 @@
 """Dictionary validation for multiple languages."""
 
 import logging
+import random
 from pathlib import Path
 
 from core.dictionary_config import DictionaryConfig
@@ -28,6 +29,9 @@ class Dictionary:
         self._capitalized_words: dict[
             str, dict[str, str]
         ] = {}  # language_code -> lowercase->capitalized mapping
+        self._ambiguous_words: dict[
+            str, set[str]
+        ] = {}  # language_code -> words that exist in both cases (e.g., "Gen" and "gen")
         self._config: DictionaryConfig = config
         self._ignored_words: set[str] = set()
         self._storage = storage
@@ -265,12 +269,17 @@ class Dictionary:
                 # Store both lowercase for validation and original case for capitalization
                 word_set = set()
                 capitalized_mapping = {}
+                all_forms = {}  # lowercase -> set of all original forms found
                 for line in f:
                     original_word = line.strip()
                     if not original_word:
                         continue
                     lowercase_word = original_word.lower()
                     word_set.add(lowercase_word)
+                    # Track all forms of each word
+                    if lowercase_word not in all_forms:
+                        all_forms[lowercase_word] = set()
+                    all_forms[lowercase_word].add(original_word)
                     # Store the first (typically proper) capitalization for each lowercase form
                     # German dictionaries like ngerman have nouns capitalized (Haus, Aal, etc.)
                     if lowercase_word not in capitalized_mapping:
@@ -278,8 +287,19 @@ class Dictionary:
 
                 self.words[language_code] = word_set
                 self._capitalized_words[language_code] = capitalized_mapping
+
+                # Detect ambiguous words (exist in both lowercase and capitalized forms)
+                ambiguous = set()
+                for lowercase_word, forms in all_forms.items():
+                    if len(forms) > 1:
+                        # Word exists in multiple forms (e.g., "Gen" and "gen")
+                        ambiguous.add(lowercase_word)
+                self._ambiguous_words[language_code] = ambiguous
+
             self.loaded_paths[language_code] = path
             log.info(f"Loaded {len(self.words[language_code])} {language_code} words from {path}")
+            if ambiguous:
+                log.info(f"Found {len(ambiguous)} words with ambiguous capitalization in {language_code}")
             return True
         except (PermissionError, UnicodeDecodeError, OSError) as e:
             log.error(f"Error loading {language_code} dictionary from {path}: {e}")
@@ -398,6 +418,7 @@ class Dictionary:
 
         For German nouns, returns the capitalized form (e.g., 'haus' -> 'Haus').
         For words not in dictionary or non-German languages, returns original word.
+        For words with ambiguous capitalization (e.g., 'Gen'/'gen'), randomly chooses.
 
         Args:
             word: The word to look up (case-insensitive)
@@ -419,6 +440,13 @@ class Dictionary:
         if language_code:
             if language_code in self._capitalized_words:
                 if word_lower in self._capitalized_words[language_code]:
+                    # Check if this word has ambiguous capitalization
+                    if language_code in self._ambiguous_words and word_lower in self._ambiguous_words[language_code]:
+                        # Randomly return lowercase or capitalized form
+                        if random.random() < 0.5:
+                            return word_lower
+                        else:
+                            return self._capitalized_words[language_code][word_lower]
                     return self._capitalized_words[language_code][word_lower]
             # Not found in specific language, return original
             return word
@@ -426,10 +454,126 @@ class Dictionary:
         # Otherwise check all loaded dictionaries
         for lang_code, mapping in self._capitalized_words.items():
             if word_lower in mapping:
+                # Check if this word has ambiguous capitalization
+                if lang_code in self._ambiguous_words and word_lower in self._ambiguous_words[lang_code]:
+                    # Randomly return lowercase or capitalized form
+                    if random.random() < 0.5:
+                        return word_lower
+                    else:
+                        return mapping[word_lower]
                 return mapping[word_lower]
 
         # Not found in any dictionary, return original
         return word
+
+    def _is_language_supported_by_wordfreq(self, lang_code: str) -> bool:
+        """Check if wordfreq supports this language.
+
+        Args:
+            lang_code: Language code (e.g., 'en', 'de')
+
+        Returns:
+            True if wordfreq supports this language
+        """
+        try:
+            from wordfreq import available_languages
+            return lang_code in available_languages()
+        except ImportError:
+            return False
+
+    def calculate_digraph_frequencies_weighted(self, language: str | None = None) -> dict[str, float]:
+        """Calculate digraph frequencies weighted by word frequency using wordfreq.
+
+        For languages supported by wordfreq: Each digraph's frequency is the sum of
+        word frequencies for all words containing that digraph. E.g., 'th' in 'the'
+        contributes 0.0537, not 1.
+
+        For unsupported languages: Falls back to simple counting (each word = 1).
+
+        Args:
+            language: Specific language code (e.g., 'en', 'de'), or None for all loaded
+
+        Returns:
+            Dict mapping digraph to weighted frequency (float).
+            Example: {'th': 0.089, 'he': 0.076, 'uu': 0.0001}
+        """
+        frequencies: dict[str, float] = {}
+
+        # Get languages to process
+        if language:
+            languages_to_process = [language] if language in self.words else []
+        else:
+            languages_to_process = list(self.words.keys())
+
+        # Check if we should use weighted calculation
+        use_weighted = True
+        for lang in languages_to_process:
+            if not self._is_language_supported_by_wordfreq(lang):
+                use_weighted = False
+                log.info(f"Language {lang} not supported by wordfreq, using counting method")
+                break
+
+        if use_weighted:
+            try:
+                from wordfreq import word_frequency
+                for lang in languages_to_process:
+                    word_set = self.words[lang]
+                    for word in word_set:
+                        word_lower = word.lower()
+                        # Get word frequency from wordfreq
+                        word_freq = word_frequency(word_lower, lang)
+                        # Extract all 2-character combinations from this word
+                        for i in range(len(word_lower) - 1):
+                            digraph = word_lower[i:i+2]
+                            # Only count 2-letter combinations (no spaces, special chars)
+                            if digraph.isalpha():
+                                frequencies[digraph] = frequencies.get(digraph, 0.0) + word_freq
+                log.info(f"Calculated weighted digraph frequencies for {len(frequencies)} digraphs "
+                         f"across {len(languages_to_process)} language(s)")
+            except ImportError:
+                log.warning("wordfreq not available, falling back to counting method")
+                return self._calculate_digraph_frequencies_counting(language)
+        else:
+            return self._calculate_digraph_frequencies_counting(language)
+
+        return frequencies
+
+    def _calculate_digraph_frequencies_counting(self, language: str | None = None) -> dict[str, float]:
+        """Calculate digraph frequencies using simple counting (fallback method).
+
+        Each word contributes 1 to each digraph it contains.
+
+        Args:
+            language: Specific language to calculate for (e.g., 'en', 'de'),
+                     or None to calculate across all loaded languages
+
+        Returns:
+            Dict mapping digraph to word count (as float for compatibility).
+            Example: {'th': 5423.0, 'he': 4891.0, 'uu': 12.0}
+        """
+        frequencies: dict[str, float] = {}
+
+        # Get languages to process
+        if language:
+            languages_to_process = [language] if language in self.words else []
+        else:
+            languages_to_process = list(self.words.keys())
+
+        # Count digraph occurrences
+        for lang in languages_to_process:
+            word_set = self.words[lang]
+            for word in word_set:
+                word_lower = word.lower()
+                # Extract all 2-character combinations from this word
+                for i in range(len(word_lower) - 1):
+                    digraph = word_lower[i:i+2]
+                    # Only count 2-letter combinations (no spaces, special chars)
+                    if digraph.isalpha():
+                        frequencies[digraph] = frequencies.get(digraph, 0.0) + 1.0
+
+        log.info(f"Calculated digraph frequencies (counting) for {len(frequencies)} digraphs "
+                 f"across {len(languages_to_process)} language(s)")
+        return frequencies
 
     def calculate_digraph_frequencies(self, language: str | None = None) -> dict[str, int]:
         """Calculate how many words contain each 2-character combination (digraph).
@@ -470,6 +614,127 @@ class Dictionary:
                  f"across {len(languages_to_process)} language(s)")
         return frequencies
 
+    def get_word_zipf_frequency(self, word: str, lang_code: str) -> float:
+        """Get Zipf frequency for a word using wordfreq.
+
+        Args:
+            word: The word to look up (case-insensitive)
+            lang_code: Language code (e.g., 'en', 'de')
+
+        Returns:
+            Zipf frequency (0-8 scale), or 0.0 if not found
+        """
+        try:
+            from wordfreq import zipf_frequency
+            return zipf_frequency(word.lower(), lang_code, wordlist='best')
+        except ImportError:
+            log.warning("wordfreq not available, returning 0.0")
+            return 0.0
+        except Exception as e:
+            log.debug(f"Error getting Zipf frequency for '{word}': {e}")
+            return 0.0
+
+    def iter_top_n_words(
+        self,
+        lang_code: str,
+        n: int,
+        min_zipf: float = 1.0
+    ) -> list[tuple[str, float]]:
+        """Get top N most common words above Zipf threshold.
+
+        Args:
+            lang_code: Language code
+            n: Maximum number of words to return
+            min_zipf: Minimum Zipf frequency (inclusive)
+
+        Returns:
+            List of (word, zipf_frequency) tuples, sorted by frequency descending
+        """
+        try:
+            from wordfreq import top_n_list, zipf_frequency
+
+            # Get large list and filter
+            all_words = top_n_list(lang_code, n * 5)  # Get 5x to filter down
+
+            result = []
+            for word in all_words:
+                zipf = zipf_frequency(word, lang_code)
+                if zipf >= min_zipf:
+                    result.append((word, zipf))
+                if len(result) >= n:
+                    break
+
+            return result
+        except ImportError:
+            log.warning(f"wordfreq not available for {lang_code}")
+            return []
+        except Exception as e:
+            log.warning(f"Error getting top N words for {lang_code}: {e}")
+            return []
+
+    def calculate_digraphs_in_common_words(
+        self,
+        zipf_threshold: float = 4.0,
+        min_common_words: int = 10
+    ) -> dict[str, int]:
+        """Count how many common words contain each digraph.
+
+        Only counts words that meet the Zipf frequency threshold.
+        A digraph is included only if it appears in at least min_common_words common words.
+
+        Args:
+            zipf_threshold: Minimum Zipf frequency for a word to be considered "common" (1-8 scale)
+            min_common_words: Minimum number of common words required for digraph to be included
+
+        Returns:
+            Dict mapping digraph to count of common words containing it.
+            Example: {'th': 542, 'he': 489, 'uu': 0}
+                     ('uu' excluded if < min_common_words)
+        """
+        from collections import defaultdict
+
+        digraph_counts: dict[str, int] = defaultdict(int)
+
+        # Get languages to process
+        languages_to_process = list(self.words.keys())
+
+        try:
+            from wordfreq import zipf_frequency
+
+            for lang in languages_to_process:
+                word_set = self.words[lang]
+                for word in word_set:
+                    word_lower = word.lower()
+
+                    # Check if this word is common enough
+                    word_zipf = zipf_frequency(word_lower, lang, wordlist='best')
+                    if word_zipf < zipf_threshold:
+                        continue  # Skip rare words
+
+                    # Extract digraphs from this common word
+                    for i in range(len(word_lower) - 1):
+                        digraph = word_lower[i:i+2]
+                        if digraph.isalpha():
+                            digraph_counts[digraph] += 1
+
+        except ImportError:
+            log.warning("wordfreq not available, returning empty dict")
+            return {}
+
+        # Filter out digraphs that don't meet the minimum count
+        filtered = {
+            digraph: count
+            for digraph, count in digraph_counts.items()
+            if count >= min_common_words
+        }
+
+        log.info(
+            f"Found {len(filtered)} digraphs appearing in >= {min_common_words} "
+            f"common words (Zipf >= {zipf_threshold})"
+        )
+
+        return filtered
+
     def reload_languages(self, config: DictionaryConfig) -> None:
         """Reload dictionaries with new configuration.
 
@@ -480,6 +745,7 @@ class Dictionary:
         self.words.clear()
         self.loaded_paths.clear()
         self._capitalized_words.clear()
+        self._ambiguous_words.clear()
         self._config = config
         self._exclude_names = config.exclude_names_enabled
 
