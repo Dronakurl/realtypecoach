@@ -410,36 +410,6 @@ class StatsPanel(QWidget):
         words_tab = QWidget()
         words_layout = QVBoxLayout(words_tab)
 
-        # Common words filter controls (at the top)
-        words_filter_layout = QHBoxLayout()
-        words_filter_layout.addStretch()
-
-        self.words_show_common_only_checkbox = QCheckBox("Only Common Words")
-        self.words_show_common_only_checkbox.setToolTip(
-            "Show only commonly occurring words in the tables below."
-        )
-        self.words_show_common_only_checkbox.setChecked(False)
-        words_filter_layout.addWidget(self.words_show_common_only_checkbox)
-
-        # Zipf threshold spinbox
-        words_zipf_label = QLabel("Min Frequency:")
-        words_zipf_label.setStyleSheet("font-size: 11px; color: #666;")
-        words_filter_layout.addWidget(words_zipf_label)
-
-        self.words_zipf_threshold_spin = QDoubleSpinBox()
-        self.words_zipf_threshold_spin.setRange(1.0, 8.0)
-        self.words_zipf_threshold_spin.setSingleStep(0.1)
-        self.words_zipf_threshold_spin.setValue(4.0)
-        self.words_zipf_threshold_spin.setSuffix(" Zipf")
-        self.words_zipf_threshold_spin.setToolTip(
-            "Minimum Zipf frequency for common words (1=rare, 8=very common).\n"
-            "Higher values = fewer words considered common."
-        )
-        words_filter_layout.addWidget(self.words_zipf_threshold_spin)
-
-        words_filter_layout.addStretch()
-        words_layout.addLayout(words_filter_layout)
-
         # Top section: Tables side by side
         tables_layout = QHBoxLayout()
 
@@ -493,10 +463,6 @@ class StatsPanel(QWidget):
         unified_controls_layout = QHBoxLayout()
 
         # Mode dropdown
-        mode_label = QLabel("Mode:")
-        mode_label.setStyleSheet("font-size: 12px; color: #666;")
-        unified_controls_layout.addWidget(mode_label)
-
         self.word_mode_combo = QComboBox()
         self.word_mode_combo.addItem("Hardest", "hardest")
         self.word_mode_combo.addItem("Fastest", "fastest")
@@ -506,10 +472,6 @@ class StatsPanel(QWidget):
         unified_controls_layout.addWidget(self.word_mode_combo)
 
         # Count dropdown
-        count_label = QLabel("Count:")
-        count_label.setStyleSheet("font-size: 12px; color: #666;")
-        unified_controls_layout.addWidget(count_label)
-
         self.unified_word_count_combo = QComboBox()
         self.unified_word_count_combo.addItem("10", 10)
         self.unified_word_count_combo.addItem("25", 25)
@@ -534,16 +496,16 @@ class StatsPanel(QWidget):
         self.unified_practice_btn.setToolTip("Open typing practice in your browser")
         unified_controls_layout.addWidget(self.unified_practice_btn)
 
-        self.unified_generate_btn = QPushButton("✨ Generate Text")
+        self.unified_generate_btn = QPushButton("✨ AI text")
         self.unified_generate_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.unified_generate_btn.setVisible(False)  # Hidden until Ollama detected
         self.unified_generate_btn.setToolTip("Generate practice text using Ollama")
         self.unified_generate_btn.clicked.connect(self.generate_text_by_mode)
-        self._original_button_text = "✨ Generate Text"  # Store original text for restoration
+        self._original_button_text = "✨ AI text"  # Store original text for restoration
         unified_controls_layout.addWidget(self.unified_generate_btn)
 
         # Special Characters checkbox
-        self.words_special_chars_checkbox = QCheckBox("Special Chars")
+        self.words_special_chars_checkbox = QCheckBox("Special")
         self.words_special_chars_checkbox.setToolTip(
             "Add special characters (quotes, hyphens, punctuation) to practice text (configurable probability in settings)"
         )
@@ -558,15 +520,31 @@ class StatsPanel(QWidget):
         self.words_numbers_checkbox.setChecked(False)
         unified_controls_layout.addWidget(self.words_numbers_checkbox)
 
-        # Only Common Words checkbox (for practice)
-        self.words_common_only_checkbox = QCheckBox("Only Common")
-        self.words_common_only_checkbox.setToolTip(
-            "Restrict word practice to only commonly occurring words. "
-            "Words with higher Zipf frequency (like 'the', 'and') are considered common. "
-            "Rare words will be skipped even if they are your slowest."
+        # Only Common checkbox
+        self.words_show_common_only_checkbox = QCheckBox("Only Common")
+        self.words_show_common_only_checkbox.setToolTip(
+            "Show only commonly occurring words in the tables below.\n"
+            "Also controls whether practice uses only common words."
         )
-        self.words_common_only_checkbox.setChecked(False)
-        unified_controls_layout.addWidget(self.words_common_only_checkbox)
+        self.words_show_common_only_checkbox.setChecked(False)
+        unified_controls_layout.addWidget(self.words_show_common_only_checkbox)
+
+        # Zipf threshold dropdown
+        self.words_zipf_threshold_combo = QComboBox()
+        self.words_zipf_threshold_combo.addItem("Fewest words", 7.5)
+        self.words_zipf_threshold_combo.addItem("Very common", 7.0)
+        self.words_zipf_threshold_combo.addItem("Only common", 6.0)
+        self.words_zipf_threshold_combo.addItem("Common words", 5.0)
+        self.words_zipf_threshold_combo.addItem("Balanced", 4.0)
+        self.words_zipf_threshold_combo.addItem("Many words", 3.0)
+        self.words_zipf_threshold_combo.addItem("Most words", 2.0)
+        self.words_zipf_threshold_combo.setCurrentIndex(4)  # Default to Balanced (4.0)
+        self.words_zipf_threshold_combo.setMaximumWidth(130)
+        self.words_zipf_threshold_combo.setToolTip(
+            "Minimum Zipf frequency for common words (1=rare, 8=very common).\n"
+            "Higher values = fewer words considered common."
+        )
+        unified_controls_layout.addWidget(self.words_zipf_threshold_combo)
 
         unified_controls_layout.addStretch()
         words_layout.addLayout(unified_controls_layout)
@@ -576,36 +554,6 @@ class StatsPanel(QWidget):
         # Tab 4: Digraphs
         digraphs_tab = QWidget()
         digraphs_layout = QVBoxLayout(digraphs_tab)
-
-        # Common digraphs filter checkbox (at the top)
-        filter_layout = QHBoxLayout()
-        filter_layout.addStretch()
-
-        self.digraphs_show_common_only_checkbox = QCheckBox("Only Common Digraphs")
-        self.digraphs_show_common_only_checkbox.setToolTip(
-            "Show only commonly occurring digraphs in the tables below."
-        )
-        self.digraphs_show_common_only_checkbox.setChecked(False)
-        filter_layout.addWidget(self.digraphs_show_common_only_checkbox)
-
-        # Frequency threshold spinbox
-        threshold_label = QLabel("Threshold:")
-        threshold_label.setStyleSheet("font-size: 11px; color: #666;")
-        filter_layout.addWidget(threshold_label)
-
-        self.digraph_zipf_threshold_spin = QDoubleSpinBox()
-        self.digraph_zipf_threshold_spin.setRange(1.0, 8.0)
-        self.digraph_zipf_threshold_spin.setSingleStep(0.1)
-        self.digraph_zipf_threshold_spin.setSuffix(" Zipf")
-        self.digraph_zipf_threshold_spin.setToolTip(
-            "Minimum Zipf frequency for words containing the digraph.\n"
-            "Digraphs must appear in at least 10 common words.\n"
-            "Higher values = more restrictive (only very common words)."
-        )
-        filter_layout.addWidget(self.digraph_zipf_threshold_spin)
-
-        filter_layout.addStretch()
-        digraphs_layout.addLayout(filter_layout)
 
         # Tables section (side by side)
         tables_layout = QHBoxLayout()
@@ -660,10 +608,6 @@ class StatsPanel(QWidget):
         digraph_controls_layout = QHBoxLayout()
 
         # Mode dropdown
-        digraph_mode_label = QLabel("Mode:")
-        digraph_mode_label.setStyleSheet("font-size: 12px; color: #666;")
-        digraph_controls_layout.addWidget(digraph_mode_label)
-
         self.digraph_mode_combo = QComboBox()
         self.digraph_mode_combo.addItem("Hardest", "hardest")
         self.digraph_mode_combo.addItem("Fastest", "fastest")
@@ -673,10 +617,6 @@ class StatsPanel(QWidget):
         digraph_controls_layout.addWidget(self.digraph_mode_combo)
 
         # Digraph count dropdown
-        digraph_count_label = QLabel("Digraphs:")
-        digraph_count_label.setStyleSheet("font-size: 12px; color: #666;")
-        digraph_controls_layout.addWidget(digraph_count_label)
-
         self.digraph_count_combo = QComboBox()
         self.digraph_count_combo.addItem("1", 1)
         self.digraph_count_combo.addItem("2", 2)
@@ -689,10 +629,6 @@ class StatsPanel(QWidget):
         digraph_controls_layout.addWidget(self.digraph_count_combo)
 
         # Word count dropdown
-        digraph_word_count_label = QLabel("Words:")
-        digraph_word_count_label.setStyleSheet("font-size: 12px; color: #666;")
-        digraph_controls_layout.addWidget(digraph_word_count_label)
-
         self.digraph_word_count_combo = QComboBox()
         self.digraph_word_count_combo.addItem("10", 10)
         self.digraph_word_count_combo.addItem("25", 25)
@@ -721,7 +657,7 @@ class StatsPanel(QWidget):
         digraph_controls_layout.addWidget(self.digraph_practice_btn)
 
         # Special Characters checkbox
-        self.digraphs_special_chars_checkbox = QCheckBox("Special Chars")
+        self.digraphs_special_chars_checkbox = QCheckBox("Special")
         self.digraphs_special_chars_checkbox.setToolTip(
             "Add special characters (quotes, hyphens, punctuation) to practice text (configurable probability in settings)"
         )
@@ -737,14 +673,31 @@ class StatsPanel(QWidget):
         digraph_controls_layout.addWidget(self.digraphs_numbers_checkbox)
 
         # Only Common checkbox
-        self.digraphs_common_only_checkbox = QCheckBox("Only Common")
-        self.digraphs_common_only_checkbox.setToolTip(
-            "Restrict digraph practice to only commonly occurring digraphs. "
-            "Digraphs that appear in more words (like 'th', 'he') are considered common. "
-            "Rare digraphs (like 'uu', 'qq') will be skipped even if they are your slowest."
+        self.digraphs_show_common_only_checkbox = QCheckBox("Only Common")
+        self.digraphs_show_common_only_checkbox.setToolTip(
+            "Show only commonly occurring digraphs in the tables below.\n"
+            "Also controls whether practice uses only common digraphs."
         )
-        self.digraphs_common_only_checkbox.setChecked(False)
-        digraph_controls_layout.addWidget(self.digraphs_common_only_checkbox)
+        self.digraphs_show_common_only_checkbox.setChecked(False)
+        digraph_controls_layout.addWidget(self.digraphs_show_common_only_checkbox)
+
+        # Zipf threshold dropdown
+        self.digraph_zipf_threshold_combo = QComboBox()
+        self.digraph_zipf_threshold_combo.addItem("Fewest words", 7.5)
+        self.digraph_zipf_threshold_combo.addItem("Very common", 7.0)
+        self.digraph_zipf_threshold_combo.addItem("Only common", 6.0)
+        self.digraph_zipf_threshold_combo.addItem("Common words", 5.0)
+        self.digraph_zipf_threshold_combo.addItem("Balanced", 4.0)
+        self.digraph_zipf_threshold_combo.addItem("Many words", 3.0)
+        self.digraph_zipf_threshold_combo.addItem("Most words", 2.0)
+        self.digraph_zipf_threshold_combo.setCurrentIndex(4)  # Default to Balanced (4.0)
+        self.digraph_zipf_threshold_combo.setMaximumWidth(130)
+        self.digraph_zipf_threshold_combo.setToolTip(
+            "Minimum Zipf frequency for words containing the digraph.\n"
+            "Digraphs must appear in at least 10 common words.\n"
+            "Higher values = more restrictive (only very common words)."
+        )
+        digraph_controls_layout.addWidget(self.digraph_zipf_threshold_combo)
 
         digraph_controls_layout.addStretch()
         digraphs_layout.addLayout(digraph_controls_layout)
@@ -813,7 +766,7 @@ class StatsPanel(QWidget):
 
             words_common_only = config.get_bool("practice_words_common_only_enabled", False)
             log.info(f"Loading practice_words_common_only_enabled = {words_common_only}")
-            self.words_common_only_checkbox.setChecked(words_common_only)
+            self.words_show_common_only_checkbox.setChecked(words_common_only)
 
             # Digraphs tab checkboxes
             digraphs_special_chars = config.get_bool(
@@ -826,7 +779,7 @@ class StatsPanel(QWidget):
             self.digraphs_numbers_checkbox.setChecked(digraphs_numbers)
             digraphs_common_only = config.get_bool("practice_digraphs_common_only_enabled", False)
             log.info(f"Loading practice_digraphs_common_only_enabled = {digraphs_common_only}")
-            self.digraphs_common_only_checkbox.setChecked(digraphs_common_only)
+            self.digraphs_show_common_only_checkbox.setChecked(digraphs_common_only)
 
             # Load saved combo box values
             # Words mode
@@ -873,7 +826,11 @@ class StatsPanel(QWidget):
             # Digraph frequency threshold
             saved_threshold = config.get_float("digraph_zipf_threshold", 4.0)
             log.info(f"Loading digraph_zipf_threshold = {saved_threshold}")
-            self.digraph_zipf_threshold_spin.setValue(saved_threshold)
+            # Find the index of the combo box item that matches the saved value
+            for i in range(self.digraph_zipf_threshold_combo.count()):
+                if abs(self.digraph_zipf_threshold_combo.itemData(i) - saved_threshold) < 0.01:
+                    self.digraph_zipf_threshold_combo.setCurrentIndex(i)
+                    break
 
             # Digraph frequency filter settings
             saved_digraphs_common_only = config.get_bool("digraph_frequency_use_common", False)
@@ -887,7 +844,11 @@ class StatsPanel(QWidget):
 
             saved_words_zipf = config.get_float("word_frequency_zipf_threshold", 4.0)
             log.info(f"Loading word_frequency_zipf_threshold = {saved_words_zipf}")
-            self.words_zipf_threshold_spin.setValue(saved_words_zipf)
+            # Find the index of the combo box item that matches the saved value
+            for i in range(self.words_zipf_threshold_combo.count()):
+                if abs(self.words_zipf_threshold_combo.itemData(i) - saved_words_zipf) < 0.01:
+                    self.words_zipf_threshold_combo.setCurrentIndex(i)
+                    break
 
         # Connect Words tab checkbox signals
         self.words_special_chars_checkbox.stateChanged.connect(
@@ -896,7 +857,7 @@ class StatsPanel(QWidget):
         self.words_numbers_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_words_numbers_enabled", s)
         )
-        self.words_common_only_checkbox.stateChanged.connect(
+        self.words_show_common_only_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_words_common_only_enabled", s)
         )
 
@@ -915,34 +876,33 @@ class StatsPanel(QWidget):
         self.digraphs_numbers_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_digraphs_numbers_enabled", s)
         )
-        self.digraphs_common_only_checkbox.stateChanged.connect(
+        self.digraphs_show_common_only_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_digraphs_common_only_enabled", s)
         )
         self.digraphs_show_common_only_checkbox.stateChanged.connect(
             self._on_digraph_filter_changed
         )
         # Connect Digraphs tab filter signals
-        self.digraph_zipf_threshold_spin.valueChanged.connect(
-            lambda v: config.set("digraph_zipf_threshold", v)
-        )
-        self.digraph_zipf_threshold_spin.valueChanged.connect(
-            lambda v: config.set("digraph_zipf_threshold", v)
+        self.digraph_zipf_threshold_combo.currentIndexChanged.connect(
+            self._on_digraph_zipf_threshold_changed
         )
 
         # Connect Words tab filter signals
         self.words_show_common_only_checkbox.stateChanged.connect(
             self._on_word_filter_changed
         )
-        self.words_zipf_threshold_spin.valueChanged.connect(
+        self.words_zipf_threshold_combo.currentIndexChanged.connect(
             self._on_word_zipf_threshold_changed
         )
 
-    def _on_word_zipf_threshold_changed(self, value: float) -> None:
-        """Handle word Zipf threshold spinbox change.
+    def _on_word_zipf_threshold_changed(self, index: int) -> None:
+        """Handle word Zipf threshold dropdown change.
 
         Args:
-            value: New Zipf threshold value
+            index: Index of the selected item in the dropdown
         """
+        # Get the actual value from the combo box data
+        value = self.words_zipf_threshold_combo.currentData()
         # Update config
         self._update_practice_config_float("word_frequency_zipf_threshold", value)
         # Trigger data refresh if checkbox is checked
@@ -1604,8 +1564,24 @@ class StatsPanel(QWidget):
         # Save config
         self._update_practice_config("digraph_frequency_use_common", state)
         # Trigger data refresh
+        zipf_threshold = self.digraph_zipf_threshold_combo.currentData()
         if hasattr(self, "_digraph_data_callback"):
             self._digraph_data_callback(common_only)
+
+    def _on_digraph_zipf_threshold_changed(self, index: int) -> None:
+        """Handle digraph Zipf threshold dropdown change.
+
+        Args:
+            index: Index of the selected item in the dropdown
+        """
+        # Get the actual value from the combo box data
+        value = self.digraph_zipf_threshold_combo.currentData()
+        # Update config
+        config.set("digraph_zipf_threshold", value)
+        # Trigger data refresh if checkbox is checked
+        if self.digraphs_show_common_only_checkbox.isChecked():
+            if hasattr(self, "_digraph_data_callback"):
+                self._digraph_data_callback(True)
 
     def _on_word_filter_changed(self, state: int) -> None:
         """Handle word filter checkbox change.
@@ -1619,22 +1595,9 @@ class StatsPanel(QWidget):
         # Save config
         self._update_practice_config("word_frequency_use_common", state)
         # Trigger data refresh
-        zipf_threshold = self.words_zipf_threshold_spin.value()
+        zipf_threshold = self.words_zipf_threshold_combo.currentData()
         if hasattr(self, "_word_data_callback"):
             self._word_data_callback(common_only, zipf_threshold)
-
-    def _on_word_zipf_threshold_changed(self, value: float) -> None:
-        """Handle word Zipf threshold spinbox change.
-
-        Args:
-            value: New Zipf threshold value
-        """
-        # Update config
-        self._update_practice_config_float("word_frequency_zipf_threshold", value)
-        # Trigger data refresh if checkbox is checked
-        if self.words_show_common_only_checkbox.isChecked():
-            if hasattr(self, "_word_data_callback"):
-                self._word_data_callback(True, value)
 
     def set_fastest_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching fastest words for clipboard.
@@ -1886,7 +1849,7 @@ class StatsPanel(QWidget):
         mode = self.word_mode_combo.currentData()
         special_chars = self.words_special_chars_checkbox.isChecked()
         numbers = self.words_numbers_checkbox.isChecked()
-        common_only = self.words_common_only_checkbox.isChecked()
+        common_only = self.words_show_common_only_checkbox.isChecked()
 
         if hasattr(self, "_request_words_by_mode_callback"):
             self._request_words_by_mode_callback(mode, count, special_chars, numbers, common_only)
@@ -1908,7 +1871,7 @@ class StatsPanel(QWidget):
         # Get checkbox states
         special_chars = self.words_special_chars_checkbox.isChecked()
         numbers = self.words_numbers_checkbox.isChecked()
-        common_only = self.words_common_only_checkbox.isChecked()
+        common_only = self.words_show_common_only_checkbox.isChecked()
 
         # Always fetch words from database based on mode
         if hasattr(self, "_request_word_highlight_list_callback"):
@@ -2013,7 +1976,7 @@ class StatsPanel(QWidget):
         mode = self.digraph_mode_combo.currentData()
         special_chars = self.digraphs_special_chars_checkbox.isChecked()
         numbers = self.digraphs_numbers_checkbox.isChecked()
-        common_only = self.digraphs_common_only_checkbox.isChecked()
+        common_only = self.digraphs_show_common_only_checkbox.isChecked()
 
         if hasattr(self, "_request_digraph_words_callback"):
             self._request_digraph_words_callback(
@@ -2033,7 +1996,7 @@ class StatsPanel(QWidget):
         # Get checkbox states
         special_chars = self.digraphs_special_chars_checkbox.isChecked()
         numbers = self.digraphs_numbers_checkbox.isChecked()
-        common_only = self.digraphs_common_only_checkbox.isChecked()
+        common_only = self.digraphs_show_common_only_checkbox.isChecked()
 
         # Always fetch words based on selected digraphs for practice
         if hasattr(self, "_request_digraph_practice_callback"):
@@ -2131,8 +2094,8 @@ class StatsPanel(QWidget):
                 self.digraphs_special_chars_checkbox.setVisible(enabled)
             if hasattr(self, "digraphs_numbers_checkbox"):
                 self.digraphs_numbers_checkbox.setVisible(enabled)
-            if hasattr(self, "digraphs_common_only_checkbox"):
-                self.digraphs_common_only_checkbox.setVisible(enabled)
+            if hasattr(self, "digraphs_show_common_only_checkbox"):
+                self.digraphs_show_common_only_checkbox.setVisible(enabled)
 
             # Also hide the labels if we're hiding the controls
             # Find the labels by their text content
