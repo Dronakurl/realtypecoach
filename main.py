@@ -882,7 +882,14 @@ class Application(QObject):
                 log.info(
                     f"Got {len(fastest)} fastest and {len(slowest)} slowest digraphs, emitting signal"
                 )
-                self.signal_update_digraph_stats.emit(fastest, slowest)
+                # Filter out synthetic filler digraphs (wpm == 0.0) from UI display
+                # These are used for practice but shouldn't appear in statistics tables
+                fastest_for_ui = [d for d in fastest if d.wpm > 0]
+                slowest_for_ui = [d for d in slowest if d.wpm > 0]
+                log.info(
+                    f"Filtered to {len(fastest_for_ui)} fastest and {len(slowest_for_ui)} slowest digraphs for UI (removed {len(fastest) - len(fastest_for_ui)} + {len(slowest) - len(slowest_for_ui)} synthetic entries)"
+                )
+                self.signal_update_digraph_stats.emit(fastest_for_ui, slowest_for_ui)
                 log.info("Digraph signal emitted successfully")
             except Exception as e:
                 log.error(f"Error fetching digraph data: {e}")
@@ -918,8 +925,15 @@ class Application(QObject):
                 log.info(
                     f"Got {len(fastest)} fastest and {len(slowest)} slowest words, emitting signal"
                 )
-                self.signal_update_fastest_words_stats.emit(fastest)
-                self.signal_update_hardest_words.emit(slowest)
+                # Filter out synthetic filler words (avg_speed_ms_per_letter == 0) from UI display
+                # These are used for practice but shouldn't appear in statistics tables
+                fastest_for_ui = [w for w in fastest if w.avg_speed_ms_per_letter > 0]
+                slowest_for_ui = [w for w in slowest if w.avg_speed_ms_per_letter > 0]
+                log.info(
+                    f"Filtered to {len(fastest_for_ui)} fastest and {len(slowest_for_ui)} slowest words for UI (removed {len(fastest) - len(fastest_for_ui)} + {len(slowest) - len(slowest_for_ui)} synthetic entries)"
+                )
+                self.signal_update_fastest_words_stats.emit(fastest_for_ui)
+                self.signal_update_hardest_words.emit(slowest_for_ui)
                 log.info("Word signal emitted successfully")
             except Exception as e:
                 log.error(f"Error fetching word data: {e}")

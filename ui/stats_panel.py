@@ -544,6 +544,7 @@ class StatsPanel(QWidget):
             "Minimum Zipf frequency for common words (1=rare, 8=very common).\n"
             "Higher values = fewer words considered common."
         )
+        self.words_zipf_threshold_combo.setEnabled(False)  # Disabled by default
         unified_controls_layout.addWidget(self.words_zipf_threshold_combo)
 
         unified_controls_layout.addStretch()
@@ -697,6 +698,7 @@ class StatsPanel(QWidget):
             "Digraphs must appear in at least 10 common words.\n"
             "Higher values = more restrictive (only very common words)."
         )
+        self.digraph_zipf_threshold_combo.setEnabled(False)  # Disabled by default
         digraph_controls_layout.addWidget(self.digraph_zipf_threshold_combo)
 
         digraph_controls_layout.addStretch()
@@ -767,6 +769,7 @@ class StatsPanel(QWidget):
             words_common_only = config.get_bool("practice_words_common_only_enabled", False)
             log.info(f"Loading practice_words_common_only_enabled = {words_common_only}")
             self.words_show_common_only_checkbox.setChecked(words_common_only)
+            self.words_zipf_threshold_combo.setEnabled(words_common_only)
 
             # Digraphs tab checkboxes
             digraphs_special_chars = config.get_bool(
@@ -780,6 +783,7 @@ class StatsPanel(QWidget):
             digraphs_common_only = config.get_bool("practice_digraphs_common_only_enabled", False)
             log.info(f"Loading practice_digraphs_common_only_enabled = {digraphs_common_only}")
             self.digraphs_show_common_only_checkbox.setChecked(digraphs_common_only)
+            self.digraph_zipf_threshold_combo.setEnabled(digraphs_common_only)
 
             # Load saved combo box values
             # Words mode
@@ -860,6 +864,9 @@ class StatsPanel(QWidget):
         self.words_show_common_only_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_words_common_only_enabled", s)
         )
+        self.words_show_common_only_checkbox.stateChanged.connect(
+            lambda s: self.words_zipf_threshold_combo.setEnabled(s == 2)  # 2 = Checked
+        )
 
         # Connect Words tab combo box signals (after loading settings to avoid triggering during init)
         self.word_mode_combo.currentIndexChanged.connect(self._on_mode_changed)
@@ -878,6 +885,9 @@ class StatsPanel(QWidget):
         )
         self.digraphs_show_common_only_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_digraphs_common_only_enabled", s)
+        )
+        self.digraphs_show_common_only_checkbox.stateChanged.connect(
+            lambda s: self.digraph_zipf_threshold_combo.setEnabled(s == 2)  # 2 = Checked
         )
         self.digraphs_show_common_only_checkbox.stateChanged.connect(
             self._on_digraph_filter_changed
