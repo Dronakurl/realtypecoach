@@ -403,6 +403,36 @@ class Analyzer:
         """
         return self.storage.db.get_fastest_words(limit, layout)
 
+    def get_slowest_words_common_only(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
+        """Get slowest words filtered to only common ones.
+
+        Args:
+            limit: Maximum number to return
+            layout: Filter by layout
+
+        Returns:
+            List of WordStatisticsLite models (only common words)
+        """
+        zipf_threshold = self.storage.config.get_float("word_frequency_zipf_threshold", 4.0)
+        return self.storage.get_slowest_words_common_only(limit, layout, zipf_threshold)
+
+    def get_fastest_words_common_only(
+        self, limit: int = 10, layout: str | None = None
+    ) -> list[WordStatisticsLite]:
+        """Get fastest words filtered to only common ones.
+
+        Args:
+            limit: Maximum number to return
+            layout: Filter by layout
+
+        Returns:
+            List of WordStatisticsLite models (only common words)
+        """
+        zipf_threshold = self.storage.config.get_float("word_frequency_zipf_threshold", 4.0)
+        return self.storage.get_fastest_words_common_only(limit, layout, zipf_threshold)
+
     def get_slowest_digraphs(
         self, limit: int = 10, layout: str | None = None
     ) -> list[DigraphPerformance]:
@@ -429,8 +459,8 @@ class Analyzer:
         Returns:
             List of DigraphPerformance models (only common digraphs)
         """
-        frequency_threshold = self.storage.config.get_int("digraph_frequency_threshold", 100)
-        return self.storage.get_slowest_digraphs_common_only(limit, layout, frequency_threshold)
+        zipf_threshold = self.storage.config.get_float("digraph_zipf_threshold", 4.0)
+        return self.storage.get_slowest_digraphs_common_only(limit, layout, zipf_threshold)
 
     def get_fastest_digraphs(
         self, limit: int = 10, layout: str | None = None
@@ -458,8 +488,8 @@ class Analyzer:
         Returns:
             List of DigraphPerformance models (only common digraphs)
         """
-        frequency_threshold = self.storage.config.get_int("digraph_frequency_threshold", 100)
-        return self.storage.get_fastest_digraphs_common_only(limit, layout, frequency_threshold)
+        zipf_threshold = self.storage.config.get_float("digraph_zipf_threshold", 4.0)
+        return self.storage.get_fastest_digraphs_common_only(limit, layout, zipf_threshold)
 
     def get_long_term_average_wpm(self) -> float | None:
         """Get long-term average WPM across all recorded bursts.

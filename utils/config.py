@@ -17,6 +17,16 @@ log = logging.getLogger("realtypecoach.config")
 class AppSettings(BaseModel):
     """Application settings with validation."""
 
+    # wordfreq settings
+    digraph_frequency_use_wordfreq: bool = Field(
+        default=True,
+        description="Use wordfreq library for weighted digraph frequency calculation",
+    )
+    digraph_frequency_weighted: bool = Field(
+        default=True,
+        description="Use weighted frequency calculation vs simple counting",
+    )
+
     # Burst detection settings
     burst_timeout_ms: int = Field(
         default=1000,
@@ -144,6 +154,10 @@ class AppSettings(BaseModel):
         default="hardest",
         description="Practice mode for words (hardest, fastest, mixed)",
     )
+    practice_words_common_only_enabled: bool = Field(
+        default=False,
+        description="Enable filtering to only common words in words practice",
+    )
     practice_digraphs_digraph_count: int = Field(
         default=5,
         ge=5,
@@ -164,10 +178,27 @@ class AppSettings(BaseModel):
         default=False,
         description="Enable filtering to only common digraphs in digraphs practice",
     )
-    digraph_frequency_threshold: int = Field(
-        default=100,
-        ge=1,
-        description="Minimum word count for a digraph to be considered 'common' (filters rare digraphs)",
+    digraph_zipf_threshold: float = Field(
+        default=4.0,
+        ge=1.0,
+        le=8.0,
+        description="Minimum Zipf frequency for a word to be considered 'common' when calculating digraph frequency (1=rare, 8=very common)",
+    )
+    digraph_frequency_use_common: bool = Field(
+        default=False,
+        description="Enable filtering to only common digraphs in digraph statistics display",
+    )
+
+    # Word frequency filtering
+    word_frequency_use_common: bool = Field(
+        default=False,
+        description="Enable filtering to only common words in word statistics and practice",
+    )
+    word_frequency_zipf_threshold: float = Field(
+        default=4.0,
+        ge=1.0,
+        le=8.0,
+        description="Minimum Zipf frequency for common words filtering (1=rare, 8=very common)",
     )
 
     # UI settings
