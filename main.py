@@ -12,6 +12,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Empty, Queue
 
+from rich.logging import RichHandler
+
 # Path constants (must be defined before logging setup)
 DATA_DIR = Path.home() / ".local" / "share" / "realtypecoach"
 XDG_STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
@@ -22,13 +24,6 @@ CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "realtypecoach.log"
 
-# Configure rotating file handler (5MB max, keep 5 backups)
-file_handler = RotatingFileHandler(
-    log_file,
-    maxBytes=5 * 1024 * 1024,  # 5MB
-    backupCount=5,
-)
-
 # Detect if running from installed location or development
 # Installed: ~/.local/share/realtypecoach/main.py → INFO
 # Development: running from source directory → DEBUG
@@ -36,10 +31,28 @@ script_path = Path(__file__).resolve()
 is_installed = script_path == (DATA_DIR / "main.py")
 log_level = logging.INFO if is_installed else logging.DEBUG
 
+# Configure rotating file handler with plain text formatter (5MB max, keep 5 backups)
+file_handler = RotatingFileHandler(
+    log_file,
+    maxBytes=5 * 1024 * 1024,  # 5MB
+    backupCount=5,
+)
+file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S")
+file_handler.setFormatter(file_formatter)
+
+# Configure RichHandler for colorful console output
+console_handler = RichHandler(
+    rich_tracebacks=True,
+    markup=False,
+    show_time=True,
+    show_path=False,
+)
+
 logging.basicConfig(
     level=log_level,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[file_handler, logging.StreamHandler()],
+    format="%(message)s",  # Rich handles its own formatting
+    handlers=[file_handler, console_handler],
+    force=True,
 )
 log = logging.getLogger("realtypecoach")
 
@@ -417,6 +430,7 @@ class Application(QObject):
         )
         self.stats_panel.set_mixed_words_clipboard_callback(self.fetch_mixed_words_for_clipboard)
         self.stats_panel.set_digraph_data_callback(self.provide_digraph_data)
+        self.stats_panel.set_word_data_callback(self.provide_word_data)
         # Unified controls callbacks
         self.stats_panel.set_words_by_mode_clipboard_callback(self.fetch_words_by_mode)
         self.stats_panel.set_words_by_mode_practice_callback(self.fetch_word_highlight_list)
@@ -875,6 +889,43 @@ class Application(QObject):
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_data)
 
+    def provide_word_data(self, common_only: bool = False, zipf_threshold: float = 4.0) -> None:
+        """Provide word data to stats panel with optional frequency filtering.
+
+        Args:
+            common_only: If True, filter to only common words
+            zipf_threshold: Minimum Zipf frequency for common words (1.0-8.0)
+        """
+
+        def fetch_data():
+            try:
+                log.info(f"Fetching word data (common_only={common_only}, zipf_threshold={zipf_threshold})")
+                if common_only:
+                    fastest = self.analyzer.get_fastest_words_common_only(
+                        limit=10, layout=self.get_current_layout()
+                    )
+                    slowest = self.analyzer.get_slowest_words_common_only(
+                        limit=10, layout=self.get_current_layout()
+                    )
+                else:
+                    fastest = self.analyzer.get_fastest_words(
+                        limit=10, layout=self.get_current_layout()
+                    )
+                    slowest = self.analyzer.get_slowest_words(
+                        limit=10, layout=self.get_current_layout()
+                    )
+                log.info(
+                    f"Got {len(fastest)} fastest and {len(slowest)} slowest words, emitting signal"
+                )
+                self.signal_update_fastest_words_stats.emit(fastest)
+                self.signal_update_hardest_words.emit(slowest)
+                log.info("Word signal emitted successfully")
+            except Exception as e:
+                log.error(f"Error fetching word data: {e}")
+
+        # Submit to thread pool to limit concurrent background threads
+        self._executor.submit(fetch_data)
+
     def fetch_words_for_clipboard(self, count: int, hardest: bool = True) -> None:
         """Fetch words for clipboard in background thread and emit signal.
 
@@ -963,7 +1014,8 @@ class Application(QObject):
         self._executor.submit(check_in_thread)
 
     def fetch_words_by_mode(
-        self, mode: str, count: int, special_chars: bool = False, numbers: bool = False
+        self, mode: str, count: int, special_chars: bool = False, numbers: bool = False,
+        common_only: bool = False
     ) -> None:
         """Fetch words by mode in background thread and emit signal.
 
@@ -972,15 +1024,24 @@ class Application(QObject):
             count: Number of words to fetch
             special_chars: Whether to add special characters to text
             numbers: Whether to add random numbers to text
+            common_only: If True, filter to only common words (overrides config setting)
         """
 
         def fetch_in_thread():
             try:
+                # Check if common-only filtering is enabled (either from param or config)
+                use_common_filter = common_only or self.config.get_bool("word_frequency_use_common", False)
+
                 word_list = []
                 if mode == "hardest":
-                    words = self.analyzer.get_slowest_words(
-                        limit=count, layout=self.get_current_layout()
-                    )
+                    if use_common_filter:
+                        words = self.analyzer.get_slowest_words_common_only(
+                            limit=count, layout=self.get_current_layout()
+                        )
+                    else:
+                        words = self.analyzer.get_slowest_words(
+                            limit=count, layout=self.get_current_layout()
+                        )
                     word_list = [
                         self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
                     ]
@@ -988,9 +1049,14 @@ class Application(QObject):
                     word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
                     self.signal_clipboard_words_ready.emit(word_list)
                 elif mode == "fastest":
-                    words = self.analyzer.get_fastest_words(
-                        limit=count, layout=self.get_current_layout()
-                    )
+                    if use_common_filter:
+                        words = self.analyzer.get_fastest_words_common_only(
+                            limit=count, layout=self.get_current_layout()
+                        )
+                    else:
+                        words = self.analyzer.get_fastest_words(
+                            limit=count, layout=self.get_current_layout()
+                        )
                     word_list = [
                         self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
                     ]
@@ -1001,12 +1067,20 @@ class Application(QObject):
                     import random
 
                     half = count // 2
-                    fastest = self.analyzer.get_fastest_words(
-                        limit=half, layout=self.get_current_layout()
-                    )
-                    hardest = self.analyzer.get_slowest_words(
-                        limit=half, layout=self.get_current_layout()
-                    )
+                    if use_common_filter:
+                        fastest = self.analyzer.get_fastest_words_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        hardest = self.analyzer.get_slowest_words_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                    else:
+                        fastest = self.analyzer.get_fastest_words(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        hardest = self.analyzer.get_slowest_words(
+                            limit=half, layout=self.get_current_layout()
+                        )
                     combined = fastest + hardest
                     random.shuffle(combined)
                     word_list = [
@@ -1031,6 +1105,7 @@ class Application(QObject):
         text: str | None,
         special_chars: bool = False,
         numbers: bool = False,
+        common_only: bool = False,
     ) -> None:
         """Fetch word list for highlighting and launch practice.
 
@@ -1040,11 +1115,15 @@ class Application(QObject):
             text: Text to practice (None to auto-fetch)
             special_chars: Whether to add special characters to text
             numbers: Whether to add random numbers to text
+            common_only: If True, filter to only common words (overrides config setting)
         """
         from PySide6.QtGui import QClipboard
 
         def fetch_and_launch():
             try:
+                # Check if common-only filtering is enabled
+                use_common_filter = common_only or self.config.get_bool("word_frequency_use_common", False)
+
                 # Get loaded languages to check if German is loaded
                 loaded_languages = self.storage.dictionary.get_loaded_languages()
                 use_german_capitalization = "de" in loaded_languages
@@ -1052,27 +1131,45 @@ class Application(QObject):
                 highlight_words = {}
 
                 if mode == "hardest":
-                    words = self.analyzer.get_slowest_words(
-                        limit=count, layout=self.get_current_layout()
-                    )
+                    if use_common_filter:
+                        words = self.analyzer.get_slowest_words_common_only(
+                            limit=count, layout=self.get_current_layout()
+                        )
+                    else:
+                        words = self.analyzer.get_slowest_words(
+                            limit=count, layout=self.get_current_layout()
+                        )
                     highlight_words["hardest"] = [
                         self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
                     ]
                 elif mode == "fastest":
-                    words = self.analyzer.get_fastest_words(
-                        limit=count, layout=self.get_current_layout()
-                    )
+                    if use_common_filter:
+                        words = self.analyzer.get_fastest_words_common_only(
+                            limit=count, layout=self.get_current_layout()
+                        )
+                    else:
+                        words = self.analyzer.get_fastest_words(
+                            limit=count, layout=self.get_current_layout()
+                        )
                     highlight_words["fastest"] = [
                         self.storage.dictionary.get_capitalized_form(w.word, None) for w in words
                     ]
                 elif mode == "mixed":
                     half = count // 2
-                    fastest = self.analyzer.get_fastest_words(
-                        limit=half, layout=self.get_current_layout()
-                    )
-                    hardest = self.analyzer.get_slowest_words(
-                        limit=half, layout=self.get_current_layout()
-                    )
+                    if use_common_filter:
+                        fastest = self.analyzer.get_fastest_words_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        hardest = self.analyzer.get_slowest_words_common_only(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                    else:
+                        fastest = self.analyzer.get_fastest_words(
+                            limit=half, layout=self.get_current_layout()
+                        )
+                        hardest = self.analyzer.get_slowest_words(
+                            limit=half, layout=self.get_current_layout()
+                        )
                     highlight_words["hardest"] = [
                         self.storage.dictionary.get_capitalized_form(w.word, None) for w in hardest
                     ]
@@ -1083,7 +1180,12 @@ class Application(QObject):
                 # If no text provided, auto-fetch words and copy to clipboard
                 if text is None:
                     if mode == "hardest":
-                        words = self.analyzer.get_slowest_words(
+                        if use_common_filter:
+                            words = self.analyzer.get_slowest_words_common_only(
+                                limit=count, layout=self.get_current_layout()
+                            )
+                        else:
+                            words = self.analyzer.get_slowest_words(
                             limit=count, layout=self.get_current_layout()
                         )
                         word_list = [
