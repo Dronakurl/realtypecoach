@@ -104,8 +104,11 @@ class Storage:
         # Reference to analyzer (set later)
         self._analyzer: Analyzer | None = None
 
-        # Digraph frequency cache for common-only filtering
+        # Digraph frequency cache for common-only filtering (int for common word counts)
         self._digraph_frequency_cache: dict[str, int] | None = None
+
+        # Word frequency cache (optional, for performance)
+        self._word_frequency_cache: dict[str, float] | None = None
 
     def _create_adapter(self) -> DatabaseAdapter:
         """Create and initialize SQLite database adapter.
@@ -569,33 +572,45 @@ class Storage:
     def _ensure_digraph_frequency_cache(self) -> None:
         """Ensure digraph frequency cache is populated.
 
-        Calculates frequencies across all loaded languages if cache is empty.
+        Counts how many common words contain each digraph.
+        Only includes digraphs appearing in minimum number of common words.
         """
         if self._digraph_frequency_cache is None:
-            self._digraph_frequency_cache = self.dictionary.calculate_digraph_frequencies()
+            zipf_threshold = self.config.get_float("digraph_zipf_threshold", 4.0)
+            self._digraph_frequency_cache = self.dictionary.calculate_digraphs_in_common_words(
+                zipf_threshold=zipf_threshold,
+                min_common_words=10  # Fixed minimum
+            )
             log.info(f"Built digraph frequency cache with {len(self._digraph_frequency_cache)} entries")
 
     def get_digraph_frequency(
         self, digraphs: list[str], language: str | None = None
     ) -> dict[str, int]:
-        """Get word count frequency for requested digraphs.
+        """Get common word count for requested digraphs.
+
+        Returns the number of common words (Zipf >= threshold) containing each digraph.
+        Digraphs not found in cache return 0.
 
         Args:
             digraphs: List of 2-character strings to look up
             language: Optional language code filter (for cache invalidation)
 
         Returns:
-            Dict mapping digraph to word count (e.g., {'th': 5423, 'uu': 12})
+            Dict mapping digraph to count of common words.
+            Example: {'th': 542, 'he': 489, 'uu': 0}
         """
         self._ensure_digraph_frequency_cache()
-        return {
-            d: self._digraph_frequency_cache.get(d.lower(), 0)
-            for d in digraphs
-        }
+
+        result = {}
+        for digraph in digraphs:
+            key = digraph.lower()
+            result[key] = self._digraph_frequency_cache.get(key, 0)
+
+        return result
 
     def _get_most_common_digraphs_from_dictionary(
         self, limit: int = 5
-    ) -> list[tuple[str, int]]:
+    ) -> list[tuple[str, float]]:
         """Get the most common digraphs from the dictionary by word frequency.
 
         This is used as a fallback when no digraph statistics are available
@@ -606,7 +621,8 @@ class Storage:
 
         Returns:
             List of (digraph, frequency) tuples sorted by frequency (descending).
-            Example: [('th', 5423), ('he', 4891), ('in', 4234), ...]
+            Example with weighted: [('th', 0.089), ('he', 0.076), ('in', 0.065), ...]
+            Example with counting: [('th', 5423.0), ('he', 4891.0), ('in', 4234.0), ...]
         """
         self._ensure_digraph_frequency_cache()
 
@@ -620,34 +636,33 @@ class Storage:
         return sorted_digraphs[:limit]
 
     def get_slowest_digraphs_common_only(
-        self, limit: int = 10, layout: str | None = None, frequency_threshold: int = 100
+        self, limit: int = 10, layout: str | None = None, zipf_threshold: float = 4.0
     ) -> list[DigraphPerformance]:
         """Get slowest digraphs filtered to only common ones.
 
-        Fetches a large pool of candidates, filters by frequency threshold first,
-        then returns the slowest from the common digraphs.
+        A digraph is "common" if it appears in at least 10 common words
+        (words with Zipf >= zipf_threshold).
 
         Args:
             limit: Maximum number of digraphs to return
             layout: Filter by layout (None for all layouts)
-            frequency_threshold: Minimum word count to be considered "common" (default: 100)
+            zipf_threshold: Minimum Zipf frequency for common words (default: 4.0)
 
         Returns:
             List of DigraphPerformance models (only common digraphs)
         """
-        # Fetch a large candidate pool to ensure we get most common digraphs
-        # We need to filter by frequency first, then select hardest from that filtered set
-        fetch_limit = max(1000, limit * 50)  # Ensure we get a large enough sample
+        # Fetch a large candidate pool
+        fetch_limit = max(1000, limit * 50)
         candidates = self.adapter.get_slowest_digraphs(fetch_limit, layout)
 
         # Get frequency for all candidates
         digraph_list = [f"{d.first_key}{d.second_key}" for d in candidates]
         frequencies = self.get_digraph_frequency(digraph_list)
 
-        # Filter by frequency threshold
+        # Filter by frequency (digraphs with >= 10 common words)
         common_digraphs = [
             d for d in candidates
-            if frequencies.get(f"{d.first_key}{d.second_key}".lower(), 0) >= frequency_threshold
+            if frequencies.get(f"{d.first_key}{d.second_key}".lower(), 0) >= 10
         ]
 
         result = common_digraphs[:limit]
@@ -655,10 +670,9 @@ class Storage:
         # Edge case: No common digraphs found - fall back to non-common digraphs from statistics
         if not result:
             log.warning(
-                f"No common digraphs found in database (threshold={frequency_threshold}), "
+                f"No common digraphs found in database (Zipf threshold={zipf_threshold}), "
                 f"falling back to all digraphs from statistics"
             )
-            # Fall back to unfiltered digraphs from statistics
             result = candidates[:limit]
 
             # Final fallback: if no statistics at all, use dictionary
@@ -669,54 +683,52 @@ class Storage:
                 )
                 from core.models import DigraphPerformance
                 common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
-                # Create DigraphPerformance objects with placeholder values
                 result = [
                     DigraphPerformance(
                         first_key=digraph[0],
                         second_key=digraph[1],
-                        avg_interval_ms=0.0,  # No statistics available
-                        wpm=0.0,  # No statistics available
+                        avg_interval_ms=0.0,
+                        wpm=0.0,
                         rank=0
                     )
                     for digraph, _ in common_fallback
                 ]
         elif len(result) < limit:
             log.warning(
-                f"Only found {len(result)} common digraphs (threshold={frequency_threshold}), "
+                f"Only found {len(result)} common digraphs (Zipf threshold={zipf_threshold}), "
                 f"requested {limit} - some digraphs were filtered out due to low frequency"
             )
 
         return result
 
     def get_fastest_digraphs_common_only(
-        self, limit: int = 10, layout: str | None = None, frequency_threshold: int = 100
+        self, limit: int = 10, layout: str | None = None, zipf_threshold: float = 4.0
     ) -> list[DigraphPerformance]:
         """Get fastest digraphs filtered to only common ones.
 
-        Fetches a large pool of candidates, filters by frequency threshold first,
-        then returns the fastest from the common digraphs.
+        A digraph is "common" if it appears in at least 10 common words
+        (words with Zipf >= zipf_threshold).
 
         Args:
             limit: Maximum number of digraphs to return
             layout: Filter by layout (None for all layouts)
-            frequency_threshold: Minimum word count to be considered "common" (default: 100)
+            zipf_threshold: Minimum Zipf frequency for common words (default: 4.0)
 
         Returns:
             List of DigraphPerformance models (only common digraphs)
         """
-        # Fetch a large candidate pool to ensure we get most common digraphs
-        # We need to filter by frequency first, then select fastest from that filtered set
-        fetch_limit = max(1000, limit * 50)  # Ensure we get a large enough sample
+        # Fetch a large candidate pool
+        fetch_limit = max(1000, limit * 50)
         candidates = self.adapter.get_fastest_digraphs(fetch_limit, layout)
 
         # Get frequency for all candidates
         digraph_list = [f"{d.first_key}{d.second_key}" for d in candidates]
         frequencies = self.get_digraph_frequency(digraph_list)
 
-        # Filter by frequency threshold
+        # Filter by frequency (digraphs with >= 10 common words)
         common_digraphs = [
             d for d in candidates
-            if frequencies.get(f"{d.first_key}{d.second_key}".lower(), 0) >= frequency_threshold
+            if frequencies.get(f"{d.first_key}{d.second_key}".lower(), 0) >= 10
         ]
 
         result = common_digraphs[:limit]
@@ -724,10 +736,9 @@ class Storage:
         # Edge case: No common digraphs found - fall back to non-common digraphs from statistics
         if not result:
             log.warning(
-                f"No common digraphs found in database (threshold={frequency_threshold}), "
+                f"No common digraphs found in database (Zipf threshold={zipf_threshold}), "
                 f"falling back to all digraphs from statistics"
             )
-            # Fall back to unfiltered digraphs from statistics
             result = candidates[:limit]
 
             # Final fallback: if no statistics at all, use dictionary
@@ -738,33 +749,34 @@ class Storage:
                 )
                 from core.models import DigraphPerformance
                 common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
-                # Create DigraphPerformance objects with placeholder values
                 result = [
                     DigraphPerformance(
                         first_key=digraph[0],
                         second_key=digraph[1],
-                        avg_interval_ms=0.0,  # No statistics available
-                        wpm=0.0,  # No statistics available
+                        avg_interval_ms=0.0,
+                        wpm=0.0,
                         rank=0
                     )
                     for digraph, _ in common_fallback
                 ]
         elif len(result) < limit:
             log.warning(
-                f"Only found {len(result)} common digraphs (threshold={frequency_threshold}), "
+                f"Only found {len(result)} common digraphs (Zipf threshold={zipf_threshold}), "
                 f"requested {limit} - some digraphs were filtered out due to low frequency"
             )
 
         return result
 
     def find_words_with_digraphs(
-        self, digraphs: list[str], language: str | None = None
+        self, digraphs: list[str], language: str | None = None, common_only: bool = False, zipf_threshold: float = 4.0
     ) -> list[str]:
         """Find all words containing the specified digraphs.
 
         Args:
             digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
             language: Optional language code filter (e.g., 'en', 'de')
+            common_only: If True, filter to only common words (by Zipf frequency)
+            zipf_threshold: Minimum Zipf frequency for common words (default: 4.0)
 
         Returns:
             List of words containing any of the specified digraphs
@@ -784,7 +796,13 @@ class Storage:
                 # Check if word contains any of the digraphs
                 for digraph in digraphs:
                     if digraph.lower() in word_lower:
-                        matching_words.add(word)
+                        # If common_only is enabled, check Zipf frequency
+                        if common_only:
+                            word_zipf = self.dictionary.get_word_zipf_frequency(word_lower, lang)
+                            if word_zipf >= zipf_threshold:
+                                matching_words.add(word)
+                        else:
+                            matching_words.add(word)
                         break
 
         return list(matching_words)
@@ -863,43 +881,108 @@ class Storage:
         excess = max(0, effective_length - target_length)
         return max(0.0, 1.0 - penalty_factor * excess / target_length)
 
+    def _calculate_frequency_weights(self, words: list[str], language: str | None = None) -> list[float]:
+        """Calculate frequency-based weights for word selection using wordfreq.
+
+        Higher frequency words get higher weights (more likely to be selected).
+
+        Args:
+            words: List of words to calculate weights for
+            language: Optional language code (e.g., 'en', 'de'), or None for all loaded
+
+        Returns:
+            List of weight values (higher = more likely to be selected)
+        """
+        try:
+            from wordfreq import word_frequency
+
+            # Determine which language(s) to use
+            if language:
+                languages_to_use = [language] if language in self.dictionary.words else []
+            else:
+                # Use the first loaded language as default
+                languages_to_use = list(self.dictionary.words.keys())[:1]
+
+            if not languages_to_use:
+                # Fallback to equal weights if no language available
+                return [1.0] * len(words)
+
+            lang = languages_to_use[0]
+
+            # Calculate weights based on word frequency
+            weights = []
+            for word in words:
+                word_lower = word.lower()
+                try:
+                    # Get word frequency (returns a float like 0.0537 for "the")
+                    freq = word_frequency(word_lower, lang)
+                    # Scale to reasonable weight range (0.1 to 10.0)
+                    # Most common words have freq ~0.05+, rare words ~0.00001
+                    # Use log scale to prevent extreme differences
+                    import math
+                    if freq > 0:
+                        weight = math.log(freq * 1000 + 1) + 1
+                        # Clamp to reasonable range
+                        weight = max(0.1, min(weight, 10.0))
+                    else:
+                        weight = 0.1  # Minimum weight for unknown words
+                except Exception:
+                    # Fallback to low weight if wordfreq fails
+                    weight = 0.1
+                weights.append(weight)
+
+            return weights
+
+        except ImportError:
+            log.warning("wordfreq not available, using equal weights")
+            return [1.0] * len(words)
+        except Exception as e:
+            log.warning(f"Error calculating frequency weights: {e}, using equal weights")
+            return [1.0] * len(words)
+
     def get_random_words_with_digraphs(
-        self, digraphs: list[str], count: int, language: str | None = None
+        self, digraphs: list[str], count: int, language: str | None = None, common_only: bool = False, zipf_threshold: float = 4.0
     ) -> list[str]:
         """Get random words containing the specified digraphs.
 
         Uses weighted selection where:
-        - Short words (3-4 letters) are penalized
-        - Long words are penalized
-        - Abbreviations (2+ uppercase letters) are extremely heavily penalized
-        Target average word length is approximately 6.5 characters.
+        - When common_only=False: Short words (3-4 letters) are penalized, long words are penalized,
+          abbreviations (2+ uppercase letters) are extremely heavily penalized
+        - When common_only=True: Word frequency from wordfreq is used for weighting
+        Target average word length is approximately 6.5 characters when not using common_only.
 
         Args:
             digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
             count: Maximum number of words to return
             language: Optional language code filter (e.g., 'en', 'de')
+            common_only: If True, filter to common words and use frequency weighting
+            zipf_threshold: Minimum Zipf frequency for common words (default: 4.0)
 
         Returns:
             List of random words containing any of the specified digraphs
         """
         import random
 
-        matching_words = self.find_words_with_digraphs(digraphs, language)
+        matching_words = self.find_words_with_digraphs(digraphs, language, common_only, zipf_threshold)
 
         if not matching_words:
             return []
 
-        # Calculate weights using length penalty
-        # Formula: weight = max(0, 1 - penalty_factor * (length - target_length) / target_length)
-        # When penalty_factor=1.0, words longer than 2*target have zero weight
-        # Target average word length is approximately 6.5
-        target_length = 6.5
-        penalty_factor = self.config.get_float("length_penalty_factor")
-
-        weights = [
-            self._calculate_length_penalty(word, target_length, penalty_factor)
-            for word in matching_words
-        ]
+        # Calculate weights based on common_only setting
+        if common_only:
+            # Use word frequency from wordfreq for weighting
+            weights = self._calculate_frequency_weights(matching_words, language)
+        else:
+            # Calculate weights using length penalty
+            # Formula: weight = max(0, 1 - penalty_factor * (length - target_length) / target_length)
+            # When penalty_factor=1.0, words longer than 2*target have zero weight
+            # Target average word length is approximately 6.5
+            target_length = 6.5
+            penalty_factor = self.config.get_float("length_penalty_factor")
+            weights = [
+                self._calculate_length_penalty(word, target_length, penalty_factor)
+                for word in matching_words
+            ]
 
         # Return all if requesting more than available
         if count >= len(matching_words):
@@ -910,17 +993,22 @@ class Storage:
         return selected
 
     def get_random_words_with_equal_digraphs(
-        self, digraphs: list[str], count: int, language: str | None = None
+        self, digraphs: list[str], count: int, language: str | None = None, common_only: bool = False, zipf_threshold: float = 4.0
     ) -> list[str]:
         """Get random words with equal representation per digraph.
 
         Ensures each digraph gets the same number of words in the practice set.
-        Uses weighted selection (length penalty) within each digraph's word pool.
+        Uses weighted selection within each digraph's word pool.
+
+        When common_only=False: Uses length penalty weighting
+        When common_only=True: Uses word frequency from wordfreq for weighting
 
         Args:
             digraphs: List of 2-character strings (e.g., ['th', 'he', 'in'])
             count: Total number of words to return (divided equally among digraphs)
             language: Optional language code filter (e.g., 'en', 'de')
+            common_only: If True, filter to common words and use frequency weighting
+            zipf_threshold: Minimum Zipf frequency for common words (default: 4.0)
 
         Returns:
             List of random words with equal representation per digraph
@@ -934,7 +1022,7 @@ class Storage:
             return []
 
         words_per_digraph = count // len(digraphs)
-        all_words = self.find_words_with_digraphs(digraphs, language)
+        all_words = self.find_words_with_digraphs(digraphs, language, common_only, zipf_threshold)
 
         if not all_words:
             return []
@@ -955,8 +1043,6 @@ class Storage:
 
         # Select words from each digraph's pool with weighted random selection
         selected_words = []
-        target_length = 6.5
-        penalty_factor = self.config.get_float("length_penalty_factor")
 
         for digraph in digraphs:
             word_pool = digraph_word_pools[digraph]
@@ -967,11 +1053,18 @@ class Storage:
                 )
                 continue
 
-            # Calculate weights using length penalty
-            weights = [
-                self._calculate_length_penalty(word, target_length, penalty_factor)
-                for word in word_pool
-            ]
+            # Calculate weights based on whether we're using common_only or not
+            if common_only:
+                # Use word frequency from wordfreq for weighting
+                weights = self._calculate_frequency_weights(word_pool, language)
+            else:
+                # Use length penalty for weighting
+                target_length = 6.5
+                penalty_factor = self.config.get_float("length_penalty_factor")
+                weights = [
+                    self._calculate_length_penalty(word, target_length, penalty_factor)
+                    for word in word_pool
+                ]
 
             # Select words from this digraph's pool without duplicates
             pool_count = min(words_per_digraph, len(word_pool))
@@ -1032,6 +1125,42 @@ class Storage:
             active_duration_ms,
         )
 
+    def _get_primary_language(self) -> str:
+        """Get primary language from config.
+
+        Returns first enabled language, or 'en' as fallback.
+        """
+        enabled = self.config.get("enabled_languages", "en")
+        if isinstance(enabled, str):
+            languages = enabled.split(",")
+        else:
+            languages = enabled
+        return languages[0].strip() if languages else "en"
+
+    def _ensure_word_frequency_cache(self) -> None:
+        """Ensure word frequency cache is populated if needed.
+
+        Note: This is optional since wordfreq has its own internal caching.
+        """
+        # Word frequency cache is optional - wordfreq has its own caching
+        # We'll implement this if needed for performance
+        pass
+
+    def get_common_words(
+        self, zipf_threshold: float, limit: int
+    ) -> list[tuple[str, float]]:
+        """Get common words above Zipf threshold.
+
+        Args:
+            zipf_threshold: Minimum Zipf frequency (1.0-8.0)
+            limit: Maximum number of words to return
+
+        Returns:
+            List of (word, zipf_frequency) tuples, sorted by frequency descending
+        """
+        primary_lang = self._get_primary_language()
+        return self.dictionary.iter_top_n_words(primary_lang, limit, zipf_threshold)
+
     def get_slowest_words(
         self, limit: int = 10, layout: str | None = None
     ) -> list[WordStatisticsLite]:
@@ -1079,6 +1208,130 @@ class Storage:
             filtered_words = words
 
         return filtered_words[:limit]
+
+    def get_slowest_words_common_only(
+        self,
+        limit: int,
+        layout: str,
+        zipf_threshold: float
+    ) -> list[WordStatisticsLite]:
+        """Get slowest words filtered by minimum Zipf frequency.
+
+        Hybrid approach: Prioritize user's weak words above threshold,
+        fill with common words if needed.
+
+        Args:
+            limit: Maximum number of words to return
+            layout: Keyboard layout
+            zipf_threshold: Minimum Zipf frequency (1.0-8.0)
+
+        Returns:
+            List of WordStatisticsLite sorted by speed (slowest first)
+        """
+        # Get primary language for Zipf lookup
+        primary_lang = self._get_primary_language()
+
+        # Get large candidate pool
+        fetch_limit = max(1000, limit * 10)
+        candidates = self.adapter.get_slowest_words(fetch_limit, layout)
+
+        # Filter by Zipf frequency
+        filtered = []
+        for word_stat in candidates:
+            # Skip ignored words
+            if self.hash_manager and self.is_word_ignored(word_stat.word):
+                continue
+            # Check Zipf frequency
+            zipf = self.dictionary.get_word_zipf_frequency(word_stat.word, primary_lang)
+            if zipf >= zipf_threshold:
+                filtered.append(word_stat)
+            if len(filtered) >= limit:
+                break
+
+        # If we have enough filtered results, return them
+        if len(filtered) >= limit:
+            return filtered[:limit]
+
+        # Hybrid: Fill with common words if needed
+        common_words = self.get_common_words(zipf_threshold, limit - len(filtered))
+        for word, _ in common_words:
+            # Check if not already in candidates and not ignored
+            if not any(w.word == word for w in filtered):
+                if not self.hash_manager or not self.is_word_ignored(word):
+                    # Create synthetic WordStatisticsLite for common word
+                    filtered.append(WordStatisticsLite(
+                        word=word,
+                        avg_speed_ms_per_letter=0,
+                        total_duration_ms=0,
+                        total_letters=len(word),
+                        rank=0
+                    ))
+            if len(filtered) >= limit:
+                break
+
+        return filtered[:limit]
+
+    def get_fastest_words_common_only(
+        self,
+        limit: int,
+        layout: str,
+        zipf_threshold: float
+    ) -> list[WordStatisticsLite]:
+        """Get fastest words filtered by minimum Zipf frequency.
+
+        Hybrid approach: Prioritize user's fast words above threshold,
+        fill with common words if needed.
+
+        Args:
+            limit: Maximum number of words to return
+            layout: Keyboard layout
+            zipf_threshold: Minimum Zipf frequency (1.0-8.0)
+
+        Returns:
+            List of WordStatisticsLite sorted by speed (fastest first)
+        """
+        # Get primary language for Zipf lookup
+        primary_lang = self._get_primary_language()
+
+        # Get large candidate pool
+        fetch_limit = max(1000, limit * 10)
+        candidates = self.adapter.get_fastest_words(fetch_limit, layout)
+
+        # Filter by Zipf frequency
+        filtered = []
+        for word_stat in candidates:
+            # Skip ignored words
+            if self.hash_manager and self.is_word_ignored(word_stat.word):
+                continue
+            # Check Zipf frequency
+            zipf = self.dictionary.get_word_zipf_frequency(word_stat.word, primary_lang)
+            if zipf >= zipf_threshold:
+                filtered.append(word_stat)
+            if len(filtered) >= limit:
+                break
+
+        # If we have enough filtered results, return them
+        if len(filtered) >= limit:
+            return filtered[:limit]
+
+        # Hybrid: Fill with common words if needed
+        common_words = self.get_common_words(zipf_threshold, limit - len(filtered))
+        for word, _ in common_words:
+            # Check if not already in candidates and not ignored
+            if not any(w.word == word for w in filtered):
+                if not self.hash_manager or not self.is_word_ignored(word):
+                    # Create synthetic WordStatisticsLite for common word
+                    filtered.append(WordStatisticsLite(
+                        word=word,
+                        avg_speed_ms_per_letter=0,
+                        total_duration_ms=0,
+                        total_letters=len(word),
+                        rank=0
+                    ))
+            if len(filtered) >= limit:
+                break
+
+        return filtered[:limit]
 
     # High Score Operations
 

@@ -1415,8 +1415,10 @@ class Application(QObject):
                     )
 
                 # Find words containing these digraphs
+                # When common_only is enabled, filter to common words and use frequency weighting
+                zipf_threshold = self.config.get_float("digraph_zipf_threshold", 4.0) if common_only else 4.0
                 words = self.storage.get_random_words_with_digraphs(
-                    digraphs=digraphs, count=word_count
+                    digraphs=digraphs, count=word_count, common_only=common_only, zipf_threshold=zipf_threshold
                 )
 
                 # Get loaded languages to check if German is loaded for capitalization
@@ -1565,8 +1567,10 @@ class Application(QObject):
                 # If no text provided, auto-fetch words containing these digraphs
                 practice_text = text
                 if practice_text is None:
+                    # When common_only is enabled, filter to common words and use frequency weighting
+                    zipf_threshold = self.config.get_float("digraph_zipf_threshold", 4.0) if common_only else 4.0
                     words = self.storage.get_random_words_with_equal_digraphs(
-                        digraphs=digraphs, count=word_count
+                        digraphs=digraphs, count=word_count, common_only=common_only, zipf_threshold=zipf_threshold
                     )
                     # Apply capitalization for German nouns
                     word_list = [
@@ -2159,10 +2163,25 @@ class Application(QObject):
 
         # Update digraph statistics
         digraphs_start = time.time()
-        # NOTE: Digraph display filter state is tracked in stats panel, not persisted to config
-        # We don't update digraphs here since they're only loaded when tab is first viewed
-        # and manually refreshed via the checkbox
-        log.debug(f"Digraph queries skipped (not in periodic update)")
+        # Check if common-only filtering is enabled for digraphs
+        use_common_digraphs = self.config.get_bool("digraph_frequency_use_common", False)
+
+        if use_common_digraphs:
+            fastest_digraphs = self.analyzer.get_fastest_digraphs_common_only(
+                limit=10, layout=self.get_current_layout()
+            )
+            slowest_digraphs = self.analyzer.get_slowest_digraphs_common_only(
+                limit=10, layout=self.get_current_layout()
+            )
+        else:
+            fastest_digraphs = self.analyzer.get_fastest_digraphs(
+                limit=10, layout=self.get_current_layout()
+            )
+            slowest_digraphs = self.analyzer.get_slowest_digraphs(
+                limit=10, layout=self.get_current_layout()
+            )
+        self.signal_update_digraph_stats.emit(fastest_digraphs, slowest_digraphs)
+        log.debug(f"Digraph queries took {(time.time() - digraphs_start) * 1000:.1f}ms")
 
         # Update typing time display (today + all-time excluding today)
         all_time_typing_sec = self.storage.get_all_time_typing_time(
