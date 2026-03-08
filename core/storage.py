@@ -664,8 +664,8 @@ class Storage:
             # Final fallback: if no statistics at all, use dictionary
             if not result:
                 log.warning(
-                    f"No digraph statistics found in database, "
-                    f"using most common digraphs from dictionary as fallback"
+                    "No digraph statistics found in database, "
+                    "using most common digraphs from dictionary as fallback"
                 )
                 from core.models import DigraphPerformance
                 common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
@@ -733,8 +733,8 @@ class Storage:
             # Final fallback: if no statistics at all, use dictionary
             if not result:
                 log.warning(
-                    f"No digraph statistics found in database, "
-                    f"using most common digraphs from dictionary as fallback"
+                    "No digraph statistics found in database, "
+                    "using most common digraphs from dictionary as fallback"
                 )
                 from core.models import DigraphPerformance
                 common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
@@ -826,10 +826,7 @@ class Storage:
 
         # Common words that match roman numeral pattern but aren't
         common_words = {'civic', 'mid', 'did', 'lid', 'mix'}
-        if word.lower() in common_words:
-            return False
-
-        return True
+        return word.lower() not in common_words
 
     def _calculate_length_penalty(self, word: str, target_length: float, penalty_factor: float) -> float:
         """Calculate length penalty for weighted word selection.
@@ -928,8 +925,8 @@ class Storage:
         Returns:
             List of random words with equal representation per digraph
         """
-        import random
         import logging
+        import random
 
         log = logging.getLogger(__name__)
 
@@ -1584,6 +1581,7 @@ class Storage:
             try:
                 import json
                 import time
+
                 from utils.hostname import get_hostname
 
                 # Build table_breakdown dict

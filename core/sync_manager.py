@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from core.database_adapter import AdapterError
+
 if TYPE_CHECKING:
     from core.data_encryption import DataEncryption
     from core.database_adapter import DatabaseAdapter

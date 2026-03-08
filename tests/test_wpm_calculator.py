@@ -1,8 +1,7 @@
 """Tests for WPM calculator utilities."""
 
-import pytest
 
-from core.wpm_calculator import calculate_wpm, calculate_net_keystrokes
+from core.wpm_calculator import calculate_net_keystrokes, calculate_wpm
 
 
 class TestCalculateWPM:

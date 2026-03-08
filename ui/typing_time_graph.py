@@ -45,7 +45,7 @@ def calculate_linear_regression(data_points: list[TypingTimeDataPoint]) -> tuple
     n = len(days)
     sum_x = sum(days)
     sum_y = sum(wpm_values)
-    sum_xy = sum(x * y for x, y in zip(days, wpm_values))
+    sum_xy = sum(x * y for x, y in zip(days, wpm_values, strict=False))
     sum_x2 = sum(x * x for x in days)
 
     denominator = n * sum_x2 - sum_x * sum_x
@@ -58,7 +58,7 @@ def calculate_linear_regression(data_points: list[TypingTimeDataPoint]) -> tuple
     # Calculate R² for trend quality
     y_mean = sum_y / n
     ss_tot = sum((y - y_mean) ** 2 for y in wpm_values)
-    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(days, wpm_values))
+    ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(days, wpm_values, strict=False))
     r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
 
     # Slope is already in WPM/day since x-axis is in days

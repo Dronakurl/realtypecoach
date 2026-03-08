@@ -10,6 +10,7 @@ Monkeytype Reference:
 """
 
 import json
+
 from lzstring import LZString
 
 # Monkeytype URL

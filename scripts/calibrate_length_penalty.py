@@ -12,9 +12,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from core.dictionary_config import DictionaryConfig
-from core.storage import Storage
-from utils.config import Config
+from core.dictionary_config import DictionaryConfig  # noqa: E402
+from core.storage import Storage  # noqa: E402
+from utils.config import Config  # noqa: E402
 
 
 def _is_abbreviation(word: str) -> bool:
@@ -35,10 +35,7 @@ def _is_roman_numeral(word: str) -> bool:
 
     # Common words that match roman numeral pattern but aren't
     common_words = {'civic', 'mid', 'did', 'lid', 'mix'}
-    if word.lower() in common_words:
-        return False
-
-    return True
+    return word.lower() not in common_words
 
 
 def _calculate_length_penalty(word: str, target_length: float, penalty_factor: float) -> float:

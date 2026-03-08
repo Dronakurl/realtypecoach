@@ -44,7 +44,7 @@ def launch_practice(text: str, mode: str = "repeat"):
     word_count = len(text.split())
     print(f"🐵 Opening Monkeytype with {word_count} words...")
     print(f"   URL length: {info['url_length']} characters")
-    print(f"   Press Tab to restart")
+    print("   Press Tab to restart")
 
     # Open in default browser
     webbrowser.open(url)

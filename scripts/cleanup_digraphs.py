@@ -304,14 +304,14 @@ Examples:
     else:
         # Show examples of invalid digraphs
         log.info("Examples of invalid digraphs:")
-        for digraph in sorted(list(invalid_digraphs))[:20]:
+        for digraph in sorted(invalid_digraphs)[:20]:
             log.info(f"  - {digraph}")
         if len(invalid_digraphs) > 20:
             log.info(f"  ... and {len(invalid_digraphs) - 20} more")
 
     # Show examples of invalid digraphs
     log.info("Examples of invalid digraphs:")
-    for digraph in sorted(list(invalid_digraphs))[:20]:
+    for digraph in sorted(invalid_digraphs)[:20]:
         log.info(f"  - {digraph}")
     if len(invalid_digraphs) > 20:
         log.info(f"  ... and {len(invalid_digraphs) - 20} more")
@@ -373,7 +373,7 @@ Examples:
                 else:
                     # Show examples
                     log.info("Examples of invalid remote digraphs:")
-                    for digraph in sorted(list(remote_invalid))[:20]:
+                    for digraph in sorted(remote_invalid)[:20]:
                         log.info(f"  - {digraph}")
                     if len(remote_invalid) > 20:
                         log.info(f"  ... and {len(remote_invalid) - 20} more")

@@ -205,7 +205,7 @@ class Analyzer:
         Returns:
             WPM (words per minute)
         """
-        from core.wpm_calculator import calculate_wpm, calculate_net_keystrokes
+        from core.wpm_calculator import calculate_net_keystrokes, calculate_wpm
         net_keystrokes = calculate_net_keystrokes(key_count, backspace_count)
         return calculate_wpm(net_keystrokes, duration_ms)
 

@@ -61,10 +61,10 @@ class TestExponentialSmoothing:
 
     def test_higher_smoothness_produces_smoother_output(self):
         """Higher smoothness should reduce variance for noisy data."""
-        import numpy as np
-
         # Use noisy data
         import random
+
+        import numpy as np
         random.seed(42)
         input_wpm = [50.0 + random.gauss(0, 10) for _ in range(100)]
 

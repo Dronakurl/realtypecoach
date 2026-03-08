@@ -441,7 +441,7 @@ class TestEqualDigraphSelection:
         words = storage.get_random_words_with_equal_digraphs(digraphs=digraphs, count=count)
 
         # Count words per digraph
-        digraph_word_counts = {d: 0 for d in digraphs}
+        digraph_word_counts = dict.fromkeys(digraphs, 0)
         for word in words:
             word_lower = word.lower()
             for digraph in digraphs:
@@ -674,7 +674,6 @@ class TestSyncLogCleanupAndFiltering:
     def test_get_sync_logs_filters_by_date_to(self, storage):
         """Test filtering sync logs by date_to (entries on or before date)."""
         import time
-        from datetime import datetime, timezone, timedelta
 
         now = int(time.time() * 1000)
         one_hour_ago = now - (60 * 60 * 1000)
@@ -768,8 +767,8 @@ class TestSyncLogCleanupAndFiltering:
 
     def test_storage_cleanup_called_after_log_sync_result(self, storage, caplog):
         """Test that cleanup is called after logging sync result."""
-        import logging
         import time
+
         from core.sync_manager import SyncResult
 
         # Insert enough logs to trigger cleanup with a lower max_entries for testing

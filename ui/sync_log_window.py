@@ -4,12 +4,12 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDialog,
     QDateEdit,
+    QDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
