@@ -1293,6 +1293,17 @@ class Application(QObject):
                     self.signal_digraph_words_ready.emit([], [])
                     return
 
+                # Detect if we got fewer digraphs than expected due to common_only filter
+                if common_only:
+                    expected_count = digraph_count
+                    if mode == "mixed":
+                        expected_count = half * 2
+                    if len(digraphs) < expected_count:
+                        log.info(
+                            f"Common only filter: Found {len(digraphs)} digraphs meeting frequency threshold "
+                            f"(expected {expected_count}, some digraphs filtered out due to low frequency)"
+                        )
+
                 # Check if fallback digraphs are being used (avg_interval_ms = 0.0 indicates no statistics)
                 using_fallback = any(d.avg_interval_ms == 0.0 for d in digraph_stats)
                 if using_fallback:
@@ -1409,6 +1420,17 @@ class Application(QObject):
                     log.warning(f"No {filter_msg}digraphs available")
                     return
 
+                # Detect if we got fewer digraphs than expected due to common_only filter
+                if common_only:
+                    expected_count = digraph_count
+                    if mode == "mixed":
+                        expected_count = half * 2
+                    if len(digraphs) < expected_count:
+                        log.info(
+                            f"Common only filter: Found {len(digraphs)} digraphs meeting frequency threshold "
+                            f"(expected {expected_count}, some digraphs filtered out due to low frequency)"
+                        )
+
                 # Check if fallback digraphs are being used (avg_interval_ms = 0.0 indicates no statistics)
                 using_fallback = any(d.avg_interval_ms == 0.0 for d in digraph_stats)
 
@@ -1419,7 +1441,17 @@ class Application(QObject):
                         f"No digraph statistics found - using {len(digraphs)} most common digraphs from dictionary: {', '.join(digraphs[:5])}"
                     )
                 else:
-                    filter_label = "common " if common_only else ""
+                    # More descriptive label based on actual filtering
+                    if common_only:
+                        expected_count = digraph_count
+                        if mode == "mixed":
+                            expected_count = half * 2
+                        if len(digraphs) < expected_count:
+                            filter_label = f"common ({len(digraphs)}/{expected_count} available) "
+                        else:
+                            filter_label = "common "
+                    else:
+                        filter_label = ""
                     digraph_list_str = ", ".join(digraphs[:5])  # Show first 5
                     if len(digraphs) > 5:
                         digraph_list_str += f", ... (+{len(digraphs) - 5} more)"

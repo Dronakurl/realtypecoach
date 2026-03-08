@@ -500,9 +500,7 @@ class StatsPanel(QWidget):
         self.unified_practice_btn = QPushButton("🐵 Practice")
         self.unified_practice_btn.setStyleSheet("QPushButton { padding: 4px 12px; }")
         self.unified_practice_btn.clicked.connect(self.practice_text_by_mode)
-        self.unified_practice_btn.setToolTip(
-            "Open typing practice in your browser"
-        )
+        self.unified_practice_btn.setToolTip("Open typing practice in your browser")
         unified_controls_layout.addWidget(self.unified_practice_btn)
 
         self.unified_generate_btn = QPushButton("✨ Generate Text")
@@ -637,11 +635,13 @@ class StatsPanel(QWidget):
         digraph_controls_layout.addWidget(digraph_count_label)
 
         self.digraph_count_combo = QComboBox()
+        self.digraph_count_combo.addItem("1", 1)
+        self.digraph_count_combo.addItem("2", 2)
         self.digraph_count_combo.addItem("5", 5)
         self.digraph_count_combo.addItem("10", 10)
         self.digraph_count_combo.addItem("20", 20)
         self.digraph_count_combo.addItem("50", 50)
-        self.digraph_count_combo.setCurrentIndex(0)  # Default to 5
+        self.digraph_count_combo.setCurrentIndex(2)  # Default to 5
         self.digraph_count_combo.setMaximumWidth(80)
         digraph_controls_layout.addWidget(self.digraph_count_combo)
 
@@ -769,7 +769,9 @@ class StatsPanel(QWidget):
             self.words_numbers_checkbox.setChecked(words_numbers)
 
             # Digraphs tab checkboxes
-            digraphs_special_chars = config.get_bool("practice_digraphs_special_chars_enabled", False)
+            digraphs_special_chars = config.get_bool(
+                "practice_digraphs_special_chars_enabled", False
+            )
             log.info(f"Loading practice_digraphs_special_chars_enabled = {digraphs_special_chars}")
             self.digraphs_special_chars_checkbox.setChecked(digraphs_special_chars)
             digraphs_numbers = config.get_bool("practice_digraphs_numbers_enabled", False)
@@ -837,7 +839,9 @@ class StatsPanel(QWidget):
         # Connect Words tab combo box signals (after loading settings to avoid triggering during init)
         self.word_mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         self.unified_word_count_combo.currentTextChanged.connect(
-            lambda text: self._update_practice_config_int("practice_words_word_count", self.unified_word_count_combo.currentData())
+            lambda text: self._update_practice_config_int(
+                "practice_words_word_count", self.unified_word_count_combo.currentData()
+            )
         )
 
         # Connect Digraphs tab checkbox signals
@@ -850,20 +854,28 @@ class StatsPanel(QWidget):
         self.digraphs_common_only_checkbox.stateChanged.connect(
             lambda s: self._update_practice_config("practice_digraphs_common_only_enabled", s)
         )
-        self.digraphs_show_common_only_checkbox.stateChanged.connect(self._on_digraph_filter_changed)
+        self.digraphs_show_common_only_checkbox.stateChanged.connect(
+            self._on_digraph_filter_changed
+        )
         self.digraph_frequency_threshold_spin.valueChanged.connect(
             lambda v: self._update_practice_config_int("digraph_frequency_threshold", v)
         )
 
         # Connect Digraphs tab combo box signals (after loading settings to avoid triggering during init)
         self.digraph_mode_combo.currentTextChanged.connect(
-            lambda text: self._update_practice_config_str("practice_digraphs_mode", self.digraph_mode_combo.currentData())
+            lambda text: self._update_practice_config_str(
+                "practice_digraphs_mode", self.digraph_mode_combo.currentData()
+            )
         )
         self.digraph_count_combo.currentTextChanged.connect(
-            lambda text: self._update_practice_config_int("practice_digraphs_digraph_count", self.digraph_count_combo.currentData())
+            lambda text: self._update_practice_config_int(
+                "practice_digraphs_digraph_count", self.digraph_count_combo.currentData()
+            )
         )
         self.digraph_word_count_combo.currentTextChanged.connect(
-            lambda text: self._update_practice_config_int("practice_digraphs_word_count", self.digraph_word_count_combo.currentData())
+            lambda text: self._update_practice_config_int(
+                "practice_digraphs_word_count", self.digraph_word_count_combo.currentData()
+            )
         )
 
         # Set default window size (wider for better table display)
@@ -930,7 +942,9 @@ class StatsPanel(QWidget):
                 log.debug(f"update_wpm() set subtitle with trend: {subtitle}")
             else:
                 self.avg_wpm_subtitle_label.setText(base_text)
-                log.debug(f"update_wpm() set subtitle without trend (hasattr={hasattr(self, '_trend_wpm_per_day')}): {base_text}")
+                log.debug(
+                    f"update_wpm() set subtitle without trend (hasattr={hasattr(self, '_trend_wpm_per_day')}): {base_text}"
+                )
 
     def update_slowest_keys(self, slowest_keys: list[KeyPerformance]) -> None:
         """Update slowest keys display.
@@ -1366,7 +1380,7 @@ class StatsPanel(QWidget):
         """
         if words:
             # Handle both WordStatisticsLite objects and plain strings
-            if words and hasattr(words[0], 'word'):
+            if words and hasattr(words[0], "word"):
                 word_list = [w.word for w in words]
             else:
                 word_list = words
@@ -1387,8 +1401,7 @@ class StatsPanel(QWidget):
                     if len(digraphs) > 8:
                         digraph_list_str += f" (+{len(digraphs) - 8} more)"
                     app.application.tray_icon.show_notification(
-                        "Words Copied",
-                        f"{len(words)} words with digraphs: {digraph_list_str}"
+                        "Words Copied", f"{len(words)} words with digraphs: {digraph_list_str}"
                     )
 
             self._show_copy_notification(len(words))
@@ -1462,7 +1475,9 @@ class StatsPanel(QWidget):
             log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
             if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
-                app.application.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+                app.application.tray_icon.show_notification(
+                    "Practice Error", f"Failed to open practice: {e}"
+                )
 
     def set_words_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words for clipboard.
@@ -1815,9 +1830,13 @@ class StatsPanel(QWidget):
 
             # Log highlight words (Monkeytype doesn't support them)
             if highlight_words.get("hardest"):
-                log.debug(f"Hardest words (not highlighted in Monkeytype): {highlight_words['hardest'][:5]}...")
+                log.debug(
+                    f"Hardest words (not highlighted in Monkeytype): {highlight_words['hardest'][:5]}..."
+                )
             if highlight_words.get("fastest"):
-                log.debug(f"Fastest words (not highlighted in Monkeytype): {highlight_words['fastest'][:5]}...")
+                log.debug(
+                    f"Fastest words (not highlighted in Monkeytype): {highlight_words['fastest'][:5]}..."
+                )
 
             log.info(f"Opening typing practice with mode {self._current_mode}")
             url = generate_custom_text_url(text)
@@ -1826,13 +1845,17 @@ class StatsPanel(QWidget):
             log.info("Successfully opened typing practice")
             app = QApplication.instance()
             if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
-                app.application.tray_icon.show_notification("Typing Practice", "Opened practice with custom text")
+                app.application.tray_icon.show_notification(
+                    "Typing Practice", "Opened practice with custom text"
+                )
 
         except Exception as e:
             log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
             if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
-                app.application.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+                app.application.tray_icon.show_notification(
+                    "Practice Error", f"Failed to open practice: {e}"
+                )
 
     def set_words_by_mode_clipboard_callback(self, callback) -> None:
         """Set callback for fetching words by mode for clipboard.
@@ -1870,7 +1893,9 @@ class StatsPanel(QWidget):
         common_only = self.digraphs_common_only_checkbox.isChecked()
 
         if hasattr(self, "_request_digraph_words_callback"):
-            self._request_digraph_words_callback(mode, digraph_count, word_count, special_chars, numbers, common_only)
+            self._request_digraph_words_callback(
+                mode, digraph_count, word_count, special_chars, numbers, common_only
+            )
 
     def practice_digraphs_by_mode(self) -> None:
         """Launch practice with words containing selected digraphs."""
@@ -1928,7 +1953,9 @@ class StatsPanel(QWidget):
             from utils.monkeytype_url import generate_custom_text_url
 
             # Log digraphs (Monkeytype doesn't support them)
-            log.info(f"Opening typing practice with digraphs: {digraphs} (not highlighted in Monkeytype)")
+            log.info(
+                f"Opening typing practice with digraphs: {digraphs} (not highlighted in Monkeytype)"
+            )
 
             # Show notification BEFORE opening browser so it stays visible
             app = QApplication.instance()
@@ -1937,11 +1964,13 @@ class StatsPanel(QWidget):
                 digraph_list_str = ", ".join(digraphs[:8])  # Show up to 8 digraphs
                 if len(digraphs) > 8:
                     digraph_list_str += f" (+{len(digraphs) - 8} more)"
-                log.info(f"Showing tray notification: Practicing {len(digraphs)} digraphs: {digraph_list_str}")
+                log.info(
+                    f"Showing tray notification: Practicing {len(digraphs)} digraphs: {digraph_list_str}"
+                )
                 app.application.tray_icon.show_notification(
                     "Typing Practice",
                     f"Practicing {len(digraphs)} digraphs: {digraph_list_str}",
-                    timeout_ms=10000  # 10 seconds to ensure it's visible
+                    timeout_ms=10000,  # 10 seconds to ensure it's visible
                 )
 
             url = generate_custom_text_url(text)
@@ -1953,7 +1982,9 @@ class StatsPanel(QWidget):
             log.error(f"Error opening practice: {e}")
             app = QApplication.instance()
             if app and hasattr(app, "application") and hasattr(app.application, "tray_icon"):
-                app.application.tray_icon.show_notification("Practice Error", f"Failed to open practice: {e}")
+                app.application.tray_icon.show_notification(
+                    "Practice Error", f"Failed to open practice: {e}"
+                )
 
     def set_digraph_controls_enabled(self, enabled: bool) -> None:
         """Enable or disable digraph controls based on dictionary availability.
@@ -2060,11 +2091,11 @@ class StatsPanel(QWidget):
 
         # Show confirmation dialog
         from PySide6.QtWidgets import (
+            QCheckBox,
             QDialog,
             QLabel,
             QPushButton,
             QVBoxLayout,
-            QCheckBox,
         )
 
         dialog = QDialog(self)

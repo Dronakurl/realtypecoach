@@ -624,8 +624,8 @@ class Storage:
     ) -> list[DigraphPerformance]:
         """Get slowest digraphs filtered to only common ones.
 
-        Fetches 3x more candidates than needed, then filters out digraphs
-        below the frequency threshold.
+        Fetches a large pool of candidates, filters by frequency threshold first,
+        then returns the slowest from the common digraphs.
 
         Args:
             limit: Maximum number of digraphs to return
@@ -635,8 +635,9 @@ class Storage:
         Returns:
             List of DigraphPerformance models (only common digraphs)
         """
-        # Fetch extra candidates to filter from
-        fetch_limit = limit * 3
+        # Fetch a large candidate pool to ensure we get most common digraphs
+        # We need to filter by frequency first, then select hardest from that filtered set
+        fetch_limit = max(1000, limit * 50)  # Ensure we get a large enough sample
         candidates = self.adapter.get_slowest_digraphs(fetch_limit, layout)
 
         # Get frequency for all candidates
@@ -651,30 +652,38 @@ class Storage:
 
         result = common_digraphs[:limit]
 
-        # Edge case: No common digraphs found - use most common from dictionary
+        # Edge case: No common digraphs found - fall back to non-common digraphs from statistics
         if not result:
             log.warning(
                 f"No common digraphs found in database (threshold={frequency_threshold}), "
-                f"using most common digraphs from dictionary as fallback"
+                f"falling back to all digraphs from statistics"
             )
-            # Get most common digraphs from dictionary
-            from core.models import DigraphPerformance
-            common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
-            # Create DigraphPerformance objects with placeholder values
-            result = [
-                DigraphPerformance(
-                    first_key=digraph[0],
-                    second_key=digraph[1],
-                    avg_interval_ms=0.0,  # No statistics available
-                    count=0,  # No statistics available
-                    layout=layout or "unknown"
+            # Fall back to unfiltered digraphs from statistics
+            result = candidates[:limit]
+
+            # Final fallback: if no statistics at all, use dictionary
+            if not result:
+                log.warning(
+                    f"No digraph statistics found in database, "
+                    f"using most common digraphs from dictionary as fallback"
                 )
-                for digraph, _ in common_fallback
-            ]
+                from core.models import DigraphPerformance
+                common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
+                # Create DigraphPerformance objects with placeholder values
+                result = [
+                    DigraphPerformance(
+                        first_key=digraph[0],
+                        second_key=digraph[1],
+                        avg_interval_ms=0.0,  # No statistics available
+                        wpm=0.0,  # No statistics available
+                        rank=0
+                    )
+                    for digraph, _ in common_fallback
+                ]
         elif len(result) < limit:
             log.warning(
                 f"Only found {len(result)} common digraphs (threshold={frequency_threshold}), "
-                f"requested {limit}"
+                f"requested {limit} - some digraphs were filtered out due to low frequency"
             )
 
         return result
@@ -684,8 +693,8 @@ class Storage:
     ) -> list[DigraphPerformance]:
         """Get fastest digraphs filtered to only common ones.
 
-        Fetches 3x more candidates than needed, then filters out digraphs
-        below the frequency threshold.
+        Fetches a large pool of candidates, filters by frequency threshold first,
+        then returns the fastest from the common digraphs.
 
         Args:
             limit: Maximum number of digraphs to return
@@ -695,8 +704,9 @@ class Storage:
         Returns:
             List of DigraphPerformance models (only common digraphs)
         """
-        # Fetch extra candidates to filter from
-        fetch_limit = limit * 3
+        # Fetch a large candidate pool to ensure we get most common digraphs
+        # We need to filter by frequency first, then select fastest from that filtered set
+        fetch_limit = max(1000, limit * 50)  # Ensure we get a large enough sample
         candidates = self.adapter.get_fastest_digraphs(fetch_limit, layout)
 
         # Get frequency for all candidates
@@ -711,30 +721,38 @@ class Storage:
 
         result = common_digraphs[:limit]
 
-        # Edge case: No common digraphs found - use most common from dictionary
+        # Edge case: No common digraphs found - fall back to non-common digraphs from statistics
         if not result:
             log.warning(
                 f"No common digraphs found in database (threshold={frequency_threshold}), "
-                f"using most common digraphs from dictionary as fallback"
+                f"falling back to all digraphs from statistics"
             )
-            # Get most common digraphs from dictionary
-            from core.models import DigraphPerformance
-            common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
-            # Create DigraphPerformance objects with placeholder values
-            result = [
-                DigraphPerformance(
-                    first_key=digraph[0],
-                    second_key=digraph[1],
-                    avg_interval_ms=0.0,  # No statistics available
-                    count=0,  # No statistics available
-                    layout=layout or "unknown"
+            # Fall back to unfiltered digraphs from statistics
+            result = candidates[:limit]
+
+            # Final fallback: if no statistics at all, use dictionary
+            if not result:
+                log.warning(
+                    f"No digraph statistics found in database, "
+                    f"using most common digraphs from dictionary as fallback"
                 )
-                for digraph, _ in common_fallback
-            ]
+                from core.models import DigraphPerformance
+                common_fallback = self._get_most_common_digraphs_from_dictionary(limit)
+                # Create DigraphPerformance objects with placeholder values
+                result = [
+                    DigraphPerformance(
+                        first_key=digraph[0],
+                        second_key=digraph[1],
+                        avg_interval_ms=0.0,  # No statistics available
+                        wpm=0.0,  # No statistics available
+                        rank=0
+                    )
+                    for digraph, _ in common_fallback
+                ]
         elif len(result) < limit:
             log.warning(
                 f"Only found {len(result)} common digraphs (threshold={frequency_threshold}), "
-                f"requested {limit}"
+                f"requested {limit} - some digraphs were filtered out due to low frequency"
             )
 
         return result
