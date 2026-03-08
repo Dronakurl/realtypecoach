@@ -46,6 +46,7 @@ console_handler = RichHandler(
     markup=False,
     show_time=True,
     show_path=False,
+    log_time_format="[%H:%M:%S]",
 )
 
 logging.basicConfig(
@@ -2138,23 +2139,30 @@ class Application(QObject):
         log.debug(f"Slowest/fastest keys queries took {(time.time() - keys_start) * 1000:.1f}ms")
 
         words_start = time.time()
-        hardest_words = self.analyzer.get_slowest_words(limit=10, layout=self.get_current_layout())
-        self.signal_update_hardest_words.emit(hardest_words)
+        # Check if common-only filtering is enabled for words
+        use_common_words = self.config.get_bool("word_frequency_use_common", False)
 
-        fastest_words = self.analyzer.get_fastest_words(limit=10, layout=self.get_current_layout())
+        if use_common_words:
+            hardest_words = self.analyzer.get_slowest_words_common_only(
+                limit=10, layout=self.get_current_layout()
+            )
+            fastest_words = self.analyzer.get_fastest_words_common_only(
+                limit=10, layout=self.get_current_layout()
+            )
+        else:
+            hardest_words = self.analyzer.get_slowest_words(limit=10, layout=self.get_current_layout())
+            fastest_words = self.analyzer.get_fastest_words(limit=10, layout=self.get_current_layout())
+
+        self.signal_update_hardest_words.emit(hardest_words)
         self.signal_update_fastest_words_stats.emit(fastest_words)
         log.debug(f"Slowest/fastest words queries took {(time.time() - words_start) * 1000:.1f}ms")
 
         # Update digraph statistics
         digraphs_start = time.time()
-        fastest_digraphs = self.analyzer.get_fastest_digraphs(
-            limit=10, layout=self.get_current_layout()
-        )
-        slowest_digraphs = self.analyzer.get_slowest_digraphs(
-            limit=10, layout=self.get_current_layout()
-        )
-        self.signal_update_digraph_stats.emit(fastest_digraphs, slowest_digraphs)
-        log.debug(f"Digraph queries took {(time.time() - digraphs_start) * 1000:.1f}ms")
+        # NOTE: Digraph display filter state is tracked in stats panel, not persisted to config
+        # We don't update digraphs here since they're only loaded when tab is first viewed
+        # and manually refreshed via the checkbox
+        log.debug(f"Digraph queries skipped (not in periodic update)")
 
         # Update typing time display (today + all-time excluding today)
         all_time_typing_sec = self.storage.get_all_time_typing_time(
