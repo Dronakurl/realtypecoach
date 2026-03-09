@@ -531,14 +531,14 @@ class StatsPanel(QWidget):
 
         # Zipf threshold dropdown
         self.words_zipf_threshold_combo = QComboBox()
-        self.words_zipf_threshold_combo.addItem("Fewest words", 7.5)
-        self.words_zipf_threshold_combo.addItem("Very common", 7.0)
-        self.words_zipf_threshold_combo.addItem("Only common", 6.0)
-        self.words_zipf_threshold_combo.addItem("Common words", 5.0)
+        self.words_zipf_threshold_combo.addItem("Very focused", 5.5)
+        self.words_zipf_threshold_combo.addItem("Focused", 5.0)
+        self.words_zipf_threshold_combo.addItem("Moderate", 4.5)
         self.words_zipf_threshold_combo.addItem("Balanced", 4.0)
-        self.words_zipf_threshold_combo.addItem("Many words", 3.0)
-        self.words_zipf_threshold_combo.addItem("Most words", 2.0)
-        self.words_zipf_threshold_combo.setCurrentIndex(4)  # Default to Balanced (4.0)
+        self.words_zipf_threshold_combo.addItem("Wide", 3.5)
+        self.words_zipf_threshold_combo.addItem("Very wide", 3.0)
+        self.words_zipf_threshold_combo.addItem("All words", 2.5)
+        self.words_zipf_threshold_combo.setCurrentIndex(3)  # Default to Balanced (4.0)
         self.words_zipf_threshold_combo.setMaximumWidth(130)
         self.words_zipf_threshold_combo.setToolTip(
             "Minimum Zipf frequency for common words (1=rare, 8=very common).\n"
@@ -684,14 +684,14 @@ class StatsPanel(QWidget):
 
         # Zipf threshold dropdown
         self.digraph_zipf_threshold_combo = QComboBox()
-        self.digraph_zipf_threshold_combo.addItem("Fewest words", 7.5)
-        self.digraph_zipf_threshold_combo.addItem("Very common", 7.0)
-        self.digraph_zipf_threshold_combo.addItem("Only common", 6.0)
-        self.digraph_zipf_threshold_combo.addItem("Common words", 5.0)
+        self.digraph_zipf_threshold_combo.addItem("Very focused", 5.5)
+        self.digraph_zipf_threshold_combo.addItem("Focused", 5.0)
+        self.digraph_zipf_threshold_combo.addItem("Moderate", 4.5)
         self.digraph_zipf_threshold_combo.addItem("Balanced", 4.0)
-        self.digraph_zipf_threshold_combo.addItem("Many words", 3.0)
-        self.digraph_zipf_threshold_combo.addItem("Most words", 2.0)
-        self.digraph_zipf_threshold_combo.setCurrentIndex(4)  # Default to Balanced (4.0)
+        self.digraph_zipf_threshold_combo.addItem("Wide", 3.5)
+        self.digraph_zipf_threshold_combo.addItem("Very wide", 3.0)
+        self.digraph_zipf_threshold_combo.addItem("All words", 2.5)
+        self.digraph_zipf_threshold_combo.setCurrentIndex(3)  # Default to Balanced (4.0)
         self.digraph_zipf_threshold_combo.setMaximumWidth(130)
         self.digraph_zipf_threshold_combo.setToolTip(
             "Minimum Zipf frequency for words containing the digraph.\n"
@@ -1906,7 +1906,9 @@ class StatsPanel(QWidget):
                 "Text generation callback not initialized. Please restart the application."
             )
 
-    def launch_practice_with_highlighting(self, text: str, highlight_words: dict) -> None:
+    def launch_practice_with_highlighting(
+        self, text: str, highlight_words: dict, punctuation: bool = False, numbers: bool = False
+    ) -> None:
         """Launch typing practice with word highlighting.
 
         Note: Monkeytype doesn't support word highlighting, so this just opens
@@ -1916,6 +1918,8 @@ class StatsPanel(QWidget):
             text: Text to practice
             highlight_words: Dict with 'hardest' and/or 'fastest' keys containing word lists
                 (Not supported by Monkeytype, logged for reference)
+            punctuation: Whether to enable punctuation in monkeytype
+            numbers: Whether to enable numbers in monkeytype
         """
         # Check if user has confirmed Monkeytype usage
         if not self._check_monkeytype_confirmation():
@@ -1935,7 +1939,7 @@ class StatsPanel(QWidget):
                 )
 
             log.info(f"Opening typing practice with mode {self._current_mode}")
-            url = generate_custom_text_url(text)
+            url = generate_custom_text_url(text, punctuation=punctuation, numbers=numbers)
             webbrowser.open(url)
 
             log.info("Successfully opened typing practice")

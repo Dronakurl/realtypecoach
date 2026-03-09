@@ -112,7 +112,7 @@ class Application(QObject):
     signal_text_generated = Signal(str)  # For Ollama text generation
     signal_text_generation_failed = Signal(str)  # For Ollama errors
     signal_ollama_available = Signal(bool)  # Ollama availability status
-    signal_practice_with_highlighting = Signal(str, dict)  # For practice with word highlighting
+    signal_practice_with_highlighting = Signal(str, dict, bool, bool)  # For practice with word highlighting (text, highlight_words, punctuation, numbers)
     signal_digraph_words_ready = Signal(
         list, list
     )  # For digraph words clipboard copy (words, digraphs)
@@ -1208,9 +1208,14 @@ class Application(QObject):
                             for w in words
                         ]
                     elif mode == "fastest":
-                        words = self.analyzer.get_fastest_words(
-                            limit=count, layout=self.get_current_layout()
-                        )
+                        if use_common_filter:
+                            words = self.analyzer.get_fastest_words_common_only(
+                                limit=count, layout=self.get_current_layout()
+                            )
+                        else:
+                            words = self.analyzer.get_fastest_words(
+                                limit=count, layout=self.get_current_layout()
+                            )
                         word_list = [
                             self.storage.dictionary.get_capitalized_form(w.word, None)
                             for w in words
@@ -1219,12 +1224,20 @@ class Application(QObject):
                         import random
 
                         half = count // 2
-                        fastest = self.analyzer.get_fastest_words(
-                            limit=half, layout=self.get_current_layout()
-                        )
-                        hardest = self.analyzer.get_slowest_words(
-                            limit=half, layout=self.get_current_layout()
-                        )
+                        if use_common_filter:
+                            fastest = self.analyzer.get_fastest_words_common_only(
+                                limit=half, layout=self.get_current_layout()
+                            )
+                            hardest = self.analyzer.get_slowest_words_common_only(
+                                limit=half, layout=self.get_current_layout()
+                            )
+                        else:
+                            fastest = self.analyzer.get_fastest_words(
+                                limit=half, layout=self.get_current_layout()
+                            )
+                            hardest = self.analyzer.get_slowest_words(
+                                limit=half, layout=self.get_current_layout()
+                            )
                         combined = fastest + hardest
                         random.shuffle(combined)
                         word_list = [
@@ -1247,7 +1260,7 @@ class Application(QObject):
                     practice_text = " ".join(word_list)
 
                 # Launch practice with highlighting
-                self.signal_practice_with_highlighting.emit(practice_text, highlight_words)
+                self.signal_practice_with_highlighting.emit(practice_text, highlight_words, special_chars, numbers)
 
             except Exception as e:
                 log.error(f"Error fetching word highlight list: {e}")

@@ -17,13 +17,17 @@ from lzstring import LZString
 MONKEYTYPE_URL = "https://monkeytype.com/"
 
 
-def generate_custom_text_url(text: str, mode: str = "repeat") -> str:
+def generate_custom_text_url(
+    text: str, mode: str = "repeat", punctuation: bool = False, numbers: bool = False
+) -> str:
     """
     Generate a Monkeytype URL with custom text.
 
     Args:
         text: The practice text to type
         mode: Custom text mode - "repeat" (default), "max", or "zip"
+        punctuation: Whether to enable punctuation in monkeytype
+        numbers: Whether to enable numbers in monkeytype
 
     Returns:
         A complete Monkeytype URL that opens with the custom text loaded
@@ -61,8 +65,8 @@ def generate_custom_text_url(text: str, mode: str = "repeat") -> str:
         "custom",      # [0] Mode
         None,          # [1] Mode2 (not applicable for custom)
         custom_text_settings,  # [2] CustomTextSettings
-        None,          # [3] Punctuation (use default)
-        None,          # [4] Numbers (use default)
+        punctuation if punctuation else None,  # [3] Punctuation
+        numbers if numbers else None,  # [4] Numbers
         None,          # [5] Language (use default)
         None,          # [6] Difficulty (use default)
         None           # [7] Funbox (use default)
