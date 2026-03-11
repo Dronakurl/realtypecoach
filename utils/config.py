@@ -160,7 +160,7 @@ class AppSettings(BaseModel):
     )
     practice_digraphs_digraph_count: int = Field(
         default=5,
-        ge=5,
+        ge=1,
         le=50,
         description="Number of digraphs to practice",
     )
