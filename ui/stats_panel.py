@@ -905,6 +905,28 @@ class StatsPanel(QWidget):
             self._on_word_zipf_threshold_changed
         )
 
+        # Connect Digraphs tab combo box signals (after loading settings to avoid triggering during init)
+        log.info("Connecting Digraphs tab combo box signals...")
+        self.digraph_mode_combo.currentTextChanged.connect(
+            lambda text: self._update_practice_config_str(
+                "practice_digraphs_mode", self.digraph_mode_combo.currentData()
+            )
+        )
+        log.info("Connected digraph_mode_combo signal")
+        self.digraph_count_combo.currentTextChanged.connect(
+            lambda text: self._on_digraph_count_changed(text)
+        )
+        log.info("Connected digraph_count_combo signal")
+        self.digraph_word_count_combo.currentTextChanged.connect(
+            lambda text: self._update_practice_config_int(
+                "practice_digraphs_word_count", self.digraph_word_count_combo.currentData()
+            )
+        )
+        log.info("Connected digraph_word_count_combo signal")
+
+        # Set default window size (wider for better table display)
+        self.resize(700, 500)
+
     def _on_word_zipf_threshold_changed(self, index: int) -> None:
         """Handle word Zipf threshold dropdown change.
 
@@ -919,26 +941,6 @@ class StatsPanel(QWidget):
         if self.words_show_common_only_checkbox.isChecked():
             if hasattr(self, "_word_data_callback"):
                 self._word_data_callback(True, value)
-
-        # Connect Digraphs tab combo box signals (after loading settings to avoid triggering during init)
-        self.digraph_mode_combo.currentTextChanged.connect(
-            lambda text: self._update_practice_config_str(
-                "practice_digraphs_mode", self.digraph_mode_combo.currentData()
-            )
-        )
-        self.digraph_count_combo.currentTextChanged.connect(
-            lambda text: self._update_practice_config_int(
-                "practice_digraphs_digraph_count", self.digraph_count_combo.currentData()
-            )
-        )
-        self.digraph_word_count_combo.currentTextChanged.connect(
-            lambda text: self._update_practice_config_int(
-                "practice_digraphs_word_count", self.digraph_word_count_combo.currentData()
-            )
-        )
-
-        # Set default window size (wider for better table display)
-        self.resize(700, 500)
 
     def update_wpm(
         self,
@@ -2157,6 +2159,12 @@ class StatsPanel(QWidget):
         if config:
             log.info(f"Updating config {key} = {value}")
             config.set(key, value)
+            # Verify it was saved
+            saved_value = config.get_int(key, -1)
+            if saved_value == value:
+                log.info(f"Verified: config {key} successfully saved as {saved_value}")
+            else:
+                log.warning(f"Verification failed: config {key} saved as {saved_value}, expected {value}")
         else:
             log.warning(f"Cannot update config {key}: config not available")
 
@@ -2187,6 +2195,16 @@ class StatsPanel(QWidget):
             config.set(key, value)
         else:
             log.warning(f"Cannot update config {key}: config not available")
+
+    def _on_digraph_count_changed(self, text: str) -> None:
+        """Handle digraph count combo box change.
+
+        Args:
+            text: The text of the selected item
+        """
+        value = self.digraph_count_combo.currentData()
+        log.info(f"Digraph count combo box changed: text={text}, value={value}")
+        self._update_practice_config_int("practice_digraphs_digraph_count", value)
 
     def _check_monkeytype_confirmation(self) -> bool:
         """Check if user has confirmed Monkeytype usage, show dialog if not.
