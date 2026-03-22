@@ -1586,8 +1586,8 @@ class StatsPanel(QWidget):
         """
         # Get the actual value from the combo box data
         value = self.digraph_zipf_threshold_combo.currentData()
-        # Update config
-        config.set("digraph_zipf_threshold", value)
+        # Update config using the helper method
+        self._update_practice_config_float("digraph_zipf_threshold", value)
         # Trigger data refresh if checkbox is checked
         if self.digraphs_show_common_only_checkbox.isChecked():
             if hasattr(self, "_digraph_data_callback"):
