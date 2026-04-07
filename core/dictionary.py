@@ -84,16 +84,19 @@ class Dictionary:
 
     def _load_names_list(self) -> None:
         """Load common names from embedded list."""
+        # Load common names for exclusion. Prefer a shared set (COMMON_NAMES_SET) if available
         try:
-            from core.common_names import COMMON_NAMES
-
-            # Use enabled languages from config instead of loaded languages
-            # (loaded_languages is empty during initialization)
-            enabled_langs = self._config.enabled_languages
-
-            for lang_code in enabled_langs:
-                if lang_code in COMMON_NAMES:
-                    self._names_set.update(COMMON_NAMES[lang_code])
+            # Try the new shared-set symbol first
+            try:
+                from core.common_names import COMMON_NAMES_SET as SHARED_COMMON_NAMES
+                self._names_set.update(SHARED_COMMON_NAMES)
+            except ImportError:
+                # Fallback to legacy dict mapping
+                from core.common_names import COMMON_NAMES
+                enabled_langs = self._config.enabled_languages
+                for lang_code in enabled_langs:
+                    if lang_code in COMMON_NAMES:
+                        self._names_set.update(COMMON_NAMES[lang_code])
             log.info(f"Loaded {len(self._names_set)} common names for exclusion")
         except ImportError:
             log.warning("Common names module not found")

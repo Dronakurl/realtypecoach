@@ -128,8 +128,7 @@ class Analyzer:
             timestamp_ms: Timestamp in milliseconds since epoch
             layout: Keyboard layout
         """
-        now = datetime.now()
-        current_date = now.strftime("%Y-%m-%d")
+        current_date = datetime.now().strftime("%Y-%m-%d")
 
         with self._lock:
             if current_date != self.today_date:
@@ -206,6 +205,7 @@ class Analyzer:
             WPM (words per minute)
         """
         from core.wpm_calculator import calculate_net_keystrokes, calculate_wpm
+
         net_keystrokes = calculate_net_keystrokes(key_count, backspace_count)
         return calculate_wpm(net_keystrokes, duration_ms)
 

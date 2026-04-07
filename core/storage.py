@@ -1627,14 +1627,20 @@ class Storage:
             >>> deleted = storage.delete_all_names_from_database()
             >>> print(f"Deleted {deleted} name statistics")
         """
-        from core.common_names import COMMON_NAMES
-
-        # Collect all names from all available language keys
-        # (Note: COMMON_NAMES currently has the same names for all languages,
-        # but we iterate all keys for forward compatibility)
-        names_to_delete = set()
-        for lang_names in COMMON_NAMES.values():
-            names_to_delete.update(lang_names)
+        # Prefer the shared set if available, fall back to legacy dict mapping
+        try:
+            from core.common_names import COMMON_NAMES_SET as SHARED_COMMON_NAMES
+            all_name_sets = [SHARED_COMMON_NAMES]
+            names_to_delete = set(SHARED_COMMON_NAMES)
+        except ImportError:
+            from core.common_names import COMMON_NAMES
+            all_name_sets = list(COMMON_NAMES.values())
+            # Collect all names from all available language keys
+            # (Note: COMMON_NAMES currently has the same names for all languages,
+            # but we iterate all keys for forward compatibility)
+            names_to_delete = set()
+            for lang_names in COMMON_NAMES.values():
+                names_to_delete.update(lang_names)
 
         # Also get any words currently in the database that are names
         # (in case the embedded list has changed or custom names exist)
@@ -1643,10 +1649,10 @@ class Storage:
         for word in all_words:
             word_lower = word.lower()
             # Check if this word is in our names list
-            for lang_names in COMMON_NAMES.values():
+            for lang_names in all_name_sets:
                 if word_lower in lang_names:
                     names_to_delete.add(word_lower)
-                    break  # Found it, no need to check other languages
+                    break  # Found it, no need to check other name sets
 
         if not names_to_delete:
             log.info("No names to delete from database")

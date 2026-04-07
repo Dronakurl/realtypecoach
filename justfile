@@ -165,8 +165,12 @@ ruff-format:
     @ruff format .
     @ruff check --fix .
 
-# Run all Python tests
-test-all: ruff-format
+# Run all Python tests with optional pytest arguments
+# Examples:
+#   just test-all                    # Run all tests
+#   just test-all -k "burst"         # Run tests matching pattern
+#   just test-all --tb=short         # With pytest options
+test-all args="": ruff-format
     @echo "=== Checking Python syntax ==="
     @.venv/bin/python3 -m py_compile main.py
     @.venv/bin/python3 -m py_compile ui/settings_dialog.py
@@ -175,7 +179,7 @@ test-all: ruff-format
     @.venv/bin/python3 -m py_compile ui/typing_time_graph.py
     @.venv/bin/python3 -m py_compile ui/wpm_graph.py
     @echo "=== Running pytest ==="
-    @.venv/bin/python3 -m pytest tests/ -v
+    @.venv/bin/python3 -m pytest tests/ -v {{args}}
 
 # Run a single test or test file with optional pytest arguments
 # Examples:

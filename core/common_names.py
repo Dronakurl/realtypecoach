@@ -71,15 +71,19 @@ def save_names_sorted(names: set[str], file_path: Path) -> None:
 # Load all names with genitive variations
 _ALL_NAMES_WITH_GENITIVES = load_and_generate_genitives(NAMES_FILE)
 
+# Shared set of names (preferred form)
+COMMON_NAMES_SET: set[str] = _ALL_NAMES_WITH_GENITIVES
+
 # Maintain backward compatibility with language-specific sets
 # All names are available in both en and de for maximum coverage
 COMMON_NAMES: dict[str, set[str]] = {
-    "en": _ALL_NAMES_WITH_GENITIVES,
-    "de": _ALL_NAMES_WITH_GENITIVES,
+    "en": COMMON_NAMES_SET,
+    "de": COMMON_NAMES_SET,
 }
 
 __all__ = [
     "COMMON_NAMES",
+    "COMMON_NAMES_SET",
     "generate_genitive",
     "add_name_with_genitive",
     "load_and_generate_genitives",
