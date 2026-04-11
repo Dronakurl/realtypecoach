@@ -2,6 +2,7 @@
 
 import logging
 import random
+import os
 from pathlib import Path
 
 from core.dictionary_config import DictionaryConfig
@@ -48,9 +49,33 @@ class Dictionary:
         # Resolve which languages to load and get their paths
         resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
 
-        # Load dictionaries using resolved paths
-        for lang_code, path in resolved_paths.items():
-            self._load_dictionary(lang_code, path)
+        # Allow supplemental dictionaries: detect all available and append other paths for the same language
+        try:
+            from utils.dict_detector import DictionaryDetector
+
+            detected = DictionaryDetector.detect_available()
+            for d in detected:
+                if not d.available:
+                    continue
+                lang = d.language_code
+                path = d.path
+                if lang in resolved_paths:
+                    # Ensure we store a list of paths for each language
+                    if not isinstance(resolved_paths[lang], list):
+                        resolved_paths[lang] = [resolved_paths[lang]]
+                    if path not in resolved_paths[lang]:
+                        resolved_paths[lang].append(path)
+        except Exception:
+            # If detection fails, proceed with what we have
+            pass
+
+        # Load dictionaries using resolved paths (support single path or list)
+        for lang_code, paths in resolved_paths.items():
+            if isinstance(paths, list):
+                for p in paths:
+                    self._load_dictionary(lang_code, p)
+            else:
+                self._load_dictionary(lang_code, paths)
 
         # Log final state
         if self.accept_all_mode:
@@ -137,14 +162,45 @@ class Dictionary:
             from utils.dict_detector import DictionaryDetector
 
             detected = DictionaryDetector.detect_available()
-            # Use language_code as key for backward compatibility
-            # With sorted detection, this gives us ngerman before ogerman
-            detected_dict = {}
-            seen_languages = set()
+            # Prefer dictionaries with higher word_count when multiple candidates exist
+            # for the same language. Build a temporary mapping of language -> best candidate
+            best_by_lang: dict[str, object] = {}
+            env_paths = set()
+            env_paths_raw = os.environ.get("REALTYPECOACH_DICTIONARY_PATHS")
+            if env_paths_raw:
+                env_paths = set(p for p in env_paths_raw.split(",") if p)
+
             for d in detected:
-                if d.available and d.language_code not in seen_languages:
-                    detected_dict[d.language_code] = d.path
-                    seen_languages.add(d.language_code)
+                if not d.available:
+                    continue
+                lang = d.language_code
+                current = best_by_lang.get(lang)
+                if current is None:
+                    best_by_lang[lang] = d
+                else:
+                    # Prefer dictionaries in user-specified (env) paths
+                    def is_custom(path: str) -> bool:
+                        for p in env_paths:
+                            if path.startswith(p):
+                                return True
+                        return False
+
+                    new_is_custom = is_custom(d.path)
+                    cur_is_custom = is_custom(current.path)
+
+                    if new_is_custom and not cur_is_custom:
+                        best_by_lang[lang] = d
+                    elif cur_is_custom and not new_is_custom:
+                        # keep current
+                        pass
+                    else:
+                        # Compare word_count (treat None as -1 so that numeric counts win)
+                        new_count = d.word_count if d.word_count is not None else -1
+                        cur_count = current.word_count if getattr(current, "word_count", None) is not None else -1
+                        if new_count > cur_count:
+                            best_by_lang[lang] = d
+
+            detected_dict = {lang: info.path for lang, info in best_by_lang.items()}
             log.debug(f"Detected dictionaries: {list(detected_dict.keys())}")
             return detected_dict
         except (ImportError, AttributeError, OSError) as e:
@@ -288,18 +344,31 @@ class Dictionary:
                     if lowercase_word not in capitalized_mapping:
                         capitalized_mapping[lowercase_word] = original_word
 
-                self.words[language_code] = word_set
-                self._capitalized_words[language_code] = capitalized_mapping
+                # Merge word lists if language already loaded
+                if language_code in self.words:
+                    self.words[language_code].update(word_set)
+                else:
+                    self.words[language_code] = word_set
 
-                # Detect ambiguous words (exist in both lowercase and capitalized forms)
+                # Merge capitalized mapping (prefer existing mapping if present)
+                existing_map = self._capitalized_words.setdefault(language_code, {})
+                for lc, orig in capitalized_mapping.items():
+                    if lc not in existing_map:
+                        existing_map[lc] = orig
+
+                # Detect ambiguous words for this file and merge with existing
                 ambiguous = set()
                 for lowercase_word, forms in all_forms.items():
                     if len(forms) > 1:
-                        # Word exists in multiple forms (e.g., "Gen" and "gen")
                         ambiguous.add(lowercase_word)
-                self._ambiguous_words[language_code] = ambiguous
+                existing_amb = self._ambiguous_words.setdefault(language_code, set())
+                existing_amb.update(ambiguous)
+                self._ambiguous_words[language_code] = existing_amb
 
-            self.loaded_paths[language_code] = path
+            # Track loaded paths as a list to support supplemental dictionaries
+            if language_code not in self.loaded_paths or not isinstance(self.loaded_paths[language_code], list):
+                self.loaded_paths[language_code] = []
+            self.loaded_paths[language_code].append(path)
             log.info(f"Loaded {len(self.words[language_code])} {language_code} words from {path}")
             if ambiguous:
                 log.info(f"Found {len(ambiguous)} words with ambiguous capitalization in {language_code}")

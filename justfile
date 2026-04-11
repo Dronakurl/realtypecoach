@@ -4,7 +4,6 @@
 # Sync dependencies and run the application
 run:
     @just sync-deps
-    @bash ./kill.sh 2>/dev/null || true
     @.venv/bin/python3 main.py
 
 # Install/sync dependencies from pyproject.toml
@@ -14,7 +13,7 @@ sync-deps:
 # Instance Management
 # Kill running instances
 kill:
-    bash ./kill.sh
+    @pgrep -f "python3.*main.py" | xargs -r kill -15 2>/dev/null || true
 
 # Installation
 # Install the application

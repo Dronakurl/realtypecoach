@@ -2,6 +2,7 @@
 
 import logging
 import re
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -81,7 +82,15 @@ class DictionaryDetector:
         """
         dictionaries = []
 
-        for base_path_str in DictionaryDetector.COMMON_SYSTEM_PATHS:
+        # Allow override via REALTYPECOACH_DICTIONARY_PATHS env var (comma-separated)
+        env_paths = os.environ.get("REALTYPECOACH_DICTIONARY_PATHS")
+        search_paths = list(DictionaryDetector.COMMON_SYSTEM_PATHS)
+        if env_paths:
+            # Prepend so env-specified paths have higher priority
+            for p in reversed(env_paths.split(",")):
+                search_paths.insert(0, p)
+
+        for base_path_str in search_paths:
             base_path = Path(base_path_str)
             if not base_path.exists():
                 continue
@@ -135,6 +144,20 @@ class DictionaryDetector:
         if not DictionaryDetector.validate_dictionary(file_path):
             return None
 
+        # Quick heuristic: accept files explicitly named with the language code
+        # e.g., en.txt, de.txt, en-US.txt, english.txt
+        for lang_code in DictionaryDetector.LANGUAGE_NAMES.keys():
+            if filename.startswith(f"{lang_code}.") or filename.endswith(f".{lang_code}") or filename.startswith(f"{lang_code}-"):
+                word_count = DictionaryDetector.count_words(file_path)
+                return DictionaryInfo(
+                    path=file_path,
+                    language_code=lang_code,
+                    language_name=DictionaryDetector.LANGUAGE_NAMES.get(lang_code, lang_code.upper()),
+                    variant=None,
+                    available=True,
+                    word_count=word_count,
+                )
+
         # Try to match language patterns
         for (
             lang_code,
@@ -172,6 +195,12 @@ class DictionaryDetector:
     def validate_dictionary(path: str) -> bool:
         """Check if file is a valid dictionary (one word per line).
 
+        This validator is conservative: it accepts files where multiple lines
+        (up to MAX_LINES_TO_CHECK) look like single-word entries (no spaces,
+        contain at least one alphabetic character, and do not contain XML/HTML
+        markers). This avoids treating XML phrasebooks or other structured files
+        as plain dictionaries.
+
         Args:
             path: Path to file to validate
 
@@ -182,19 +211,32 @@ class DictionaryDetector:
             return False
 
         try:
-            # Check if file is readable and has at least one line
             with open(path, encoding="utf-8", errors="ignore") as f:
-                line_count = 0
-                MAX_LINES_TO_CHECK = 10  # Don't read entire file for validation
+                MAX_LINES_TO_CHECK = 20
+                candidate_count = 0
+                checked = 0
                 for line in f:
-                    stripped = line.strip()
-                    if stripped:  # Found a non-empty line
-                        return True
-                    line_count += 1
-                    if line_count >= MAX_LINES_TO_CHECK:
+                    if checked >= MAX_LINES_TO_CHECK:
                         break
-            return False  # No content found
-        except (PermissionError, UnicodeDecodeError):
+                    checked += 1
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    # Reject lines that look like XML/HTML or contain angle brackets
+                    if "<" in stripped or ">" in stripped:
+                        continue
+                    # Reject lines with whitespace (likely phrases/sentences)
+                    if " " in stripped or "\t" in stripped:
+                        continue
+                    # Require at least one alphabetic character
+                    if not any(c.isalpha() for c in stripped):
+                        continue
+                    # Looks like a single-word entry
+                    candidate_count += 1
+                    if candidate_count >= 3:
+                        return True
+            return False
+        except (PermissionError, UnicodeDecodeError, OSError):
             return False
 
     @staticmethod
