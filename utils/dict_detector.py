@@ -28,19 +28,23 @@ class DictionaryDetector:
         "/usr/share/dict",
         "/usr/dict",
         "/usr/share/dictd",
+        "/usr/share/hunspell",
+        "/usr/share/myspell",
+        "/usr/share/myspell/dicts",
         str(Path.home() / ".local" / "share" / "dict"),
+        str(Path.home() / ".local" / "share" / "hunspell"),
     ]
 
     LANGUAGE_PATTERNS: dict[str, list[str]] = {
-        "en": [r"words$", r"american-english", r"british-english", r"english"],
-        "de": [r"ngerman", r"ogerman", r"german", r"swiss"],
-        "fr": [r"french"],
-        "es": [r"spanish"],
-        "it": [r"italian"],
-        "pt": [r"portuguese"],
-        "nl": [r"dutch"],
-        "pl": [r"polish"],
-        "ru": [r"russian"],
+        "en": [r"words$", r"american-english", r"british-english", r"english", r"en_[A-Z]{2}", r"en_GB", r"en_US"],
+        "de": [r"ngerman", r"ogerman", r"german", r"swiss", r"de_[A-Z]{2}", r"de_DE", r"de_AT", r"de_CH"],
+        "fr": [r"french", r"fr_[A-Z]{2}", r"fr_FR"],
+        "es": [r"spanish", r"es_[A-Z]{2}", r"es_ES"],
+        "it": [r"italian", r"it_[A-Z]{2}", r"it_IT"],
+        "pt": [r"portuguese", r"pt_[A-Z]{2}", r"pt_PT", r"pt_BR"],
+        "nl": [r"dutch", r"nl_[A-Z]{2}", r"nl_NL"],
+        "pl": [r"polish", r"pl_[A-Z]{2}", r"pl_PL"],
+        "ru": [r"russian", r"ru_[A-Z]{2}", r"ru_RU"],
     }
 
     LANGUAGE_NAMES: dict[str, str] = {
@@ -60,11 +64,21 @@ class DictionaryDetector:
             "words": "General",
             "american-english": "American",
             "british-english": "British",
+            "en_us": "American (US)",
+            "en_gb": "British (GB)",
+            "en_ca": "Canadian",
+            "en_au": "Australian",
         },
         "de": {
             "ngerman": "New German (reform)",
             "ogerman": "Old German (pre-reform)",
             "swiss": "Swiss",
+            "de_de": "German (Germany)",
+            "de_at": "German (Austria)",
+            "de_ch": "German (Switzerland)",
+            "de_li": "German (Liechtenstein)",
+            "de_lu": "German (Luxembourg)",
+            "de_be": "German (Belgium)",
         },
     }
 
@@ -112,21 +126,39 @@ class DictionaryDetector:
         # Sort to prefer ngerman over ogerman, and give consistent ordering
         def dict_priority_key(d: DictionaryInfo) -> tuple:
             # Priority: prefer modern/reform dictionaries, lowest number first
-            priority = 5  # Default middle priority
+            path_priority = 5  # Default path priority
+            # Prefer /usr/share/hunspell over /usr/share/myspell/dicts
+            if "/usr/share/hunspell/" in d.path:
+                path_priority = 1  # High priority for hunspell
+            elif "/usr/share/myspell/dicts/" in d.path:
+                path_priority = 10  # Low priority for myspell/dicts (duplicates)
+
+            priority = path_priority
             if d.variant and "pre-reform" in d.variant:
-                priority = 10  # Lowest priority for old/pre-reform
+                priority += 5  # Lowest priority for old/pre-reform
             elif d.variant and "reform" in d.variant:
-                priority = 1  # High priority for reform dictionaries
+                priority -= 1  # High priority for reform dictionaries
             elif d.variant and "Swiss" in d.variant:
-                priority = 3  # Medium-high priority for Swiss (after reform)
+                priority += 0  # Medium-high priority for Swiss (after reform)
 
             # Then sort by language name, then variant
             return (priority, d.language_name, d.variant or "")
 
         dictionaries.sort(key=dict_priority_key)
 
-        log.info(f"Detected {len(dictionaries)} available dictionaries")
-        return dictionaries
+        # Deduplicate: keep first occurrence of each (language_code, variant) combination
+        seen = set()
+        deduplicated = []
+        for d in dictionaries:
+            key = (d.language_code, d.variant or "General")
+            if key not in seen:
+                seen.add(key)
+                deduplicated.append(d)
+            else:
+                log.debug(f"Skipping duplicate dictionary: {d.path} (duplicate of {key})")
+
+        log.info(f"Detected {len(deduplicated)} available dictionaries (deduplicated from {len(dictionaries)})")
+        return deduplicated
 
     @staticmethod
     def identify_dictionary(file_path: str) -> DictionaryInfo | None:
@@ -145,15 +177,25 @@ class DictionaryDetector:
             return None
 
         # Quick heuristic: accept files explicitly named with the language code
-        # e.g., en.txt, de.txt, en-US.txt, english.txt
+        # e.g., en.txt, de.txt, en-US.txt, en_US.txt, english.txt
         for lang_code in DictionaryDetector.LANGUAGE_NAMES.keys():
-            if filename.startswith(f"{lang_code}.") or filename.endswith(f".{lang_code}") or filename.startswith(f"{lang_code}-"):
+            if filename.startswith(f"{lang_code}.") or filename.endswith(f".{lang_code}") or filename.startswith(f"{lang_code}-") or filename.startswith(f"{lang_code}_"):
+                # Extract variant from locale code (e.g., de_DE.dic -> "German (Germany)")
+                variant = None
+                if lang_code in DictionaryDetector.VARIANTS:
+                    # Extract locale part from filename (e.g., "de_DE" from "de_DE.dic")
+                    import re
+                    locale_match = re.match(rf'^{lang_code}[_-]([a-zA-Z]{{2}})', filename)
+                    if locale_match:
+                        locale_code = f"{lang_code}_{locale_match.group(1).lower()}"
+                        variant = DictionaryDetector.VARIANTS[lang_code].get(locale_code)
+
                 word_count = DictionaryDetector.count_words(file_path)
                 return DictionaryInfo(
                     path=file_path,
                     language_code=lang_code,
                     language_name=DictionaryDetector.LANGUAGE_NAMES.get(lang_code, lang_code.upper()),
-                    variant=None,
+                    variant=variant,
                     available=True,
                     word_count=word_count,
                 )
@@ -171,7 +213,8 @@ class DictionaryDetector:
                         for variant_key, variant_name in DictionaryDetector.VARIANTS[
                             lang_code
                         ].items():
-                            if variant_key in filename:
+                            # Check both underscore and hyphen separators
+                            if f"{variant_key}" in filename.lower().replace("-", "_"):
                                 variant = variant_name
                                 break
 
@@ -210,27 +253,47 @@ class DictionaryDetector:
         if not Path(path).is_file():
             return False
 
+        # Check for .dic extension (hunspell dictionaries)
+        is_hunspell = path.endswith('.dic')
+
         try:
             with open(path, encoding="utf-8", errors="ignore") as f:
                 MAX_LINES_TO_CHECK = 20
                 candidate_count = 0
                 checked = 0
+                line_num = 0
                 for line in f:
+                    line_num += 1
                     if checked >= MAX_LINES_TO_CHECK:
                         break
-                    checked += 1
                     stripped = line.strip()
+
+                    # Skip first line for .dic files (contains word count)
+                    if is_hunspell and line_num == 1:
+                        continue
+
+                    # Skip empty lines and metadata for .dic files
                     if not stripped:
                         continue
+                    if is_hunspell and (stripped.startswith('\t') or stripped.startswith(' ')):
+                        continue
+
                     # Reject lines that look like XML/HTML or contain angle brackets
                     if "<" in stripped or ">" in stripped:
                         continue
+
+                    # For .dic files, strip the suffix information (e.g., "word/abc" -> "word")
+                    if is_hunspell:
+                        stripped = stripped.split('/')[0]
+
                     # Reject lines with whitespace (likely phrases/sentences)
                     if " " in stripped or "\t" in stripped:
                         continue
+
                     # Require at least one alphabetic character
                     if not any(c.isalpha() for c in stripped):
                         continue
+
                     # Looks like a single-word entry
                     candidate_count += 1
                     if candidate_count >= 3:
@@ -249,9 +312,34 @@ class DictionaryDetector:
         Returns:
             Word count or None if unable to count
         """
+        is_hunspell = path.endswith('.dic')
         try:
             with open(path, encoding="utf-8", errors="ignore") as f:
-                return sum(1 for line in f if line.strip())
+                if is_hunspell:
+                    # For .dic files, skip first line (count) and metadata lines
+                    # Count only actual word entries
+                    count = 0
+                    line_num = 0
+                    for line in f:
+                        line_num += 1
+                        stripped = line.strip()
+                        # Skip first line (count)
+                        if line_num == 1:
+                            continue
+                        # Skip metadata and empty lines
+                        if not stripped or stripped.startswith('\t') or stripped.startswith(' '):
+                            continue
+                        # Count the word (ignore suffix information after /)
+                        if '/' in stripped:
+                            word = stripped.split('/')[0]
+                        else:
+                            word = stripped
+                        if word and any(c.isalpha() for c in word):
+                            count += 1
+                    return count
+                else:
+                    # For plain text dictionaries, count all non-empty lines
+                    return sum(1 for line in f if line.strip())
         except (PermissionError, UnicodeDecodeError, OSError) as e:
             log.debug(f"Could not count words in {path}: {e}")
             return None
