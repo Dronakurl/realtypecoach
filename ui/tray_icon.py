@@ -46,6 +46,7 @@ class TrayIcon(QSystemTrayIcon):
         self.icon_stopping_path = icon_stopping_path
         self.monitoring_active = True
         self.ollama_available = False
+        self.dictionary_count = 0
 
         self.setIcon(QIcon(str(icon_path)))
         self.setToolTip("RealTypeCoach - Monitoring Active")
@@ -64,9 +65,24 @@ class TrayIcon(QSystemTrayIcon):
         self.ollama_available = available
         self.create_menu()
 
+    def set_dictionary_count(self, count: int) -> None:
+        """Update dictionary count and rebuild menu.
+
+        Args:
+            count: Number of available dictionaries
+        """
+        self.dictionary_count = count
+        self.create_menu()
+
     def create_menu(self) -> None:
         """Create context menu."""
         menu = QMenu()
+
+        # Show dictionary warning if no dictionaries available
+        if self.dictionary_count == 0:
+            warning_action = QAction("⚠️ No Dictionaries Found", self)
+            warning_action.setEnabled(False)
+            menu.addAction(warning_action)
 
         show_stats_action = QAction("📊 Show Statistics", self)
         show_stats_action.triggered.connect(self.show_stats)

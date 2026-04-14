@@ -253,6 +253,8 @@ class Application(QObject):
         # Initialize default LLM prompts if needed
         self.storage.initialize_default_prompts()
 
+        # Note: Dictionary count will be set after tray_icon is initialized below
+
         # Clean ignored words from database
         deleted_count = self.storage.clean_ignored_words()
         if deleted_count > 0:
@@ -330,6 +332,12 @@ class Application(QObject):
             self.icon_paused_path,
             self.icon_stopping_path,
         )
+
+        # Update tray icon with dictionary count
+        loaded_languages = self.storage.dictionary.get_loaded_languages()
+        dictionary_count = len(loaded_languages)
+        self.tray_icon.set_dictionary_count(dictionary_count)
+        log.info(f"Updated tray icon with dictionary count: {dictionary_count}")
 
     def connect_signals(self) -> None:
         """Connect all signals."""
@@ -721,6 +729,24 @@ class Application(QObject):
             or "exclude_names_enabled" in new_settings
         ):
             log.info("Dictionary configuration changed, storage will reload on next restart")
+
+            # Update tray icon with current dictionary count
+            try:
+                from utils.dict_detector import DictionaryDetector
+                detected = DictionaryDetector.detect_available()
+                enabled_dicts = new_settings.get("enabled_dictionaries", "")
+                enabled_dict_paths = enabled_dicts.split(",") if enabled_dicts else []
+
+                # Count how many detected dictionaries are actually enabled
+                dictionary_count = 0
+                for dict_info in detected:
+                    if dict_info.path in enabled_dict_paths:
+                        dictionary_count += 1
+
+                self.tray_icon.set_dictionary_count(dictionary_count)
+                log.info(f"Updated tray icon dictionary count: {dictionary_count}")
+            except Exception as e:
+                log.warning(f"Failed to update tray icon dictionary count: {e}")
 
         # Update worst letter notification settings
         if "worst_letter_notifications_enabled" in new_settings:
@@ -2342,6 +2368,12 @@ class Application(QObject):
         if self.ollama_client.check_server_available():
             models = self.ollama_client.list_models()
             dialog._available_models = models
+
+        # Update tray icon with current dictionary count
+        loaded_languages = self.storage.dictionary.get_loaded_languages()
+        dictionary_count = len(loaded_languages)
+        self.tray_icon.set_dictionary_count(dictionary_count)
+        log.info(f"Updated tray icon with dictionary count before showing settings: {dictionary_count}")
 
         if dialog.exec() == QDialog.Accepted:
             # Use dialog.settings if it was set by clear_data/export_csv, otherwise get fresh settings

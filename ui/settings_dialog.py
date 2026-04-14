@@ -1444,6 +1444,11 @@ class SettingsDialog(QDialog):
         try:
             from utils.dict_detector import DictionaryDetector
 
+            # Show scanning status
+            self.dictionary_status_label.setText("⏳ Scanning for dictionaries...")
+            self.dictionary_status_label.setStyleSheet("color: #007acc; font-style: italic;")
+            QApplication.processEvents()
+
             # Preserve current UI selections before clearing
             current_ui_selections = set()
             for i in range(self.language_list_widget.count()):
@@ -1526,19 +1531,40 @@ class SettingsDialog(QDialog):
 
                 self.language_list_widget.addItem(item)
 
-            # Update status label
+            # Update status label with improved feedback
             available_count = sum(1 for d in available if d.available)
             if available_count > 0:
                 self.dictionary_status_label.setText(
-                    f"Found {available_count} available dictionaries"
+                    f"✓ Found {available_count} available dictionaries"
                 )
+                self.dictionary_status_label.setStyleSheet("color: green; font-style: italic;")
+
+                # Show notification for successful scan
+                if hasattr(self.window(), 'tray_icon'):
+                    self.window().tray_icon.show_notification(
+                        "Dictionaries Found",
+                        f"Found {available_count} available dictionaries",
+                        "info",
+                        3000
+                    )
             else:
                 self.dictionary_status_label.setText(
-                    "No dictionaries found - accept-all mode will be enabled automatically"
+                    "⚠️ No dictionaries found - accept-all mode will be enabled automatically"
                 )
+                self.dictionary_status_label.setStyleSheet("color: orange; font-style: italic;")
+
+                # Show notification for no dictionaries found
+                if hasattr(self.window(), 'tray_icon'):
+                    self.window().tray_icon.show_notification(
+                        "No Dictionaries Found",
+                        "No dictionaries were found on your system. Word validation will be disabled.",
+                        "warning",
+                        5000
+                    )
         except (ImportError, AttributeError, OSError) as e:
             log.error(f"Error scanning dictionaries: {e}")
             self.dictionary_status_label.setText(f"Error scanning dictionaries: {e}")
+            self.dictionary_status_label.setStyleSheet("color: red; font-style: italic;")
             self.language_list_widget.clear()
 
     def get_enabled_languages(self) -> list:
