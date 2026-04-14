@@ -20,6 +20,7 @@ class TrayIcon(QSystemTrayIcon):
     digraphs_practice_requested = Signal()  # Emitted when digraph practice is requested
     words_practice_requested = Signal()  # Emitted when word practice is requested
     clipboard_practice_requested = Signal()  # Emitted when clipboard practice is requested
+    sync_requested = Signal()  # Emitted when database sync is requested
     dismiss_notification_requested = Signal()  # Emitted to dismiss current notification
 
     def __init__(
@@ -119,6 +120,10 @@ class TrayIcon(QSystemTrayIcon):
         settings_action.triggered.connect(self.show_settings_dialog)
         menu.addAction(settings_action)
 
+        sync_action = QAction("🔄 Sync Database", self)
+        sync_action.triggered.connect(self.sync_database)
+        menu.addAction(sync_action)
+
         about_action = QAction("ℹ️ About", self)
         about_action.triggered.connect(self.show_about_dialog)
         menu.addAction(about_action)
@@ -208,6 +213,10 @@ class TrayIcon(QSystemTrayIcon):
     def show_about_dialog(self) -> None:
         """Show about dialog."""
         self.about_requested.emit()
+
+    def sync_database(self) -> None:
+        """Request database sync."""
+        self.sync_requested.emit()
 
     def show_notification(
         self, title: str, message: str, message_type: str = "info", timeout_ms: int = 3000

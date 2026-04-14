@@ -903,20 +903,16 @@ class SettingsDialog(QDialog):
         user_group.setLayout(user_layout)
         layout.addWidget(user_group)
 
-        # Manual Sync Group
-        manual_sync_group = QGroupBox("Sync")
-        manual_sync_layout = QVBoxLayout()
-
-        self.upload_history_btn = QPushButton("Sync Now")
-        self.upload_history_btn.clicked.connect(self.upload_history_to_database)
-        manual_sync_layout.addWidget(self.upload_history_btn)
+        # Sync Status Group (read-only)
+        sync_status_group = QGroupBox("Sync Status")
+        sync_status_layout = QVBoxLayout()
 
         self.last_sync_label = QLabel("Never synced")
         self.last_sync_label.setStyleSheet("color: #666; font-style: italic;")
-        manual_sync_layout.addWidget(self.last_sync_label)
+        sync_status_layout.addWidget(self.last_sync_label)
 
-        manual_sync_group.setLayout(manual_sync_layout)
-        layout.addWidget(manual_sync_group)
+        sync_status_group.setLayout(sync_status_layout)
+        layout.addWidget(sync_status_group)
 
         # Auto-sync settings
         auto_sync_group = QGroupBox("Auto-sync")
@@ -1135,7 +1131,6 @@ class SettingsDialog(QDialog):
             self.username_edit,
             self.export_key_btn,
             self.import_key_btn,
-            self.upload_history_btn,
         ]
 
         for widget in user_sync_widgets:

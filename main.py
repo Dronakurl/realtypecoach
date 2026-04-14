@@ -428,6 +428,7 @@ class Application(QObject):
         self.tray_icon.digraphs_practice_requested.connect(self.practice_digraphs_from_tray)
         self.tray_icon.words_practice_requested.connect(self.practice_words_from_tray)
         self.tray_icon.clipboard_practice_requested.connect(self.practice_clipboard_from_tray)
+        self.tray_icon.sync_requested.connect(self.sync_database_from_tray)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
 
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
@@ -2075,6 +2076,78 @@ class Application(QObject):
                 )
 
         self._executor.submit(practice_with_clipboard)
+
+    def sync_database_from_tray(self) -> None:
+        """Sync database from tray icon menu."""
+        # Check if sync is configured and enabled
+        postgres_sync_enabled = self.config.get_bool("postgres_sync_enabled", False)
+        postgres_host = self.config.get("postgres_host", "").strip()
+        postgres_user = self.config.get("postgres_user", "").strip()
+
+        if not postgres_sync_enabled:
+            self.tray_icon.show_notification(
+                "Sync Not Enabled",
+                "Please enable PostgreSQL sync in settings first",
+                "warning",
+                5000,
+            )
+            return
+
+        if not all([postgres_host, postgres_user]):
+            self.tray_icon.show_notification(
+                "Sync Not Configured",
+                "Please configure PostgreSQL connection in settings first",
+                "warning",
+                5000,
+            )
+            return
+
+        # Show sync started notification
+        self.tray_icon.show_notification(
+            "Database Sync",
+            "Sync started...",
+            "info",
+            3000,
+        )
+
+        def sync_in_background():
+            """Run sync in background thread."""
+            try:
+                result = self.sync_handler.sync_now()
+
+                if result["success"]:
+                    total_records = result["pushed"] + result["pulled"]
+                    self.tray_icon.show_notification(
+                        "Sync Complete",
+                        f"Synced {total_records} records (Pushed: {result['pushed']}, Pulled: {result['pulled']})",
+                        "info",
+                        5000,
+                    )
+                    log.info(
+                        f"Sync completed: {result['pushed']} pushed, {result['pulled']} pulled, "
+                        f"{result['merged']} merged in {result['duration_ms'] / 1000:.2f}s"
+                    )
+                else:
+                    error_msg = result.get("error", "Unknown error")
+                    self.tray_icon.show_notification(
+                        "Sync Failed",
+                        f"Sync failed: {error_msg}",
+                        "error",
+                        8000,
+                    )
+                    log.error(f"Sync failed: {error_msg}")
+
+            except Exception as e:
+                self.tray_icon.show_notification(
+                    "Sync Failed",
+                    f"Error during sync: {str(e)}",
+                    "error",
+                    8000,
+                )
+                log.error(f"Error during sync: {e}")
+
+        # Run sync in background to avoid blocking UI
+        self._executor.submit(sync_in_background)
 
     def process_event_queue(self) -> None:
         """Process events from queue."""
