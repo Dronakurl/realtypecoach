@@ -51,6 +51,7 @@ class StatsPanel(QWidget):
         self._typing_time_data_loaded = False
         self._histogram_data_loaded = False
         self._digraph_data_loaded = False
+        self._ollama_availability_callback = None
         self._trend_data_callback = None
         self._typing_time_data_callback = None
         self._histogram_data_callback = None
@@ -1374,6 +1375,10 @@ class StatsPanel(QWidget):
         self._histogram_data_callback = callback
         self.burst_histogram.set_data_callback(callback, load_immediately=False)
 
+    def set_ollama_availability_callback(self, callback) -> None:
+        """Set callback for refreshing Ollama availability on demand."""
+        self._ollama_availability_callback = callback
+
     def update_histogram_graph(self, data: list[tuple[float, int]]) -> None:
         """Update histogram graph with new data.
 
@@ -1398,6 +1403,10 @@ class StatsPanel(QWidget):
         Args:
             index: New tab index
         """
+        # Tab 2 is Words (index 2)
+        if index == 2 and self._ollama_availability_callback is not None:
+            self._ollama_availability_callback()
+
         # Tab 3 is Digraphs (index 3)
         if index == 3 and not self._digraph_data_loaded:
             self._digraph_data_loaded = True
@@ -1836,6 +1845,8 @@ class StatsPanel(QWidget):
         """Override to emit visibility signal when shown."""
         super().showEvent(event)
         self.visibility_changed.emit(True)
+        if self.tab_widget.currentIndex() == 2 and self._ollama_availability_callback is not None:
+            self._ollama_availability_callback()
 
     def hideEvent(self, event) -> None:
         """Override to emit visibility signal when hidden."""

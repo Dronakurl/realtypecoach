@@ -22,6 +22,7 @@ class TrayIcon(QSystemTrayIcon):
     clipboard_practice_requested = Signal()  # Emitted when clipboard practice is requested
     sync_requested = Signal()  # Emitted when database sync is requested
     dismiss_notification_requested = Signal()  # Emitted to dismiss current notification
+    menu_opened = Signal()  # Emitted before the tray context menu is shown
 
     def __init__(
         self,
@@ -48,6 +49,10 @@ class TrayIcon(QSystemTrayIcon):
         self.monitoring_active = True
         self.ollama_available = False
         self.dictionary_count = 0
+        self._menu = None
+        self._monkeytype_icon = QIcon(
+            str(Path(__file__).parent.parent / "icons" / "monkeytype.png")
+        )
 
         self.setIcon(QIcon(str(icon_path)))
         self.setToolTip("RealTypeCoach - Monitoring Active")
@@ -58,63 +63,63 @@ class TrayIcon(QSystemTrayIcon):
         self.create_menu()
 
     def set_ollama_available(self, available: bool) -> None:
-        """Update Ollama availability and rebuild menu.
+        """Update Ollama availability without rebuilding the tray menu.
 
         Args:
             available: True if Ollama is available
         """
+        if self.ollama_available == available:
+            return
         self.ollama_available = available
-        self.create_menu()
+        self._update_ollama_action_visibility()
 
     def set_dictionary_count(self, count: int) -> None:
-        """Update dictionary count and rebuild menu.
+        """Update dictionary count without rebuilding the tray menu.
 
         Args:
             count: Number of available dictionaries
         """
+        if self.dictionary_count == count:
+            return
         self.dictionary_count = count
-        self.create_menu()
+        self._update_dictionary_warning_visibility()
 
     def create_menu(self) -> None:
         """Create context menu."""
-        menu = QMenu()
+        if self._menu is not None:
+            self._update_ollama_action_visibility()
+            return
 
-        # Show dictionary warning if no dictionaries available
-        if self.dictionary_count == 0:
-            warning_action = QAction("⚠️ No Dictionaries Found", self)
-            warning_action.setEnabled(False)
-            menu.addAction(warning_action)
+        menu = QMenu()
+        menu.aboutToShow.connect(self.menu_opened.emit)
+
+        self.dictionary_warning_action = QAction("⚠️ No Dictionaries Found", self)
+        self.dictionary_warning_action.setEnabled(False)
+        menu.addAction(self.dictionary_warning_action)
 
         show_stats_action = QAction("📊 Show Statistics", self)
         show_stats_action.triggered.connect(self.show_stats)
         menu.addAction(show_stats_action)
 
-        # Always show Practice Digraphs
-        monkeytype_icon_path = str(Path(__file__).parent.parent / "icons" / "monkeytype.png")
         practice_digraphs_action = QAction("🐵 Practice Digraphs", self)
-        practice_digraphs_action.setIcon(QIcon(monkeytype_icon_path))
+        practice_digraphs_action.setIcon(self._monkeytype_icon)
         practice_digraphs_action.triggered.connect(self.practice_digraphs)
         menu.addAction(practice_digraphs_action)
 
-        # Always show Practice Words
         practice_words_action = QAction("🐵 Practice Words", self)
-        practice_words_action.setIcon(QIcon(monkeytype_icon_path))
+        practice_words_action.setIcon(self._monkeytype_icon)
         practice_words_action.triggered.connect(self.practice_words)
         menu.addAction(practice_words_action)
 
-        # Practice with Clipboard
         practice_clipboard_action = QAction("📋 Practice Clipboard", self)
-        practice_clipboard_action.setIcon(QIcon(monkeytype_icon_path))
+        practice_clipboard_action.setIcon(self._monkeytype_icon)
         practice_clipboard_action.triggered.connect(self.practice_clipboard)
         menu.addAction(practice_clipboard_action)
 
-        # Only show AI Practice when Ollama is available
-        if self.ollama_available:
-            monkeytype_icon_path = str(Path(__file__).parent.parent / "icons" / "monkeytype.png")
-            practice_ai_action = QAction("✨ AI Practice", self)
-            practice_ai_action.setIcon(QIcon(monkeytype_icon_path))
-            practice_ai_action.triggered.connect(self.practice_ai)
-            menu.addAction(practice_ai_action)
+        self.practice_ai_action = QAction("✨ AI Practice", self)
+        self.practice_ai_action.setIcon(self._monkeytype_icon)
+        self.practice_ai_action.triggered.connect(self.practice_ai)
+        menu.addAction(self.practice_ai_action)
 
         settings_action = QAction("⚙️ Settings", self)
         settings_action.triggered.connect(self.show_settings_dialog)
@@ -140,7 +145,20 @@ class TrayIcon(QSystemTrayIcon):
         quit_action.triggered.connect(self._quit_app)
         menu.addAction(quit_action)
 
+        self._menu = menu
         self.setContextMenu(menu)
+        self._update_dictionary_warning_visibility()
+        self._update_ollama_action_visibility()
+
+    def _update_ollama_action_visibility(self) -> None:
+        """Show or hide AI-specific actions based on current availability."""
+        if hasattr(self, "practice_ai_action"):
+            self.practice_ai_action.setVisible(self.ollama_available)
+
+    def _update_dictionary_warning_visibility(self) -> None:
+        """Show the missing-dictionary warning only when no dictionaries are loaded."""
+        if hasattr(self, "dictionary_warning_action"):
+            self.dictionary_warning_action.setVisible(self.dictionary_count == 0)
 
     def show_stats(self) -> None:
         """Show statistics panel."""

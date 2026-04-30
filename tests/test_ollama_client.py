@@ -26,6 +26,33 @@ class TestOllamaClient:
         assert client.port == 8080
 
     @patch("core.ollama_client.ollama.Client")
+    def test_client_created_lazily(self, mock_ollama_client_class):
+        """Test that the Ollama client is only created when first used."""
+        client = OllamaClient()
+
+        mock_ollama_client_class.assert_not_called()
+
+        _ = client.client
+
+        mock_ollama_client_class.assert_called_once_with(host="localhost:11434")
+
+    @patch("core.ollama_client.ollama.Client")
+    def test_close_resets_underlying_client(self, mock_ollama_client_class):
+        """Test that close() releases the underlying HTTP client."""
+        mock_http_client = Mock()
+        mock_client = Mock()
+        mock_client._client = mock_http_client
+        mock_ollama_client_class.return_value = mock_client
+
+        client = OllamaClient()
+        _ = client.client
+
+        client.close()
+
+        mock_http_client.close.assert_called_once()
+        assert client._client is None
+
+    @patch("core.ollama_client.ollama.Client")
     def test_check_server_available_success(self, mock_ollama_client_class):
         """Test successful server availability check."""
         mock_client = Mock()

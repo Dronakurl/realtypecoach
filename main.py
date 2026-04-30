@@ -445,6 +445,7 @@ class Application(QObject):
         self.stats_panel.set_words_by_mode_clipboard_callback(self.fetch_words_by_mode)
         self.stats_panel.set_words_by_mode_practice_callback(self.fetch_word_highlight_list)
         self.stats_panel.set_text_generation_by_mode_callback(self.generate_text_with_ollama)
+        self.stats_panel.set_ollama_availability_callback(self.check_ollama_availability)
         # Digraph controls callbacks
         self.stats_panel.set_digraph_words_clipboard_callback(self.fetch_digraph_words)
         self.stats_panel.set_digraph_practice_callback(self.fetch_digraph_practice)
@@ -500,6 +501,7 @@ class Application(QObject):
             self.tray_icon.set_ollama_available,
             Qt.ConnectionType.QueuedConnection,
         )
+        self.tray_icon.menu_opened.connect(self.refresh_ollama_availability_now)
 
         # Connect stats panel visibility signal to update thread-safe flag
         self.stats_panel.visibility_changed.connect(self._on_stats_panel_visibility_changed)
@@ -1046,7 +1048,7 @@ class Application(QObject):
         self._executor.submit(fetch_in_thread)
 
     def check_ollama_availability(self) -> None:
-        """Check Ollama availability and update UI (called periodically)."""
+        """Check Ollama availability in the background and update UI."""
 
         def check_in_thread():
             available = self.ollama_client.check_server_available()
@@ -1054,6 +1056,12 @@ class Application(QObject):
             self.signal_ollama_available.emit(available)
 
         self._executor.submit(check_in_thread)
+
+    def refresh_ollama_availability_now(self) -> bool:
+        """Check Ollama availability immediately and update UI state."""
+        available = self.ollama_client.check_server_available()
+        self.signal_ollama_available.emit(available)
+        return available
 
     def fetch_words_by_mode(
         self, mode: str, count: int, special_chars: bool = False, numbers: bool = False,
@@ -1304,6 +1312,14 @@ class Application(QObject):
 
         def generate_in_thread():
             try:
+                ollama_available = self.ollama_client.check_server_available()
+                self.signal_ollama_available.emit(ollama_available)
+                if not ollama_available:
+                    self.ollama_client.signal_generation_failed.emit(
+                        "Ollama server is not running."
+                    )
+                    return
+
                 # Get loaded languages to check if German is loaded
                 loaded_languages = self.storage.dictionary.get_loaded_languages()
                 use_german_capitalization = "de" in loaded_languages
@@ -1334,7 +1350,7 @@ class Application(QObject):
 
                 if not words:
                     log.warning("No words available for generation")
-                    self.signal_text_generation_failed.emit(
+                    self.ollama_client.signal_generation_failed.emit(
                         "No typing data available yet. Type more first!"
                     )
                     return
@@ -1370,7 +1386,7 @@ class Application(QObject):
 
             except Exception as e:
                 log.error(f"Error in text generation: {e}")
-                self.signal_text_generation_failed.emit(str(e))
+                self.ollama_client.signal_generation_failed.emit(str(e))
 
         self._executor.submit(generate_in_thread)
 
@@ -1766,17 +1782,6 @@ class Application(QObject):
 
         return result
 
-    def start_ollama_monitoring(self) -> None:
-        """Start periodic Ollama availability checks."""
-        from PySide6.QtCore import QTimer
-
-        self._ollama_check_timer = QTimer()
-        self._ollama_check_timer.timeout.connect(self.check_ollama_availability)
-        self._ollama_check_timer.start(60000)  # Check every 60 seconds
-
-        # Initial check
-        self.check_ollama_availability()
-
     def practice_hardest_words(self) -> None:
         """Practice hardest words with generated text.
 
@@ -1789,6 +1794,16 @@ class Application(QObject):
 
         def generate_and_practice():
             try:
+                ollama_available = self.ollama_client.check_server_available()
+                self.signal_ollama_available.emit(ollama_available)
+                if not ollama_available:
+                    self.tray_icon.show_notification(
+                        "Typing Practice",
+                        "Ollama server is not running.",
+                        "warning",
+                    )
+                    return
+
                 # Always use 50 hardest words for the prompt
                 hardest_word_count = 50
                 # Use configured word count for how much text to generate
@@ -2437,8 +2452,9 @@ class Application(QObject):
         )
 
         # Set Ollama availability and fetch available models
-        dialog.set_ollama_available(self.ollama_client.check_server_available())
-        if self.ollama_client.check_server_available():
+        ollama_available = self.refresh_ollama_availability_now()
+        dialog.set_ollama_available(ollama_available)
+        if ollama_available:
             models = self.ollama_client.list_models()
             dialog._available_models = models
 
@@ -2587,10 +2603,6 @@ class Application(QObject):
             log.info("Starting sync handler...")
             self.sync_handler.start()
 
-        # Start Ollama availability monitoring
-        log.info("Starting Ollama availability monitoring...")
-        self.start_ollama_monitoring()
-
         self.process_queue_timer = QTimer()
         self.process_queue_timer.timeout.connect(self.process_event_queue)
         self.process_queue_timer.start(500)  # Check every 500ms
@@ -2636,6 +2648,9 @@ class Application(QObject):
 
         log.info("Stopping sync handler...")
         self.sync_handler.stop()
+
+        log.info("Closing Ollama client...")
+        self.ollama_client.close()
 
         log.info("Closing storage connection pool...")
         self.storage.close()

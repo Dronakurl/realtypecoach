@@ -31,7 +31,14 @@ class OllamaClient(QObject):
         self.host = host
         self.port = port
         self.model = model  # Store as instance variable
-        self.client = ollama.Client(host=f"{host}:{port}")
+        self._client: ollama.Client | None = None
+
+    @property
+    def client(self) -> ollama.Client:
+        """Get or create the Ollama client lazily."""
+        if self._client is None:
+            self._client = ollama.Client(host=f"{self.host}:{self.port}")
+        return self._client
 
     def check_server_available(self) -> bool:
         """Check if Ollama server is running.
@@ -147,6 +154,20 @@ class OllamaClient(QObject):
         except Exception as e:
             # Method might not exist or stop failed - log but don't crash
             log.debug(f"Could not stop model {model_to_stop}: {e}")
+
+    def close(self) -> None:
+        """Close the underlying Ollama HTTP client if it was created."""
+        if self._client is None:
+            return
+
+        try:
+            http_client = getattr(self._client, "_client", None)
+            if http_client is not None and hasattr(http_client, "close"):
+                http_client.close()
+        except Exception as e:
+            log.debug(f"Could not close Ollama client cleanly: {e}")
+        finally:
+            self._client = None
 
     def generate_text_sync(self, prompt: str, words: list[str]) -> str | None:
         """Generate text using Ollama synchronously.
