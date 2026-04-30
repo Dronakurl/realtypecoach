@@ -26,7 +26,7 @@ class Dictionary:
             storage: Optional Storage instance for hash-based ignored words
         """
         self.words: dict[str, set[str]] = {}  # language_code -> word set
-        self.loaded_paths: dict[str, str] = {}  # language_code -> file path
+        self.loaded_paths: dict[str, list[str]] = {}  # language_code -> loaded file paths
         self._capitalized_words: dict[
             str, dict[str, str]
         ] = {}  # language_code -> lowercase->capitalized mapping
@@ -48,26 +48,6 @@ class Dictionary:
 
         # Resolve which languages to load and get their paths
         resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
-
-        # Allow supplemental dictionaries: detect all available and append other paths for the same language
-        try:
-            from utils.dict_detector import DictionaryDetector
-
-            detected = DictionaryDetector.detect_available()
-            for d in detected:
-                if not d.available:
-                    continue
-                lang = d.language_code
-                path = d.path
-                if lang in resolved_paths:
-                    # Ensure we store a list of paths for each language
-                    if not isinstance(resolved_paths[lang], list):
-                        resolved_paths[lang] = [resolved_paths[lang]]
-                    if path not in resolved_paths[lang]:
-                        resolved_paths[lang].append(path)
-        except Exception:
-            # If detection fails, proceed with what we have
-            pass
 
         # Load dictionaries using resolved paths (support single path or list)
         for lang_code, paths in resolved_paths.items():
@@ -233,7 +213,9 @@ class Dictionary:
 
         return resolved
 
-    def _determine_languages_to_load(self, config: DictionaryConfig) -> tuple[dict[str, str], bool]:
+    def _determine_languages_to_load(
+        self, config: DictionaryConfig
+    ) -> tuple[dict[str, str | list[str]], bool]:
         """Determine which languages to load and whether to use accept_all mode.
 
         Args:
@@ -248,23 +230,23 @@ class Dictionary:
 
         # If specific dictionary paths are provided, use them
         if config.enabled_dictionary_paths:
-            resolved_paths = {}
+            resolved_paths: dict[str, str | list[str]] = {}
             for path in config.enabled_dictionary_paths:
                 # Detect language code from the dictionary file
                 from utils.dict_detector import DictionaryDetector
 
                 dict_info = DictionaryDetector.identify_dictionary(path)
                 if dict_info:
-                    resolved_paths[dict_info.language_code] = path
+                    self._append_resolved_path(resolved_paths, dict_info.language_code, path)
                 else:
                     # Fallback: try to guess from filename
                     from pathlib import Path
 
                     filename = Path(path).name.lower()
                     if "ngerman" in filename or "german" in filename:
-                        resolved_paths["de"] = path
+                        self._append_resolved_path(resolved_paths, "de", path)
                     elif "american" in filename or "english" in filename or "words" in filename:
-                        resolved_paths["en"] = path
+                        self._append_resolved_path(resolved_paths, "en", path)
                     else:
                         log.warning(f"Could not detect language for {path}")
 
@@ -306,6 +288,20 @@ class Dictionary:
         else:
             log.error("No dictionaries available and auto_fallback is disabled")
             return {}, False
+
+    @staticmethod
+    def _append_resolved_path(
+        resolved_paths: dict[str, str | list[str]], language_code: str, path: str
+    ) -> None:
+        """Append a selected dictionary path while preserving multi-select order."""
+        current = resolved_paths.get(language_code)
+        if current is None:
+            resolved_paths[language_code] = path
+        elif isinstance(current, list):
+            if path not in current:
+                current.append(path)
+        elif current != path:
+            resolved_paths[language_code] = [current, path]
 
     def _load_dictionary(self, language_code: str, path: str) -> bool:
         """Load dictionary for a language.
@@ -365,10 +361,10 @@ class Dictionary:
                 existing_amb.update(ambiguous)
                 self._ambiguous_words[language_code] = existing_amb
 
-            # Track loaded paths as a list to support supplemental dictionaries
-            if language_code not in self.loaded_paths or not isinstance(self.loaded_paths[language_code], list):
-                self.loaded_paths[language_code] = []
-            self.loaded_paths[language_code].append(path)
+            # Track loaded paths for diagnostics and explicit multi-dictionary selections
+            self.loaded_paths.setdefault(language_code, [])
+            if path not in self.loaded_paths[language_code]:
+                self.loaded_paths[language_code].append(path)
             log.info(f"Loaded {len(self.words[language_code])} {language_code} words from {path}")
             if ambiguous:
                 log.info(f"Found {len(ambiguous)} words with ambiguous capitalization in {language_code}")
@@ -830,8 +826,12 @@ class Dictionary:
         resolved_paths, self.accept_all_mode = self._determine_languages_to_load(config)
 
         # Load dictionaries using resolved paths
-        for lang_code, path in resolved_paths.items():
-            self._load_dictionary(lang_code, path)
+        for lang_code, paths in resolved_paths.items():
+            if isinstance(paths, list):
+                for path in paths:
+                    self._load_dictionary(lang_code, path)
+            else:
+                self._load_dictionary(lang_code, paths)
 
         # Log final state
         if self.accept_all_mode:

@@ -98,3 +98,64 @@ class TestDictionaryWithFallback:
         for lang in loaded:
             assert isinstance(lang, str)
             assert len(lang) == 2  # Language codes are 2 chars
+
+    def test_explicit_dictionary_selection_does_not_load_supplemental_variants(
+        self, tmp_path, monkeypatch
+    ):
+        """Should only load explicitly selected dictionaries."""
+        from core.dictionary import Dictionary
+
+        selected = tmp_path / "american-english"
+        selected.write_text("hello\ncolor\ncenter\n", encoding="utf-8")
+        unselected = tmp_path / "british-english"
+        unselected.write_text("hello\ncolour\ncentre\n", encoding="utf-8")
+
+        monkeypatch.setattr(
+            DictionaryDetector,
+            "detect_available",
+            lambda: [
+                DictionaryInfo(
+                    path=str(selected),
+                    language_code="en",
+                    language_name="English",
+                    variant="American",
+                    available=True,
+                    word_count=3,
+                ),
+                DictionaryInfo(
+                    path=str(unselected),
+                    language_code="en",
+                    language_name="English",
+                    variant="British",
+                    available=True,
+                    word_count=3,
+                ),
+            ],
+        )
+
+        config = DictionaryConfig(enabled_dictionary_paths=[str(selected)])
+        dict_obj = Dictionary(config)
+
+        assert dict_obj.is_valid_word("color", "en")
+        assert not dict_obj.is_valid_word("colour", "en")
+        assert dict_obj.loaded_paths == {"en": [str(selected)]}
+
+    def test_explicit_dictionary_selection_preserves_multiple_variants_per_language(
+        self, tmp_path
+    ):
+        """Should keep multiple selected dictionaries for the same language."""
+        from core.dictionary import Dictionary
+
+        american = tmp_path / "american-english"
+        american.write_text("color\ncenter\n", encoding="utf-8")
+        british = tmp_path / "british-english"
+        british.write_text("colour\ncentre\n", encoding="utf-8")
+
+        config = DictionaryConfig(
+            enabled_dictionary_paths=[str(american), str(british)]
+        )
+        dict_obj = Dictionary(config)
+
+        assert dict_obj.is_valid_word("color", "en")
+        assert dict_obj.is_valid_word("colour", "en")
+        assert dict_obj.loaded_paths == {"en": [str(american), str(british)]}
