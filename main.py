@@ -57,7 +57,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("realtypecoach")
 
-import pyqtgraph as pg  # noqa: E402
 from PySide6.QtCore import QObject, QTimer, Signal  # noqa: E402
 from PySide6.QtGui import QFont, QIcon, QPainter, QPalette  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
@@ -76,9 +75,6 @@ from core.notification_handler import NotificationHandler  # noqa: E402
 from core.ollama_client import OllamaClient  # noqa: E402
 from core.storage import Storage  # noqa: E402
 from core.sync_handler import SyncHandler  # noqa: E402
-from ui.about_dialog import AboutDialog  # noqa: E402
-from ui.settings_dialog import SettingsDialog  # noqa: E402
-from ui.stats_panel import StatsPanel  # noqa: E402
 from ui.tray_icon import TrayIcon  # noqa: E402
 from utils.config import Config  # noqa: E402
 from utils.crypto import CryptoManager  # noqa: E402
@@ -130,6 +126,7 @@ class Application(QObject):
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="data_fetcher")
         # Thread-safe flag for stats panel visibility (avoid calling Qt methods from background threads)
         self._stats_panel_visible: bool = False
+        self._stats_panel_configured: bool = False
         # Cached keyboard layout to avoid database access on every key event
         self._cached_keyboard_layout: str = "auto"
 
@@ -311,7 +308,8 @@ class Application(QObject):
             interval_sec=auto_sync_interval,
         )
 
-        self.stats_panel = StatsPanel(icon_path=str(self.icon_path), config=self.config)
+        self._accept_all_mode = accept_all_mode
+        self.stats_panel = None
 
         # Store clipboard reference for tray menu access
         from PySide6.QtWidgets import QApplication
@@ -320,8 +318,6 @@ class Application(QObject):
 
         # Hide digraph practice controls if no dictionaries are configured
         # (in accept_all_mode, there's no word list to search for matching digraphs)
-        self.stats_panel.set_digraph_controls_enabled(not accept_all_mode)
-
         # Initialize Ollama client with model from config
         model = self.config.get("llm_model", "gemma2:2b")
         self.ollama_client = OllamaClient(model=model)
@@ -343,6 +339,76 @@ class Application(QObject):
         """Connect all signals."""
         # Use Qt.QueuedConnection to ensure signals cross thread boundaries properly
         from PySide6.QtCore import Qt
+
+        self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
+        self.notification_handler.signal_exceptional_burst.connect(
+            self.show_exceptional_notification
+        )
+        self.notification_handler.signal_worst_letter_changed.connect(
+            self.show_worst_letter_notification
+        )
+        self.notification_handler.signal_unrealistic_burst.connect(
+            self.show_unrealistic_speed_notification
+        )
+        self.tray_icon.settings_changed.connect(self.apply_settings)
+        self.tray_icon.settings_requested.connect(self.show_settings_dialog)
+        self.tray_icon.stats_requested.connect(self.show_stats_panel)
+        self.tray_icon.about_requested.connect(self.show_about_dialog)
+        self.tray_icon.practice_requested.connect(self.practice_hardest_words)
+        self.tray_icon.digraphs_practice_requested.connect(self.practice_digraphs_from_tray)
+        self.tray_icon.words_practice_requested.connect(self.practice_words_from_tray)
+        self.tray_icon.clipboard_practice_requested.connect(self.practice_clipboard_from_tray)
+        self.tray_icon.sync_requested.connect(self.sync_database_from_tray)
+        self.signal_ollama_available.connect(
+            self.tray_icon.set_ollama_available,
+            Qt.ConnectionType.QueuedConnection,
+        )
+        self.tray_icon.menu_opened.connect(self.refresh_ollama_availability_now)
+
+        # Connect sync handler signals
+        self.sync_handler.signal_sync_failed.connect(self._on_sync_failed)
+
+    def _configure_pyqtgraph(self) -> None:
+        """Apply pyqtgraph theme settings only when graph widgets are needed."""
+        if self._stats_panel_configured:
+            return
+
+        import pyqtgraph as pg
+
+        app = QApplication.instance()
+        if app is None:
+            return
+
+        palette = app.palette()
+        bg_color = palette.color(QPalette.ColorRole.Window)
+        fg_color = palette.color(QPalette.ColorRole.WindowText)
+        pg.setConfigOption("background", bg_color)
+        pg.setConfigOption("foreground", fg_color)
+        pg.setConfigOptions(antialias=True)
+        self._stats_panel_configured = True
+
+    def _ensure_stats_panel(self):
+        """Create the statistics panel lazily on first use."""
+        if self.stats_panel is not None:
+            return self.stats_panel
+
+        self._configure_pyqtgraph()
+
+        from ui.stats_panel import StatsPanel
+
+        self.stats_panel = StatsPanel(icon_path=str(self.icon_path), config=self.config)
+        self.stats_panel.set_digraph_controls_enabled(not self._accept_all_mode)
+        self.tray_icon.set_stats_panel(self.stats_panel)
+        self._connect_stats_panel_signals()
+        self.stats_panel.set_ollama_available(self.tray_icon.ollama_available)
+        return self.stats_panel
+
+    def _connect_stats_panel_signals(self) -> None:
+        """Connect stats panel signals after lazy construction."""
+        from PySide6.QtCore import Qt
+
+        if self.stats_panel is None:
+            return
 
         self.signal_update_stats.connect(
             self.stats_panel.update_wpm,
@@ -404,33 +470,12 @@ class Application(QObject):
             self.stats_panel.update_digraph_stats,
             Qt.ConnectionType.QueuedConnection,
         )
-
-        self.notification_handler.signal_daily_summary.connect(self.show_daily_notification)
-        self.notification_handler.signal_exceptional_burst.connect(
-            self.show_exceptional_notification
-        )
-        self.notification_handler.signal_worst_letter_changed.connect(
-            self.show_worst_letter_notification
-        )
-        self.notification_handler.signal_unrealistic_burst.connect(
-            self.show_unrealistic_speed_notification
-        )
         self.signal_update_worst_letter.connect(
             self.stats_panel.update_worst_letter,
             Qt.ConnectionType.QueuedConnection,
         )
 
-        self.tray_icon.settings_changed.connect(self.apply_settings)
-        self.tray_icon.settings_requested.connect(self.show_settings_dialog)
-        self.tray_icon.stats_requested.connect(self.update_statistics)
-        self.tray_icon.about_requested.connect(self.show_about_dialog)
-        self.tray_icon.practice_requested.connect(self.practice_hardest_words)
-        self.tray_icon.digraphs_practice_requested.connect(self.practice_digraphs_from_tray)
-        self.tray_icon.words_practice_requested.connect(self.practice_words_from_tray)
-        self.tray_icon.clipboard_practice_requested.connect(self.practice_clipboard_from_tray)
-        self.tray_icon.sync_requested.connect(self.sync_database_from_tray)
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
-
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
         self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
         self.stats_panel.set_histogram_data_callback(self.provide_histogram_data)
@@ -441,12 +486,10 @@ class Application(QObject):
         self.stats_panel.set_mixed_words_clipboard_callback(self.fetch_mixed_words_for_clipboard)
         self.stats_panel.set_digraph_data_callback(self.provide_digraph_data)
         self.stats_panel.set_word_data_callback(self.provide_word_data)
-        # Unified controls callbacks
         self.stats_panel.set_words_by_mode_clipboard_callback(self.fetch_words_by_mode)
         self.stats_panel.set_words_by_mode_practice_callback(self.fetch_word_highlight_list)
         self.stats_panel.set_text_generation_by_mode_callback(self.generate_text_with_ollama)
         self.stats_panel.set_ollama_availability_callback(self.check_ollama_availability)
-        # Digraph controls callbacks
         self.stats_panel.set_digraph_words_clipboard_callback(self.fetch_digraph_words)
         self.stats_panel.set_digraph_practice_callback(self.fetch_digraph_practice)
 
@@ -454,60 +497,47 @@ class Application(QObject):
             self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
-
         self.signal_clipboard_fastest_words_ready.connect(
             self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
-
         self.signal_clipboard_mixed_words_ready.connect(
             self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
-
-        # Connect digraph signals
         self.signal_digraph_words_ready.connect(
             self.stats_panel.copy_words_to_clipboard,
             Qt.ConnectionType.QueuedConnection,
         )
-
         self.signal_digraph_practice_ready.connect(
             self.stats_panel.launch_practice_with_digraph_highlighting,
             Qt.ConnectionType.QueuedConnection,
         )
-
-        # Connect practice with highlighting signal
         self.signal_practice_with_highlighting.connect(
             self.stats_panel.launch_practice_with_highlighting,
             Qt.ConnectionType.QueuedConnection,
         )
-
-        # Connect Ollama text generation signals
         self.ollama_client.signal_generation_complete.connect(
             self.stats_panel.on_text_generated,
             Qt.ConnectionType.QueuedConnection,
         )
-
         self.ollama_client.signal_generation_failed.connect(
             self.stats_panel.on_text_generation_failed,
             Qt.ConnectionType.QueuedConnection,
         )
-
         self.signal_ollama_available.connect(
             self.stats_panel.set_ollama_available,
             Qt.ConnectionType.QueuedConnection,
         )
-        self.signal_ollama_available.connect(
-            self.tray_icon.set_ollama_available,
-            Qt.ConnectionType.QueuedConnection,
-        )
-        self.tray_icon.menu_opened.connect(self.refresh_ollama_availability_now)
-
-        # Connect stats panel visibility signal to update thread-safe flag
         self.stats_panel.visibility_changed.connect(self._on_stats_panel_visibility_changed)
 
-        # Connect sync handler signals
-        self.sync_handler.signal_sync_failed.connect(self._on_sync_failed)
+    def show_stats_panel(self) -> None:
+        """Create and show the statistics panel on demand."""
+        stats_panel = self._ensure_stats_panel()
+        self.update_statistics()
+        stats_panel.show()
+        stats_panel.raise_()
+        stats_panel.activateWindow()
 
     def get_current_layout(self) -> str:
         """Get current keyboard layout.
@@ -2404,6 +2434,8 @@ class Application(QObject):
 
     def show_settings_dialog(self) -> None:
         """Show settings dialog."""
+        from ui.settings_dialog import SettingsDialog
+
         enabled_dicts_value = self.config.get("enabled_dictionaries", "")
         log.info(
             f"show_settings_dialog: loaded enabled_dictionaries from config: {enabled_dicts_value!r}"
@@ -2557,6 +2589,8 @@ class Application(QObject):
 
     def show_about_dialog(self) -> None:
         """Show about dialog."""
+        from ui.about_dialog import AboutDialog
+
         dialog = AboutDialog()
         dialog.exec()
 
@@ -2712,14 +2746,6 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("RealTypeCoach")
     app.setApplicationDisplayName("RealTypeCoach")
-
-    # Configure PyQtGraph to use Qt theme colors
-    palette = app.palette()
-    bg_color = palette.color(QPalette.ColorRole.Window)
-    fg_color = palette.color(QPalette.ColorRole.WindowText)
-    pg.setConfigOption("background", bg_color)
-    pg.setConfigOption("foreground", fg_color)
-    pg.setConfigOptions(antialias=True)
 
     # Set default font to avoid malformed KDE font descriptions
     font = QFont()

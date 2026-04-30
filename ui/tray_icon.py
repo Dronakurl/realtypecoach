@@ -1,12 +1,14 @@
 """System tray icon for RealTypeCoach."""
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Q_ARG, QMetaObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from ui.stats_panel import StatsPanel
+if TYPE_CHECKING:
+    from ui.stats_panel import StatsPanel
 
 
 class TrayIcon(QSystemTrayIcon):
@@ -26,7 +28,7 @@ class TrayIcon(QSystemTrayIcon):
 
     def __init__(
         self,
-        stats_panel: StatsPanel,
+        stats_panel: "StatsPanel | None",
         icon_path: Path,
         icon_paused_path: Path,
         icon_stopping_path: Path,
@@ -162,10 +164,11 @@ class TrayIcon(QSystemTrayIcon):
 
     def show_stats(self) -> None:
         """Show statistics panel."""
-        self.stats_requested.emit()  # Request fresh statistics
-        self.stats_panel.show()
-        self.stats_panel.raise_()
-        self.stats_panel.activateWindow()
+        self.stats_requested.emit()
+
+    def set_stats_panel(self, stats_panel: "StatsPanel") -> None:
+        """Attach the lazily created statistics panel."""
+        self.stats_panel = stats_panel
 
     def practice_digraphs(self) -> None:
         """Practice digraphs with settings from statistics panel."""

@@ -21,9 +21,10 @@ def app():
     return instance
 
 
-def create_tray_icon() -> TrayIcon:
+def create_tray_icon(stats_panel=None) -> TrayIcon:
     """Create a tray icon with mocked stats panel methods."""
-    stats_panel = Mock()
+    if stats_panel is None:
+        stats_panel = Mock()
     return TrayIcon(
         stats_panel=stats_panel,
         icon_path=Path("icons/icon.svg"),
@@ -57,3 +58,13 @@ class TestTrayIcon:
 
         tray_icon.set_ollama_available(False)
         assert not tray_icon.practice_ai_action.isVisible()
+
+    def test_show_stats_emits_request_without_panel(self, app):
+        """Tray stats action should work before the stats panel is created."""
+        tray_icon = create_tray_icon(stats_panel=None)
+        handler = Mock()
+        tray_icon.stats_requested.connect(handler)
+
+        tray_icon.show_stats()
+
+        handler.assert_called_once_with()
