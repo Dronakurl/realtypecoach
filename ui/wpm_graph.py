@@ -7,6 +7,8 @@ from pyqtgraph import GraphicsLayoutWidget
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
+from core.outlier_detection import detect_outlier_indices
+
 
 def calculate_linear_regression_burst(wpm_values: list[float]) -> tuple[float | None, float | None, float | None]:
     """Calculate linear regression (y = mx + b) for WPM over burst sequence.
@@ -103,6 +105,7 @@ class WPMTimeSeriesGraph(QWidget):
         self._data_callback: Callable[[int], None] | None = None
         self.plot_item = None
         self.trend_plot_item = None  # Will hold the trend line plot item
+        self.outlier_plot_item = None
         self.current_slope_per_burst: float | None = None  # Store current slope for display
 
         self.init_ui()
@@ -139,6 +142,13 @@ class WPMTimeSeriesGraph(QWidget):
         self.trend_plot_item = self.plot.plot(
             pen=pg.mkPen(color=(255, 140, 0), width=2, style=Qt.PenStyle.DashLine)
         )
+        self.outlier_plot_item = pg.ScatterPlotItem(
+            pen=pg.mkPen(color=(220, 80, 80), width=2),
+            brush=pg.mkBrush(220, 80, 80, 180),
+            symbol="star",
+            size=12,
+        )
+        self.plot.addItem(self.outlier_plot_item)
 
         layout.addWidget(self.plot_widget)
 
@@ -170,6 +180,11 @@ class WPMTimeSeriesGraph(QWidget):
         self.info_label.setStyleSheet("font-size: 11px; color: #888;")
         layout.addWidget(self.info_label)
 
+        self.outlier_label = QLabel("Outliers: none")
+        self.outlier_label.setWordWrap(True)
+        self.outlier_label.setStyleSheet("font-size: 11px; color: #c05a00;")
+        layout.addWidget(self.outlier_label)
+
         self.setLayout(layout)
 
     def on_resolution_changed(self, value: int) -> None:
@@ -196,7 +211,9 @@ class WPMTimeSeriesGraph(QWidget):
         if not smoothed:
             self.plot_item.setData([], [])
             self.trend_plot_item.setData([], [])
+            self.outlier_plot_item.setData([], [])
             self.info_label.setText("Showing: No data")
+            self.outlier_label.setText("Outliers: none")
             self.current_slope_per_burst = None
             return
 
@@ -231,6 +248,7 @@ class WPMTimeSeriesGraph(QWidget):
 
         # Update plot data
         self.plot_item.setData(x_positions, smoothed)
+        self._update_outlier_markers()
 
         # Auto-scale y-axis for current smoothing level
         self.plot.setYRange(y_range[0], y_range[1], padding=0)
@@ -240,6 +258,33 @@ class WPMTimeSeriesGraph(QWidget):
         if self.current_slope_per_burst is not None:
             trend_info = f" • Trend: {self.current_slope_per_burst:+.3f} WPM/burst"
         self.info_label.setText(f"Showing: {len(smoothed)} data points{trend_info}")
+
+    def _update_outlier_markers(self) -> None:
+        """Highlight outlier bursts and summarize them for the user."""
+        high_indices, low_indices, _ = detect_outlier_indices(self.raw_wpm)
+        all_outliers = sorted(high_indices + low_indices)
+
+        if not all_outliers:
+            self.outlier_plot_item.setData([], [])
+            self.outlier_label.setText("Outliers: none")
+            return
+
+        x_positions = [index + 1 for index in all_outliers]
+        y_values = [self.raw_wpm[index] for index in all_outliers]
+        self.outlier_plot_item.setData(
+            x_positions,
+            y_values,
+            data=[self._format_outlier_entry(index) for index in all_outliers],
+        )
+
+        preview_entries = [self._format_outlier_entry(index) for index in all_outliers[:6]]
+        more_count = len(all_outliers) - len(preview_entries)
+        suffix = f" (+{more_count} more)" if more_count > 0 else ""
+        self.outlier_label.setText(f"Outliers: {', '.join(preview_entries)}{suffix}")
+
+    def _format_outlier_entry(self, index: int) -> str:
+        """Format one outlier for display."""
+        return f"#{index + 1} ({self.raw_wpm[index]:.1f} WPM)"
 
     def set_data_callback(
         self, callback: Callable[[int], None], load_immediately: bool = False
