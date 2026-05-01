@@ -1468,6 +1468,10 @@ class Storage:
         """
         return self.adapter.get_all_burst_wpms_ordered()
 
+    def get_all_burst_ids_ordered(self) -> list[int]:
+        """Get all burst IDs ordered by time."""
+        return self.adapter.get_all_burst_ids_ordered()
+
     def get_all_bursts_with_timestamps(self) -> list[BurstTimeSeries]:
         """Get all bursts with timestamps ordered by start_time.
 
@@ -1522,6 +1526,10 @@ class Storage:
     def clear_database(self) -> None:
         """Clear all data from database."""
         self.adapter.clear_database()
+
+    def delete_bursts_by_ids(self, burst_ids: list[int]) -> int:
+        """Delete bursts by ID and refresh burst-based summaries."""
+        return self.adapter.delete_bursts_by_ids(burst_ids)
 
     def export_to_csv(self, file_path, start_date: str) -> int:
         """Export data to CSV file.

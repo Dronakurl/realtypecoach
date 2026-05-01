@@ -477,6 +477,7 @@ class Application(QObject):
 
         self.stats_panel.settings_requested.connect(self.show_settings_dialog)
         self.stats_panel.set_trend_data_callback(self.provide_trend_data)
+        self.stats_panel.set_trend_delete_callback(self.delete_outlier_bursts)
         self.stats_panel.set_typing_time_data_callback(self.provide_typing_time_data)
         self.stats_panel.set_histogram_data_callback(self.provide_histogram_data)
         self.stats_panel.set_words_clipboard_callback(self.fetch_words_for_clipboard)
@@ -866,13 +867,62 @@ class Application(QObject):
 
         def fetch_data():
             try:
-                data = self.analyzer.get_wpm_burst_sequence(smoothness=smoothness)
+                raw_wpm, x_positions = self.analyzer.get_wpm_burst_sequence(smoothness=smoothness)
+                burst_ids = self.storage.get_all_burst_ids_ordered()
+                data = (raw_wpm, x_positions, burst_ids)
                 self.signal_update_trend_data.emit(data)
             except Exception as e:
                 log.error(f"Error fetching trend data: {e}")
 
         # Submit to thread pool to limit concurrent background threads
         self._executor.submit(fetch_data)
+
+    def delete_outlier_bursts(self, burst_ids: list[int]) -> None:
+        """Delete detected outlier bursts after explicit user confirmation."""
+        if not burst_ids:
+            return
+
+        selected_burst_ids = sorted(set(burst_ids))
+        if not selected_burst_ids:
+            QMessageBox.information(None, "No Outliers", "No matching outlier bursts were found.")
+            return
+
+        reply = QMessageBox.warning(
+            None,
+            "Delete Outlier Bursts",
+            (
+                f"Delete {len(selected_burst_ids)} detected outlier bursts from burst history?\n\n"
+                "This will refresh burst-based summaries (timeline, burst history, high scores, daily summaries), "
+                "but it will not recalculate per-key, per-word, or digraph aggregates.\n\n"
+                "Choose 'Yes' only when you want to permanently remove these burst outliers."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        deleted_count = self.storage.delete_bursts_by_ids(selected_burst_ids)
+        if deleted_count == 0:
+            QMessageBox.information(None, "No Outliers Deleted", "No burst outliers were deleted.")
+            return
+
+        self.update_statistics()
+        recent_bursts = self.storage.get_recent_bursts(limit=3)
+        self.signal_update_recent_bursts.emit(recent_bursts)
+
+        if self.stats_panel is not None:
+            if self.stats_panel._trend_data_loaded:
+                self.provide_trend_data(self.stats_panel.wpm_graph.current_smoothness)
+            if self.stats_panel._typing_time_data_loaded:
+                self.provide_typing_time_data(self.stats_panel.typing_time_graph.current_granularity.value)
+            if self.stats_panel._histogram_data_loaded:
+                self.provide_histogram_data(self.stats_panel.burst_histogram.bin_count)
+
+        self.tray_icon.show_notification(
+            "Outliers Deleted",
+            f"Deleted {deleted_count} burst outliers from burst history.",
+        )
 
     def provide_typing_time_data(self, granularity: str) -> None:
         """Provide typing time data to stats panel.

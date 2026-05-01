@@ -1307,11 +1307,15 @@ class StatsPanel(QWidget):
         # Don't load immediately - wait for tab to be shown
         self.wpm_graph.set_data_callback(callback, load_immediately=False)
 
-    def update_trend_graph(self, data: tuple[list[float], list[int]]) -> None:
+    def set_trend_delete_callback(self, callback) -> None:
+        """Set callback for deleting detected outlier bursts."""
+        self.wpm_graph.set_delete_outliers_callback(callback)
+
+    def update_trend_graph(self, data: tuple[list[float], list[int], list[int]]) -> None:
         """Update trend graph with new data.
 
         Args:
-            data: Tuple of (raw_wpm_values, x_positions) - backend always returns raw data now
+            data: Tuple of (raw_wpm_values, x_positions, burst_ids)
         """
         self.wpm_graph.update_graph(data)
 

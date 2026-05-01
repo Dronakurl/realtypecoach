@@ -5,7 +5,15 @@ from collections.abc import Callable
 import pyqtgraph as pg
 from pyqtgraph import GraphicsLayoutWidget
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QDoubleSpinBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.outlier_detection import detect_outlier_indices
 
@@ -101,11 +109,14 @@ class WPMTimeSeriesGraph(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.raw_wpm: list[float] = []  # Cache raw WPM data for instant smoothing
+        self.burst_ids: list[int] = []
         self.current_smoothness = 0  # Default to raw data (no smoothing)
         self._data_callback: Callable[[int], None] | None = None
+        self._delete_outliers_callback: Callable[[list[int]], None] | None = None
         self.plot_item = None
         self.trend_plot_item = None  # Will hold the trend line plot item
         self.outlier_plot_item = None
+        self.current_outlier_indices: list[int] = []
         self.current_slope_per_burst: float | None = None  # Store current slope for display
 
         self.init_ui()
@@ -175,6 +186,41 @@ class WPMTimeSeriesGraph(QWidget):
 
         layout.addLayout(slider_control_layout)
 
+        outlier_controls_layout = QHBoxLayout()
+        outlier_controls_layout.addWidget(QLabel("Outlier fence:"))
+        self.outlier_fence_spin = QDoubleSpinBox()
+        self.outlier_fence_spin.setRange(0.5, 5.0)
+        self.outlier_fence_spin.setDecimals(2)
+        self.outlier_fence_spin.setSingleStep(0.25)
+        self.outlier_fence_spin.setValue(1.5)
+        self.outlier_fence_spin.setToolTip(
+            "Higher values mark fewer bursts as outliers. Uses IQR-based fences."
+        )
+        self.outlier_fence_spin.valueChanged.connect(self._on_outlier_settings_changed)
+        outlier_controls_layout.addWidget(self.outlier_fence_spin)
+
+        outlier_controls_layout.addWidget(QLabel("Gap filter:"))
+        self.outlier_gap_spin = QDoubleSpinBox()
+        self.outlier_gap_spin.setRange(0.0, 5.0)
+        self.outlier_gap_spin.setDecimals(2)
+        self.outlier_gap_spin.setSingleStep(0.25)
+        self.outlier_gap_spin.setValue(1.0)
+        self.outlier_gap_spin.setToolTip(
+            "Require extra separation from the main cluster before a burst counts as an outlier."
+        )
+        self.outlier_gap_spin.valueChanged.connect(self._on_outlier_settings_changed)
+        outlier_controls_layout.addWidget(self.outlier_gap_spin)
+
+        self.delete_outliers_button = QPushButton("Delete outliers…")
+        self.delete_outliers_button.setEnabled(False)
+        self.delete_outliers_button.setToolTip(
+            "Delete the currently detected outlier bursts after confirmation."
+        )
+        self.delete_outliers_button.clicked.connect(self._delete_outliers)
+        outlier_controls_layout.addWidget(self.delete_outliers_button)
+        outlier_controls_layout.addStretch()
+        layout.addLayout(outlier_controls_layout)
+
         # Info label
         self.info_label = QLabel("Showing: No data")
         self.info_label.setStyleSheet("font-size: 11px; color: #888;")
@@ -214,6 +260,8 @@ class WPMTimeSeriesGraph(QWidget):
             self.outlier_plot_item.setData([], [])
             self.info_label.setText("Showing: No data")
             self.outlier_label.setText("Outliers: none")
+            self.delete_outliers_button.setEnabled(False)
+            self.current_outlier_indices = []
             self.current_slope_per_burst = None
             return
 
@@ -261,8 +309,14 @@ class WPMTimeSeriesGraph(QWidget):
 
     def _update_outlier_markers(self) -> None:
         """Highlight outlier bursts and summarize them for the user."""
-        high_indices, low_indices, _ = detect_outlier_indices(self.raw_wpm)
+        high_indices, low_indices, _ = detect_outlier_indices(
+            self.raw_wpm,
+            fence_multiplier=self.outlier_fence_spin.value(),
+            gap_multiplier=self.outlier_gap_spin.value(),
+        )
         all_outliers = sorted(high_indices + low_indices)
+        self.current_outlier_indices = all_outliers
+        self.delete_outliers_button.setEnabled(bool(all_outliers))
 
         if not all_outliers:
             self.outlier_plot_item.setData([], [])
@@ -286,6 +340,22 @@ class WPMTimeSeriesGraph(QWidget):
         """Format one outlier for display."""
         return f"#{index + 1} ({self.raw_wpm[index]:.1f} WPM)"
 
+    def _on_outlier_settings_changed(self) -> None:
+        """Recompute outliers immediately when detection settings change."""
+        if self.raw_wpm:
+            self._update_with_cached_data()
+
+    def _delete_outliers(self) -> None:
+        """Request deletion of the currently detected outliers."""
+        if self._delete_outliers_callback is not None and self.current_outlier_indices:
+            outlier_burst_ids = [
+                self.burst_ids[index]
+                for index in self.current_outlier_indices
+                if 0 <= index < len(self.burst_ids)
+            ]
+            if outlier_burst_ids:
+                self._delete_outliers_callback(outlier_burst_ids)
+
     def set_data_callback(
         self, callback: Callable[[int], None], load_immediately: bool = False
     ) -> None:
@@ -300,16 +370,32 @@ class WPMTimeSeriesGraph(QWidget):
         if load_immediately and self._data_callback:
             self._data_callback(self.current_smoothness)
 
-    def update_graph(self, data: tuple[list[float], list[int]]) -> None:
+    def update_graph(self, data: tuple[list[float], list[int], list[int]]) -> None:
         """Update graph with WPM values over burst sequence.
 
         Args:
-            data: Tuple of (raw_wpm_values, x_positions) - backend always returns raw data now
+            data: Tuple of (raw_wpm_values, x_positions, burst_ids)
         """
-        raw_wpm, x_positions = data
+        raw_wpm, _x_positions, burst_ids = data
 
         # Cache raw data for instant smoothing
         self.raw_wpm = raw_wpm[:]
+        self.burst_ids = burst_ids[:]
+
+        if not self.raw_wpm:
+            self.plot_item.setData([], [])
+            self.trend_plot_item.setData([], [])
+            self.outlier_plot_item.setData([], [])
+            self.info_label.setText("Showing: No data")
+            self.outlier_label.setText("Outliers: none")
+            self.delete_outliers_button.setEnabled(False)
+            self.current_outlier_indices = []
+            self.current_slope_per_burst = None
+            return
 
         # Apply current smoothing level and update display
         self._update_with_cached_data()
+
+    def set_delete_outliers_callback(self, callback: Callable[[list[int]], None]) -> None:
+        """Set callback invoked when the user deletes detected outliers."""
+        self._delete_outliers_callback = callback

@@ -2661,6 +2661,13 @@ Create a coherent text that includes as many of these words as possible in their
             cursor.execute("SELECT avg_wpm FROM bursts ORDER BY start_time")
             return [row[0] for row in cursor.fetchall() if row[0] is not None]
 
+    def get_all_burst_ids_ordered(self) -> list[int]:
+        """Get all burst IDs ordered by time."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM bursts ORDER BY start_time")
+            return [row[0] for row in cursor.fetchall()]
+
     def get_all_bursts_with_timestamps(self) -> list[BurstTimeSeries]:
         """Get all bursts with timestamps ordered by start_time."""
         with self.get_connection() as conn:
@@ -2704,6 +2711,118 @@ Create a coherent text that includes as many of these words as possible in their
             conn.execute("DELETE FROM word_statistics")
             conn.execute("DELETE FROM settings WHERE key LIKE 'last_processed_event_id_%'")
             conn.commit()
+
+    def delete_bursts_by_ids(self, burst_ids: list[int]) -> int:
+        """Delete bursts and rebuild burst-based summary tables."""
+        if not burst_ids:
+            return 0
+
+        placeholders = ",".join("?" for _ in burst_ids)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT COUNT(*) FROM bursts WHERE id IN ({placeholders})",
+                burst_ids,
+            )
+            deleted_count = int(cursor.fetchone()[0] or 0)
+            if deleted_count == 0:
+                return 0
+
+            cursor.execute(f"DELETE FROM bursts WHERE id IN ({placeholders})", burst_ids)
+            self._rebuild_daily_summaries_from_bursts(conn)
+            self._rebuild_high_scores_from_bursts(conn)
+            conn.commit()
+
+        self._refresh_all_time_cache()
+        return deleted_count
+
+    def _rebuild_daily_summaries_from_bursts(self, conn: sqlite3.Connection) -> None:
+        """Rebuild daily summaries from the remaining bursts."""
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM daily_summaries")
+        cursor.execute(
+            """
+            SELECT start_time, key_count, duration_ms, avg_wpm
+            FROM bursts
+            ORDER BY start_time
+        """
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            return
+
+        daily: dict[str, dict[str, float | int]] = {}
+        for start_time, key_count, duration_ms, avg_wpm in rows:
+            date_str = datetime.fromtimestamp(start_time / 1000).strftime("%Y-%m-%d")
+            bucket = daily.setdefault(
+                date_str,
+                {
+                    "total_keystrokes": 0,
+                    "total_bursts": 0,
+                    "total_duration_ms": 0,
+                    "weighted_wpm_sum": 0.0,
+                },
+            )
+            bucket["total_keystrokes"] += int(key_count)
+            bucket["total_bursts"] += 1
+            bucket["total_duration_ms"] += int(duration_ms)
+            if avg_wpm is not None:
+                bucket["weighted_wpm_sum"] += float(avg_wpm) * int(duration_ms)
+
+        for date_str, bucket in daily.items():
+            total_duration_ms = int(bucket["total_duration_ms"])
+            avg_wpm = (
+                float(bucket["weighted_wpm_sum"]) / total_duration_ms if total_duration_ms > 0 else 0.0
+            )
+            cursor.execute(
+                """
+                INSERT INTO daily_summaries (
+                    date, total_keystrokes, total_bursts, avg_wpm, total_typing_sec, summary_sent
+                ) VALUES (?, ?, ?, ?, ?, 0)
+            """,
+                (
+                    date_str,
+                    int(bucket["total_keystrokes"]),
+                    int(bucket["total_bursts"]),
+                    avg_wpm,
+                    total_duration_ms // 1000,
+                ),
+            )
+
+    def _rebuild_high_scores_from_bursts(self, conn: sqlite3.Connection) -> None:
+        """Rebuild high score entries from remaining qualifying bursts."""
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM high_scores")
+        cursor.execute(
+            """
+            SELECT start_time, key_count, duration_ms, avg_wpm
+            FROM bursts
+            WHERE qualifies_for_high_score = 1 AND avg_wpm IS NOT NULL
+            ORDER BY start_time
+        """
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            return
+
+        cursor.executemany(
+            """
+            INSERT INTO high_scores (
+                date, fastest_burst_wpm, burst_duration_sec, burst_key_count, timestamp, burst_duration_ms
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            [
+                (
+                    datetime.fromtimestamp(start_time / 1000).strftime("%Y-%m-%d"),
+                    avg_wpm,
+                    duration_ms / 1000.0,
+                    key_count,
+                    start_time,
+                    duration_ms,
+                )
+                for start_time, key_count, duration_ms, avg_wpm in rows
+            ],
+        )
 
     def export_to_csv(self, file_path, start_date: str) -> int:
         """Export data to CSV file."""

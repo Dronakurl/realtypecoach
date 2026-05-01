@@ -534,6 +534,11 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_all_burst_ids_ordered(self) -> list[int]:
+        """Get all burst IDs ordered by time."""
+        pass
+
+    @abstractmethod
     def get_all_bursts_with_timestamps(self) -> list[BurstTimeSeries]:
         """Get all bursts with timestamps ordered by start_time.
 
@@ -568,6 +573,11 @@ class DatabaseAdapter(ABC):
     @abstractmethod
     def clear_database(self) -> None:
         """Clear all data from database."""
+        pass
+
+    @abstractmethod
+    def delete_bursts_by_ids(self, burst_ids: list[int]) -> int:
+        """Delete bursts by ID and refresh burst-based summaries."""
         pass
 
     @abstractmethod
