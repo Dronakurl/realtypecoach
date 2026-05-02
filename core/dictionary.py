@@ -435,6 +435,27 @@ class Dictionary:
 
         return False
 
+    def get_word_languages(self, word: str) -> list[str]:
+        """Get list of language codes that contain this word.
+
+        Args:
+            word: The word to check (case-insensitive)
+
+        Returns:
+            List of language codes where this word exists in the dictionary
+        """
+        if not word or self.accept_all_mode:
+            return []
+
+        word_lower = word.lower()
+        languages = []
+
+        for lang_code, word_set in self.words.items():
+            if word_lower in word_set:
+                languages.append(lang_code)
+
+        return languages
+
     def is_abbreviation_from_dictionary(self, word_lower: str) -> bool:
         """Check if word (lowercase) was originally an abbreviation in the dictionary.
 
@@ -701,6 +722,36 @@ class Dictionary:
         except Exception as e:
             log.debug(f"Error getting Zipf frequency for '{word}': {e}")
             return 0.0
+
+    def get_word_best_zipf_frequency(self, word: str) -> float:
+        """Get the best (highest) Zipf frequency for a word across all languages it exists in.
+
+        This method checks which languages contain the word and returns the highest
+        Zipf frequency from any of those languages. Useful for multi-language setups
+        where a word might exist in multiple dictionaries.
+
+        Args:
+            word: The word to look up (case-insensitive)
+
+        Returns:
+            Highest Zipf frequency (0-8 scale) across all languages containing the word,
+            or 0.0 if word is not in any loaded dictionary
+        """
+        word_lower = word.lower()
+        
+        # Get all languages that contain this word
+        languages = self.get_word_languages(word_lower)
+        
+        if not languages:
+            return 0.0
+        
+        best_freq = 0.0
+        for lang_code in languages:
+            freq = self.get_word_zipf_frequency(word_lower, lang_code)
+            if freq > best_freq:
+                best_freq = freq
+        
+        return best_freq
 
     def iter_top_n_words(
         self,
