@@ -1149,7 +1149,7 @@ class Storage:
     def get_common_words(
         self, zipf_threshold: float, limit: int
     ) -> list[tuple[str, float]]:
-        """Get common words above Zipf threshold.
+        """Get common words above Zipf threshold from all loaded languages.
 
         Args:
             zipf_threshold: Minimum Zipf frequency (1.0-8.0)
@@ -1158,8 +1158,21 @@ class Storage:
         Returns:
             List of (word, zipf_frequency) tuples, sorted by frequency descending
         """
-        primary_lang = self._get_primary_language()
-        return self.dictionary.iter_top_n_words(primary_lang, limit, zipf_threshold)
+        # Get common words from all loaded languages
+        all_common_words = []
+        for lang_code in self.dictionary.get_loaded_languages():
+            common_words = self.dictionary.iter_top_n_words(lang_code, limit, zipf_threshold)
+            all_common_words.extend(common_words)
+        
+        # Sort by frequency descending and deduplicate by word
+        seen_words = set()
+        unique_sorted = []
+        for word, freq in sorted(all_common_words, key=lambda x: -x[1]):
+            if word not in seen_words:
+                seen_words.add(word)
+                unique_sorted.append((word, freq))
+        
+        return unique_sorted[:limit]
 
     def get_slowest_words(
         self, limit: int = 10, layout: str | None = None
@@ -1228,21 +1241,18 @@ class Storage:
         Returns:
             List of WordStatisticsLite sorted by speed (slowest first)
         """
-        # Get primary language for Zipf lookup
-        primary_lang = self._get_primary_language()
-
         # Get large candidate pool
         fetch_limit = max(1000, limit * 10)
         candidates = self.adapter.get_slowest_words(fetch_limit, layout)
 
-        # Filter by Zipf frequency
+        # Filter by Zipf frequency using best frequency across all languages the word exists in
         filtered = []
         for word_stat in candidates:
             # Skip ignored words
             if self.hash_manager and self.is_word_ignored(word_stat.word):
                 continue
-            # Check Zipf frequency
-            zipf = self.dictionary.get_word_zipf_frequency(word_stat.word, primary_lang)
+            # Check Zipf frequency - use best frequency across all languages containing this word
+            zipf = self.dictionary.get_word_best_zipf_frequency(word_stat.word)
             if zipf >= zipf_threshold:
                 filtered.append(word_stat)
             if len(filtered) >= limit:
@@ -1290,21 +1300,18 @@ class Storage:
         Returns:
             List of WordStatisticsLite sorted by speed (fastest first)
         """
-        # Get primary language for Zipf lookup
-        primary_lang = self._get_primary_language()
-
         # Get large candidate pool
         fetch_limit = max(1000, limit * 10)
         candidates = self.adapter.get_fastest_words(fetch_limit, layout)
 
-        # Filter by Zipf frequency
+        # Filter by Zipf frequency using best frequency across all languages the word exists in
         filtered = []
         for word_stat in candidates:
             # Skip ignored words
             if self.hash_manager and self.is_word_ignored(word_stat.word):
                 continue
-            # Check Zipf frequency
-            zipf = self.dictionary.get_word_zipf_frequency(word_stat.word, primary_lang)
+            # Check Zipf frequency - use best frequency across all languages containing this word
+            zipf = self.dictionary.get_word_best_zipf_frequency(word_stat.word)
             if zipf >= zipf_threshold:
                 filtered.append(word_stat)
             if len(filtered) >= limit:
