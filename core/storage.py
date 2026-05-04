@@ -402,6 +402,17 @@ class Storage:
         """
         return self.adapter.get_burst_wpm_histogram(bin_count)
 
+    def get_burst_by_id(self, burst_id: int) -> dict | None:
+        """Get a single burst by ID.
+
+        Args:
+            burst_id: The burst ID to retrieve
+
+        Returns:
+            Dictionary with burst data, or None if not found
+        """
+        return self.adapter.get_burst_by_id(burst_id)
+
     def get_recent_bursts(self, limit: int = 3) -> list[tuple]:
         """Get the most recent bursts.
 
@@ -1537,6 +1548,68 @@ class Storage:
     def delete_bursts_by_ids(self, burst_ids: list[int]) -> int:
         """Delete bursts by ID and refresh burst-based summaries."""
         return self.adapter.delete_bursts_by_ids(burst_ids)
+
+    # ========== Deleted Bursts Tracking ==========
+
+    def mark_burst_as_deleted(self, start_time: int) -> bool:
+        """Mark a burst as deleted to prevent re-download from remote.
+
+        Args:
+            start_time: Burst start timestamp (milliseconds since epoch)
+
+        Returns:
+            True if the burst was marked as deleted, False if it was already marked
+        """
+        return self.adapter.mark_burst_as_deleted(start_time)
+
+    def mark_bursts_as_deleted(self, start_times: list[int]) -> int:
+        """Mark multiple bursts as deleted.
+
+        Args:
+            start_times: List of burst start timestamps to mark as deleted
+
+        Returns:
+            Number of bursts actually marked as deleted (not already marked)
+        """
+        return self.adapter.mark_bursts_as_deleted(start_times)
+
+    def unmark_burst_as_deleted(self, start_time: int) -> bool:
+        """Remove a burst from the deleted list.
+
+        Args:
+            start_time: Burst start timestamp (milliseconds since epoch)
+
+        Returns:
+            True if the burst was unmarked, False if it wasn't marked
+        """
+        return self.adapter.unmark_burst_as_deleted(start_time)
+
+    def is_burst_deleted(self, start_time: int) -> bool:
+        """Check if a burst is marked as deleted.
+
+        Args:
+            start_time: Burst start timestamp (milliseconds since epoch)
+
+        Returns:
+            True if the burst is marked as deleted
+        """
+        return self.adapter.is_burst_deleted(start_time)
+
+    def get_deleted_burst_start_times(self) -> list[int]:
+        """Get all start times of deleted bursts.
+
+        Returns:
+            List of start_time values for all deleted bursts
+        """
+        return self.adapter.get_deleted_burst_start_times()
+
+    def clear_deleted_bursts(self) -> int:
+        """Clear all deleted bursts entries.
+
+        Returns:
+            Number of entries removed
+        """
+        return self.adapter.clear_deleted_bursts()
 
     def export_to_csv(self, file_path, start_date: str) -> int:
         """Export data to CSV file.
