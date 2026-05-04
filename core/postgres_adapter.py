@@ -935,6 +935,31 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 if count > 0
             ]
 
+    def get_burst_by_id(self, burst_id: int) -> dict | None:
+        """Get a single burst by ID."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, start_time, end_time, key_count, backspace_count, net_key_count, "
+                "duration_ms, avg_wpm, qualifies_for_high_score FROM bursts "
+                "WHERE user_id = %s AND id = %s",
+                (self.user_id, burst_id),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "start_time": row[1],
+                    "end_time": row[2],
+                    "key_count": row[3],
+                    "backspace_count": row[4],
+                    "net_key_count": row[5],
+                    "duration_ms": row[6],
+                    "avg_wpm": row[7],
+                    "qualifies_for_high_score": bool(row[8]),
+                }
+            return None
+
     def get_recent_bursts(self, limit: int = 3) -> list[tuple[int, float, int, int, int, int, str]]:
         """Get the most recent bursts."""
         with self.get_connection() as conn:
@@ -2955,12 +2980,28 @@ class PostgreSQLAdapter(DatabaseAdapter):
             if deleted_count == 0:
                 return 0
 
+            # Get start_times of bursts to be deleted for sync tracking
+            cursor.execute(
+                "SELECT start_time FROM bursts WHERE user_id = %s AND id = ANY(%s)",
+                (self.user_id, burst_ids),
+            )
+            start_times = [row[0] for row in cursor.fetchall()]
+
             cursor.execute(
                 "DELETE FROM bursts WHERE user_id = %s AND id = ANY(%s)",
                 (self.user_id, burst_ids),
             )
             self._rebuild_daily_summaries_from_bursts(conn)
             self._rebuild_high_scores_from_bursts(conn)
+
+            # Mark these bursts as deleted to prevent re-download from remote
+            if start_times:
+                cursor.executemany(
+                    "INSERT INTO deleted_bursts (user_id, start_time) VALUES (%s, %s)"
+                    " ON CONFLICT (user_id, start_time) DO NOTHING",
+                    [(self.user_id, st) for st in start_times],
+                )
+
             conn.commit()
 
         self._refresh_all_time_cache()
@@ -3307,3 +3348,131 @@ class PostgreSQLAdapter(DatabaseAdapter):
             if row:
                 return {"id": row[0], "encrypted_data": row[1]}
             return None
+
+    # ========== Deleted Bursts Tracking ==========
+
+    def mark_burst_as_deleted(self, start_time: int) -> bool:
+        """Mark a burst as deleted to prevent re-download from remote.
+
+        Args:
+            start_time: Burst start timestamp (milliseconds since epoch)
+
+        Returns:
+            True if the burst was marked as deleted, False if it was already marked
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM deleted_bursts WHERE user_id = %s AND start_time = %s",
+                (self.user_id, start_time),
+            )
+            if cursor.fetchone()[0] > 0:
+                return False
+
+            cursor.execute(
+                "INSERT INTO deleted_bursts (user_id, start_time) VALUES (%s, %s)",
+                (self.user_id, start_time),
+            )
+            conn.commit()
+            return True
+
+    def mark_bursts_as_deleted(self, start_times: list[int]) -> int:
+        """Mark multiple bursts as deleted.
+
+        Args:
+            start_times: List of burst start timestamps to mark as deleted
+
+        Returns:
+            Number of bursts actually marked as deleted (not already marked)
+        """
+        if not start_times:
+            return 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get already deleted start_times
+            placeholders = ",".join("%s" for _ in start_times)
+            query = f"""
+                SELECT start_time FROM deleted_bursts 
+                WHERE user_id = %s AND start_time IN ({placeholders})
+            """
+            cursor.execute(query, [self.user_id] + start_times)
+            already_deleted = {row[0] for row in cursor.fetchall()}
+
+            # Filter to only new deletions
+            new_deletions = [st for st in start_times if st not in already_deleted]
+
+            if not new_deletions:
+                return 0
+
+            cursor.executemany(
+                "INSERT INTO deleted_bursts (user_id, start_time) VALUES (%s, %s)",
+                [(self.user_id, st) for st in new_deletions],
+            )
+            conn.commit()
+            return len(new_deletions)
+
+    def unmark_burst_as_deleted(self, start_time: int) -> bool:
+        """Remove a burst from the deleted list.
+
+        Args:
+            start_time: Burst start timestamp (milliseconds since epoch)
+
+        Returns:
+            True if the burst was unmarked, False if it wasn't marked
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM deleted_bursts WHERE user_id = %s AND start_time = %s",
+                (self.user_id, start_time),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def is_burst_deleted(self, start_time: int) -> bool:
+        """Check if a burst is marked as deleted.
+
+        Args:
+            start_time: Burst start timestamp (milliseconds since epoch)
+
+        Returns:
+            True if the burst is marked as deleted
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM deleted_bursts WHERE user_id = %s AND start_time = %s",
+                (self.user_id, start_time),
+            )
+            return cursor.fetchone()[0] > 0
+
+    def get_deleted_burst_start_times(self) -> list[int]:
+        """Get all start times of deleted bursts.
+
+        Returns:
+            List of start_time values for all deleted bursts
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT start_time FROM deleted_bursts WHERE user_id = %s ORDER BY start_time",
+                (self.user_id,),
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+    def clear_deleted_bursts(self) -> int:
+        """Clear all deleted bursts entries.
+
+        Returns:
+            Number of entries removed
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM deleted_bursts WHERE user_id = %s",
+                (self.user_id,),
+            )
+            conn.commit()
+            return cursor.rowcount
