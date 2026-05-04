@@ -878,7 +878,11 @@ class Application(QObject):
         self._executor.submit(fetch_data)
 
     def delete_outlier_bursts(self, burst_ids: list[int]) -> None:
-        """Delete detected outlier bursts after explicit user confirmation."""
+        """Delete detected outlier bursts after explicit user confirmation.
+
+        Deleted bursts are permanently removed from the database and marked in the
+        deleted_bursts table to prevent re-download from the remote database during sync.
+        """
         if not burst_ids:
             return
 
@@ -891,10 +895,11 @@ class Application(QObject):
             None,
             "Delete Outlier Bursts",
             (
-                f"Delete {len(selected_burst_ids)} detected outlier bursts from burst history?\n\n"
-                "This will refresh burst-based summaries (timeline, burst history, high scores, daily summaries), "
+                f"Permanently delete {len(selected_burst_ids)} detected outlier bursts from burst history?\n\n"
+                "This will remove them from the database and refresh burst-based summaries "
+                "(timeline, burst history, high scores, daily summaries), "
                 "but it will not recalculate per-key, per-word, or digraph aggregates.\n\n"
-                "Choose 'Yes' only when you want to permanently remove these burst outliers."
+                "These bursts will NOT be re-downloaded from the remote database in future syncs."
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,

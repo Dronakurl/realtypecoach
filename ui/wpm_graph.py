@@ -214,7 +214,8 @@ class WPMTimeSeriesGraph(QWidget):
         self.delete_outliers_button = QPushButton("Delete outliers…")
         self.delete_outliers_button.setEnabled(False)
         self.delete_outliers_button.setToolTip(
-            "Delete the currently detected outlier bursts after confirmation."
+            "Permanently delete the currently detected outlier bursts from the database.\n"
+            "Deleted bursts will NOT be re-downloaded from the remote database in future syncs."
         )
         self.delete_outliers_button.clicked.connect(self._delete_outliers)
         outlier_controls_layout.addWidget(self.delete_outliers_button)
