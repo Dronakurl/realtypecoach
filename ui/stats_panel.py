@@ -538,7 +538,7 @@ class StatsPanel(QWidget):
         self.words_zipf_threshold_combo.addItem("Balanced", 4.0)
         self.words_zipf_threshold_combo.addItem("Wide", 3.5)
         self.words_zipf_threshold_combo.addItem("Very wide", 3.0)
-        self.words_zipf_threshold_combo.addItem("All words", 2.5)
+        self.words_zipf_threshold_combo.addItem("All words", 1.0)
         self.words_zipf_threshold_combo.setCurrentIndex(3)  # Default to Balanced (4.0)
         self.words_zipf_threshold_combo.setMaximumWidth(130)
         self.words_zipf_threshold_combo.setToolTip(
@@ -899,9 +899,7 @@ class StatsPanel(QWidget):
         )
 
         # Connect Words tab filter signals
-        self.words_show_common_only_checkbox.stateChanged.connect(
-            self._on_word_filter_changed
-        )
+        self.words_show_common_only_checkbox.stateChanged.connect(self._on_word_filter_changed)
         self.words_zipf_threshold_combo.currentIndexChanged.connect(
             self._on_word_zipf_threshold_changed
         )
@@ -2179,7 +2177,9 @@ class StatsPanel(QWidget):
             if saved_value == value:
                 log.info(f"Verified: config {key} successfully saved as {saved_value}")
             else:
-                log.warning(f"Verification failed: config {key} saved as {saved_value}, expected {value}")
+                log.warning(
+                    f"Verification failed: config {key} saved as {saved_value}, expected {value}"
+                )
         else:
             log.warning(f"Cannot update config {key}: config not available")
 
