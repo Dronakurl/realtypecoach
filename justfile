@@ -13,7 +13,7 @@ sync-deps:
 # Instance Management
 # Kill running instances
 kill:
-    @pgrep -f "python3.*main.py" | xargs -r kill -15 2>/dev/null || true
+    @pkill -15 -f "/python3.*main\.py" 2>/dev/null || true
 
 # Installation
 # Install the application
