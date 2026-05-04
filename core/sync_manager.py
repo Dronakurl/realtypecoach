@@ -525,6 +525,11 @@ class SyncManager:
 
         try:
             if table == "bursts":
+                # Filter out bursts that are marked as deleted locally
+                if hasattr(self.local, "get_deleted_burst_start_times"):
+                    deleted_start_times = set(self.local.get_deleted_burst_start_times())
+                    records = [r for r in records if r.get("start_time") not in deleted_start_times]
+
                 # Use adapter's batch_insert_bursts method if available
                 if hasattr(self.local, "batch_insert_bursts"):
                     return self.local.batch_insert_bursts(records)
