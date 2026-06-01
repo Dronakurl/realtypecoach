@@ -273,11 +273,16 @@ class Application(QObject):
             active_time_threshold_ms=self.config.get_int("active_time_threshold_ms", 500),
             min_key_count=self.config.get_int("min_burst_key_count", 10),
             min_duration_ms=self.config.get_int("min_burst_duration_ms", 5000),
+            validate_burst_words=self.config.get_bool("validate_burst_words", True),
+            burst_word_validation_threshold=self.config.get_float("burst_word_validation_threshold", 0.5),
+            burst_min_word_length=self.config.get_int("burst_min_word_length", 3),
         )
 
         self.burst_detector = BurstDetector(
             config=burst_config,
             on_burst_complete=self.on_burst_complete,
+            dictionary=self.storage.dictionary,
+            language="en",
         )
 
         self.event_handler = EvdevHandler(
@@ -2274,7 +2279,7 @@ class Application(QObject):
 
                 # Detect if key is backspace
                 is_backspace = key_event.key_name == "BACKSPACE"
-                self.burst_detector.process_key_event(key_event.timestamp_ms, True, is_backspace)
+                self.burst_detector.process_key_event(key_event.timestamp_ms, True, is_backspace, key_event.key_name)
 
                 self.analyzer.process_key_event(
                     key_event.keycode,

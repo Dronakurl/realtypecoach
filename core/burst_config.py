@@ -44,6 +44,22 @@ class BurstDetectorConfig(BaseModel):
         gt=0,
         description="Minimum duration required for burst to be recorded (ms)",
     )
+    # Word validation settings
+    validate_burst_words: bool = Field(
+        default=True,
+        description="Whether to validate that burst contains valid words",
+    )
+    burst_word_validation_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum fraction of valid words for burst to be accepted (0.0-1.0)",
+    )
+    burst_min_word_length: int = Field(
+        default=3,
+        ge=1,
+        description="Minimum word length to count toward validation",
+    )
 
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
