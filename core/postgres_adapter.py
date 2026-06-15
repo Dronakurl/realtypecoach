@@ -3,6 +3,7 @@
 import csv
 import logging
 import os
+import re
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -39,6 +40,51 @@ log = logging.getLogger("realtypecoach.postgres_adapter")
 
 # Legacy user ID for existing data
 LEGACY_USER_ID = "00000000-0000-0000-0000-000000000000"
+
+
+def _standardize_date_format(date_value: str | int | float | None) -> str:
+    """Convert various date formats to standardized ISO 8601 format (YYYY-MM-DD).
+    
+    Args:
+        date_value: Date in various formats (string "YYYY-MM-DD", timestamp ms, etc.)
+        
+    Returns:
+        Standardized date string in "YYYY-MM-DD" format, or "1970-01-01" for invalid values
+    """
+    if date_value is None:
+        return "1970-01-01"
+    
+    # If already in ISO format, return as-is
+    if isinstance(date_value, str) and re.match(r'^\d{4}-\d{2}-\d{2}$', date_value):
+        return date_value
+    
+    # If it's a timestamp (milliseconds), convert to date
+    if isinstance(date_value, (int, float)):
+        try:
+            # Convert from milliseconds to seconds
+            timestamp_sec = date_value / 1000.0
+            date_obj = datetime.fromtimestamp(timestamp_sec)
+            return date_obj.strftime("%Y-%m-%d")
+        except (ValueError, OverflowError):
+            return "1970-01-01"
+    
+    # If it's a string but not in ISO format, try to parse it
+    if isinstance(date_value, str):
+        try:
+            # Try common date formats
+            for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d-%m-%Y"]:
+                try:
+                    date_obj = datetime.strptime(date_value, fmt)
+                    return date_obj.strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+            # If no format matched, return epoch date
+            return "1970-01-01"
+        except Exception:
+            return "1970-01-01"
+    
+    # Fallback
+    return "1970-01-01"
 
 
 class PostgreSQLAdapter(DatabaseAdapter):
@@ -586,6 +632,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if table == "high_scores":
             self._migrate_high_scores_unique_constraint(cursor)
 
+        # Migrate daily_summaries table to add UNIQUE constraint on (user_id, date)
+        if table == "daily_summaries":
+            self._migrate_daily_summaries_unique_constraint(cursor)
+
     def _migrate_table_add_columns(self, cursor, table: str) -> None:
         """Add user_id and encrypted_data columns to existing table.
 
@@ -723,6 +773,57 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """)
 
         log.info("Added UNIQUE constraint on (user_id, timestamp) for high_scores table")
+
+    def _migrate_daily_summaries_unique_constraint(self, cursor) -> None:
+        """Migrate daily_summaries table to add UNIQUE constraint on (user_id, date).
+
+        Args:
+            cursor: Database cursor
+        """
+        # Check if UNIQUE constraint already exists
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_name='daily_summaries'
+                AND constraint_name='daily_summaries_user_id_date_key'
+            )
+        """)
+        has_unique = cursor.fetchone()[0]
+
+        if has_unique:
+            return
+
+        # Check if there are duplicate (user_id, date) combinations
+        cursor.execute("""
+            SELECT user_id, date, COUNT(*) FROM daily_summaries
+            GROUP BY user_id, date HAVING COUNT(*) > 1
+        """)
+        duplicates = cursor.fetchall()
+
+        if duplicates:
+            log.warning(
+                f"Found {len(duplicates)} duplicate (user_id, date) combinations in daily_summaries table. Removing oldest duplicates."
+            )
+            # For each duplicate, keep the one with the highest total_keystrokes (most complete data)
+            for user_id, date, count in duplicates:
+                cursor.execute(
+                    """
+                    DELETE FROM daily_summaries
+                    WHERE user_id = %s AND date = %s AND (user_id, date, total_keystrokes) NOT IN (
+                        SELECT user_id, date, MAX(total_keystrokes) FROM daily_summaries WHERE user_id = %s AND date = %s GROUP BY user_id, date
+                    )
+                """,
+                    (user_id, date, user_id, date),
+                )
+
+        # Add UNIQUE constraint
+        cursor.execute("""
+            ALTER TABLE daily_summaries
+            ADD CONSTRAINT daily_summaries_user_id_date_key
+            UNIQUE (user_id, date)
+        """)
+
+        log.info("Added UNIQUE constraint on (user_id, date) for daily_summaries table")
 
     def _refresh_all_time_cache(self) -> None:
         """Refresh all-time statistics cache from database."""
@@ -2253,10 +2354,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples (excluding id - it's auto-incremented)
             data_tuples = []
             for r in records:
+                # Standardize date format to ISO 8601 (YYYY-MM-DD)
+                date_value = r.get("date")
+                standardized_date = _standardize_date_format(date_value)
+                
                 data_tuples.append(
                     (
                         self.user_id,
-                        r.get("date"),
+                        standardized_date,
                         r.get("fastest_burst_wpm"),
                         r.get("burst_duration_sec"),
                         r.get("burst_key_count"),
@@ -2379,10 +2484,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for r in records:
+                # Standardize date format to ISO 8601 (YYYY-MM-DD)
+                date_value = r.get("date")
+                standardized_date = _standardize_date_format(date_value)
+                
                 data_tuples.append(
                     (
                         self.user_id,
-                        r.get("date"),
+                        standardized_date,
                         r.get("total_keystrokes"),
                         r.get("total_bursts"),
                         r.get("avg_wpm"),
@@ -2655,11 +2764,15 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples for insert
             data_tuples = []
             for i, r in enumerate(records):
+                # Standardize date format to ISO 8601 (YYYY-MM-DD)
+                date_value = r.get("date")
+                standardized_date = _standardize_date_format(date_value)
+                
                 data_tuples.append(
                     (
                         self.user_id,
                         r.get("id"),
-                        r.get("date"),
+                        standardized_date,
                         r.get("fastest_burst_wpm"),
                         r.get("burst_duration_sec"),
                         r.get("burst_key_count"),
@@ -2713,10 +2826,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
             # Prepare data tuples
             data_tuples = []
             for i, r in enumerate(records):
+                # Standardize date format to ISO 8601 (YYYY-MM-DD)
+                date_value = r.get("date")
+                standardized_date = _standardize_date_format(date_value)
+                
                 data_tuples.append(
                     (
                         self.user_id,
-                        r.get("date"),
+                        standardized_date,
                         r.get("total_keystrokes"),
                         r.get("total_bursts"),
                         r.get("avg_wpm"),
@@ -2789,6 +2906,81 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
             conn.commit()
             return len(records)
+
+    def get_all_high_scores(self) -> list[dict]:
+        """Get all high score records."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, date, fastest_burst_wpm, burst_duration_sec, 
+                       burst_key_count, timestamp, burst_duration_ms 
+                FROM high_scores WHERE user_id = %s ORDER BY id
+            """,
+                (self.user_id,),
+            )
+            return [
+                {
+                    "id": row[0],
+                    "date": row[1],
+                    "fastest_burst_wpm": row[2],
+                    "burst_duration_sec": row[3],
+                    "burst_key_count": row[4],
+                    "timestamp": row[5],
+                    "burst_duration_ms": row[6],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def get_all_daily_summaries(self) -> list[dict]:
+        """Get all daily summary records."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT date, total_keystrokes, total_bursts, avg_wpm, 
+                       slowest_keycode, slowest_key_name, total_typing_sec, summary_sent 
+                FROM daily_summaries WHERE user_id = %s ORDER BY date
+            """,
+                (self.user_id,),
+            )
+            return [
+                {
+                    "date": row[0],
+                    "total_keystrokes": row[1],
+                    "total_bursts": row[2],
+                    "avg_wpm": row[3],
+                    "slowest_keycode": row[4],
+                    "slowest_key_name": row[5],
+                    "total_typing_sec": row[6],
+                    "summary_sent": row[7],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def update_high_score_date(self, record_id: int, new_date: str) -> None:
+        """Update the date of a high score record."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE high_scores SET date = %s WHERE user_id = %s AND id = %s
+            """,
+                (new_date, self.user_id, record_id),
+            )
+            conn.commit()
+
+    def update_daily_summary_date(self, old_date: str, new_date: str) -> None:
+        """Update the date of a daily summary record."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE daily_summaries SET date = %s WHERE user_id = %s AND date = %s
+            """,
+                (new_date, self.user_id, old_date),
+            )
+            conn.commit()
 
     def mark_summary_sent(self, date: str) -> None:
         """Mark daily summary as sent."""

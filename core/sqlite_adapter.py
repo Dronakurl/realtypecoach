@@ -2709,6 +2709,75 @@ Create a coherent text that includes as many of these words as possible in their
                 summary_sent=bool(row[6]),
             )
 
+    def get_all_high_scores(self) -> list[dict]:
+        """Get all high score records."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, date, fastest_burst_wpm, burst_duration_sec, 
+                       burst_key_count, timestamp, burst_duration_ms 
+                FROM high_scores ORDER BY id
+            """
+            )
+            return [
+                {
+                    "id": row[0],
+                    "date": row[1],
+                    "fastest_burst_wpm": row[2],
+                    "burst_duration_sec": row[3],
+                    "burst_key_count": row[4],
+                    "timestamp": row[5],
+                    "burst_duration_ms": row[6],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def get_all_daily_summaries(self) -> list[dict]:
+        """Get all daily summary records."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT date, total_keystrokes, total_bursts, avg_wpm, 
+                       slowest_keycode, slowest_key_name, total_typing_sec, summary_sent 
+                FROM daily_summaries ORDER BY date
+            """
+            )
+            return [
+                {
+                    "date": row[0],
+                    "total_keystrokes": row[1],
+                    "total_bursts": row[2],
+                    "avg_wpm": row[3],
+                    "slowest_keycode": row[4],
+                    "slowest_key_name": row[5],
+                    "total_typing_sec": row[6],
+                    "summary_sent": row[7],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def update_high_score_date(self, record_id: int, new_date: str) -> None:
+        """Update the date of a high score record."""
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE high_scores SET date = ? WHERE id = ?
+            """,
+                (new_date, record_id),
+            )
+            conn.commit()
+
+    def update_daily_summary_date(self, old_date: str, new_date: str) -> None:
+        """Update the date of a daily summary record."""
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE daily_summaries SET date = ? WHERE date = ?
+            """,
+                (new_date, old_date),
+            )
+            conn.commit()
+
     def mark_summary_sent(self, date: str) -> None:
         """Mark daily summary as sent."""
         with self.get_connection() as conn:

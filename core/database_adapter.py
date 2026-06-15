@@ -479,6 +479,44 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_all_high_scores(self) -> list[dict]:
+        """Get all high score records.
+
+        Returns:
+            List of high score dictionaries with all fields
+        """
+        pass
+
+    @abstractmethod
+    def get_all_daily_summaries(self) -> list[dict]:
+        """Get all daily summary records.
+
+        Returns:
+            List of daily summary dictionaries with all fields
+        """
+        pass
+
+    @abstractmethod
+    def update_high_score_date(self, record_id: int, new_date: str) -> None:
+        """Update the date of a high score record.
+
+        Args:
+            record_id: High score record ID
+            new_date: New date string (YYYY-MM-DD)
+        """
+        pass
+
+    @abstractmethod
+    def update_daily_summary_date(self, old_date: str, new_date: str) -> None:
+        """Update the date of a daily summary record.
+
+        Args:
+            old_date: Current date string (YYYY-MM-DD)
+            new_date: New date string (YYYY-MM-DD)
+        """
+        pass
+
+    @abstractmethod
     def mark_summary_sent(self, date: str) -> None:
         """Mark daily summary as sent.
 
