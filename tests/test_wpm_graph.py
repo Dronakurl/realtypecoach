@@ -24,7 +24,7 @@ def test_outlier_controls_update_marker_detection(app):
     """Relaxing the fence should suppress previously detected outliers."""
     graph = WPMTimeSeriesGraph()
     graph.update_graph(
-        ([48, 49, 50, 50, 51, 51, 52, 52, 90], list(range(1, 10)), list(range(101, 110)))
+        ([48, 49, 50, 50, 51, 51, 52, 52, 60], list(range(1, 10)), list(range(101, 110)))
     )
 
     assert graph.current_outlier_indices == [8]

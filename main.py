@@ -37,7 +37,9 @@ file_handler = RotatingFileHandler(
     maxBytes=5 * 1024 * 1024,  # 5MB
     backupCount=5,
 )
-file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S")
+file_formatter = logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
+)
 file_handler.setFormatter(file_formatter)
 
 # Configure RichHandler for colorful console output
@@ -108,7 +110,9 @@ class Application(QObject):
     signal_text_generated = Signal(str)  # For Ollama text generation
     signal_text_generation_failed = Signal(str)  # For Ollama errors
     signal_ollama_available = Signal(bool)  # Ollama availability status
-    signal_practice_with_highlighting = Signal(str, dict, bool, bool)  # For practice with word highlighting (text, highlight_words, punctuation, numbers)
+    signal_practice_with_highlighting = Signal(
+        str, dict, bool, bool
+    )  # For practice with word highlighting (text, highlight_words, punctuation, numbers)
     signal_digraph_words_ready = Signal(
         list, list
     )  # For digraph words clipboard copy (words, digraphs)
@@ -274,7 +278,9 @@ class Application(QObject):
             min_key_count=self.config.get_int("min_burst_key_count", 10),
             min_duration_ms=self.config.get_int("min_burst_duration_ms", 5000),
             validate_burst_words=self.config.get_bool("validate_burst_words", True),
-            burst_word_validation_threshold=self.config.get_float("burst_word_validation_threshold", 0.5),
+            burst_word_validation_threshold=self.config.get_float(
+                "burst_word_validation_threshold", 0.5
+            ),
             burst_min_word_length=self.config.get_int("burst_min_word_length", 3),
         )
 
@@ -772,6 +778,7 @@ class Application(QObject):
             # Update tray icon with current dictionary count
             try:
                 from utils.dict_detector import DictionaryDetector
+
                 detected = DictionaryDetector.detect_available()
                 enabled_dicts = new_settings.get("enabled_dictionaries", "")
                 enabled_dict_paths = enabled_dicts.split(",") if enabled_dicts else []
@@ -925,7 +932,9 @@ class Application(QObject):
             if self.stats_panel._trend_data_loaded:
                 self.provide_trend_data(self.stats_panel.wpm_graph.current_smoothness)
             if self.stats_panel._typing_time_data_loaded:
-                self.provide_typing_time_data(self.stats_panel.typing_time_graph.current_granularity.value)
+                self.provide_typing_time_data(
+                    self.stats_panel.typing_time_graph.current_granularity.value
+                )
             if self.stats_panel._histogram_data_loaded:
                 self.provide_histogram_data(self.stats_panel.burst_histogram.bin_count)
 
@@ -1026,7 +1035,9 @@ class Application(QObject):
 
         def fetch_data():
             try:
-                log.info(f"Fetching word data (common_only={common_only}, zipf_threshold={zipf_threshold})")
+                log.info(
+                    f"Fetching word data (common_only={common_only}, zipf_threshold={zipf_threshold})"
+                )
                 if common_only:
                     fastest = self.analyzer.get_fastest_words_common_only(
                         limit=10, layout=self.get_current_layout()
@@ -1154,8 +1165,12 @@ class Application(QObject):
         return available
 
     def fetch_words_by_mode(
-        self, mode: str, count: int, special_chars: bool = False, numbers: bool = False,
-        common_only: bool = False
+        self,
+        mode: str,
+        count: int,
+        special_chars: bool = False,
+        numbers: bool = False,
+        common_only: bool = False,
     ) -> None:
         """Fetch words by mode in background thread and emit signal.
 
@@ -1170,7 +1185,9 @@ class Application(QObject):
         def fetch_in_thread():
             try:
                 # Check if common-only filtering is enabled (either from param or config)
-                use_common_filter = common_only or self.config.get_bool("word_frequency_use_common", False)
+                use_common_filter = common_only or self.config.get_bool(
+                    "word_frequency_use_common", False
+                )
 
                 word_list = []
                 if mode == "hardest":
@@ -1262,7 +1279,9 @@ class Application(QObject):
         def fetch_and_launch():
             try:
                 # Check if common-only filtering is enabled
-                use_common_filter = common_only or self.config.get_bool("word_frequency_use_common", False)
+                use_common_filter = common_only or self.config.get_bool(
+                    "word_frequency_use_common", False
+                )
 
                 # Get loaded languages to check if German is loaded
                 loaded_languages = self.storage.dictionary.get_loaded_languages()
@@ -1326,8 +1345,8 @@ class Application(QObject):
                             )
                         else:
                             words = self.analyzer.get_slowest_words(
-                            limit=count, layout=self.get_current_layout()
-                        )
+                                limit=count, layout=self.get_current_layout()
+                            )
                         word_list = [
                             self.storage.dictionary.get_capitalized_form(w.word, None)
                             for w in words
@@ -1385,7 +1404,9 @@ class Application(QObject):
                     practice_text = " ".join(word_list)
 
                 # Launch practice with highlighting
-                self.signal_practice_with_highlighting.emit(practice_text, highlight_words, special_chars, numbers)
+                self.signal_practice_with_highlighting.emit(
+                    practice_text, highlight_words, special_chars, numbers
+                )
 
             except Exception as e:
                 log.error(f"Error fetching word highlight list: {e}")
@@ -1576,9 +1597,14 @@ class Application(QObject):
 
                 # Find words containing these digraphs
                 # When common_only is enabled, filter to common words and use frequency weighting
-                zipf_threshold = self.config.get_float("digraph_zipf_threshold", 4.0) if common_only else 4.0
+                zipf_threshold = (
+                    self.config.get_float("digraph_zipf_threshold", 4.0) if common_only else 4.0
+                )
                 words = self.storage.get_random_words_with_digraphs(
-                    digraphs=digraphs, count=word_count, common_only=common_only, zipf_threshold=zipf_threshold
+                    digraphs=digraphs,
+                    count=word_count,
+                    common_only=common_only,
+                    zipf_threshold=zipf_threshold,
                 )
 
                 # Get loaded languages to check if German is loaded for capitalization
@@ -1728,9 +1754,14 @@ class Application(QObject):
                 practice_text = text
                 if practice_text is None:
                     # When common_only is enabled, filter to common words and use frequency weighting
-                    zipf_threshold = self.config.get_float("digraph_zipf_threshold", 4.0) if common_only else 4.0
+                    zipf_threshold = (
+                        self.config.get_float("digraph_zipf_threshold", 4.0) if common_only else 4.0
+                    )
                     words = self.storage.get_random_words_with_equal_digraphs(
-                        digraphs=digraphs, count=word_count, common_only=common_only, zipf_threshold=zipf_threshold
+                        digraphs=digraphs,
+                        count=word_count,
+                        common_only=common_only,
+                        zipf_threshold=zipf_threshold,
                     )
                     # Apply capitalization for German nouns
                     word_list = [
@@ -2036,87 +2067,31 @@ class Application(QObject):
     def practice_words_from_tray(self) -> None:
         """Practice words using settings from statistics panel.
 
-        When Ollama is available, uses statistics-based word selection.
-        When Ollama is unavailable, uses 50 random common words.
+        This should behave exactly like pressing the practice button in the statistics window,
+        using the same settings and word selection logic.
         """
         # Check if user has confirmed Monkeytype usage
         if not self._check_monkeytype_confirmation():
             return
-        import random
 
         def practice_with_words():
             try:
-                # Check Ollama availability
-                ollama_available = self.ollama_client.check_server_available()
+                # Read config settings with defaults (same as statistics window)
+                mode = self.config.get("practice_words_mode", "hardest")
+                count = self.config.get_int("practice_words_word_count", 10)
+                special_chars = self.config.get_bool("practice_words_special_chars_enabled", False)
+                numbers = self.config.get_bool("practice_words_numbers_enabled", False)
+                common_only = self.config.get_bool("practice_words_common_only_enabled", False)
 
-                if not ollama_available:
-                    # Fallback: use 50 random common words from dictionary
-                    log.info("Tray icon: Ollama unavailable, using 50 random common words")
+                log.info(
+                    f"Tray icon: Starting word practice (mode={mode}, count={count}, common_only={common_only})"
+                )
 
-                    # Get all words from loaded dictionaries
-                    all_words = []
-                    for word_set in self.storage.dictionary.words.values():
-                        all_words.extend(word_set)
-
-                    if not all_words:
-                        log.warning("No words available in dictionary")
-                        self.tray_icon.show_notification(
-                            "Typing Practice",
-                            "No words available in dictionary",
-                            "warning",
-                        )
-                        return
-
-                    # Select 50 random words
-                    word_count = min(50, len(all_words))
-                    random_words = random.sample(all_words, word_count)
-
-                    # Get config settings for enhancements
-                    special_chars = self.config.get_bool(
-                        "practice_words_special_chars_enabled", False
-                    )
-                    numbers = self.config.get_bool("practice_words_numbers_enabled", False)
-
-                    # Apply capitalization
-                    word_list = [
-                        self.storage.dictionary.get_capitalized_form(w, None) for w in random_words
-                    ]
-
-                    # Apply text enhancements
-                    word_list = self._apply_text_enhancements(word_list, special_chars, numbers)
-                    practice_text = " ".join(word_list)
-
-                    # Build highlight list (all words as "hardest" to enable highlighting)
-                    # Note: Monkeytype doesn't support word highlighting
-                    log.info(
-                        f"Opening typing practice with {len(word_list)} common words (not highlighted in Monkeytype)"
-                    )
-
-                    # Import directly and open Monkeytype
-                    import webbrowser
-
-                    from utils.monkeytype_url import generate_custom_text_url
-
-                    url = generate_custom_text_url(practice_text)
-                    webbrowser.open(url)
-
-                    log.info("Successfully opened typing practice with common words")
-                else:
-                    # Ollama available - use statistics-based word selection
-                    log.info("Tray icon: Ollama available, using statistics-based words")
-
-                    # Read config settings with defaults
-                    mode = self.config.get("practice_words_mode", "hardest")
-                    count = self.config.get_int("practice_words_count", 50)
-                    special_chars = self.config.get_bool(
-                        "practice_words_special_chars_enabled", False
-                    )
-                    numbers = self.config.get_bool("practice_words_numbers_enabled", False)
-
-                    log.info(f"Starting word practice (mode={mode}, count={count})")
-
-                    # Call existing fetch_word_highlight_list with text=None for auto-fetch
-                    self.fetch_word_highlight_list(mode, count, None, special_chars, numbers)
+                # Call the same method as statistics window practice button
+                # This ensures identical behavior between both practice methods
+                self.fetch_word_highlight_list(
+                    mode, count, None, special_chars, numbers, common_only
+                )
 
             except Exception as e:
                 log.error(f"Error in practice_words_from_tray: {e}")
@@ -2279,7 +2254,9 @@ class Application(QObject):
 
                 # Detect if key is backspace
                 is_backspace = key_event.key_name == "BACKSPACE"
-                self.burst_detector.process_key_event(key_event.timestamp_ms, True, is_backspace, key_event.key_name)
+                self.burst_detector.process_key_event(
+                    key_event.timestamp_ms, True, is_backspace, key_event.key_name
+                )
 
                 self.analyzer.process_key_event(
                     key_event.keycode,
@@ -2385,8 +2362,12 @@ class Application(QObject):
                 limit=10, layout=self.get_current_layout()
             )
         else:
-            hardest_words = self.analyzer.get_slowest_words(limit=10, layout=self.get_current_layout())
-            fastest_words = self.analyzer.get_fastest_words(limit=10, layout=self.get_current_layout())
+            hardest_words = self.analyzer.get_slowest_words(
+                limit=10, layout=self.get_current_layout()
+            )
+            fastest_words = self.analyzer.get_fastest_words(
+                limit=10, layout=self.get_current_layout()
+            )
 
         self.signal_update_hardest_words.emit(hardest_words)
         self.signal_update_fastest_words_stats.emit(fastest_words)
@@ -2554,7 +2535,9 @@ class Application(QObject):
         loaded_languages = self.storage.dictionary.get_loaded_languages()
         dictionary_count = len(loaded_languages)
         self.tray_icon.set_dictionary_count(dictionary_count)
-        log.info(f"Updated tray icon with dictionary count before showing settings: {dictionary_count}")
+        log.info(
+            f"Updated tray icon with dictionary count before showing settings: {dictionary_count}"
+        )
 
         if dialog.exec() == QDialog.Accepted:
             # Use dialog.settings if it was set by clear_data/export_csv, otherwise get fresh settings
