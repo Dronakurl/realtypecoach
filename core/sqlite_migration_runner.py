@@ -87,7 +87,7 @@ class SQLiteMigrationRunner(MigrationRunner):
         def connect():
             conn = sqlite3.connect(str(self.db_path))
             conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
-            conn.execute("PRAGMA cipher_memory_security = ON")
+            conn.execute("PRAGMA cipher_memory_security = OFF")
             conn.execute("PRAGMA cipher_page_size = 4096")
             conn.execute("PRAGMA cipher_kdf_iter = 256000")
             conn.execute("PRAGMA foreign_keys = ON")

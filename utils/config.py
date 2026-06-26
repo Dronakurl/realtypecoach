@@ -353,7 +353,7 @@ class Config:
             raise RuntimeError(f"Cannot decrypt settings database: {e}")
 
         # Set encryption parameters
-        conn.execute("PRAGMA cipher_memory_security = ON")
+        conn.execute("PRAGMA cipher_memory_security = OFF")
         conn.execute("PRAGMA cipher_page_size = 4096")
         conn.execute("PRAGMA cipher_kdf_iter = 256000")
 

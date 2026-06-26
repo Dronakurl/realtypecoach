@@ -42,7 +42,7 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
         )
 
     # Set encryption parameters
-    conn.execute("PRAGMA cipher_memory_security = ON")
+    conn.execute("PRAGMA cipher_memory_security = OFF")
     conn.execute("PRAGMA cipher_page_size = 4096")
     conn.execute("PRAGMA cipher_kdf_iter = 256000")
 

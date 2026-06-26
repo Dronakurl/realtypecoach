@@ -181,7 +181,7 @@ def test_correct_key_can_decrypt():
             # Write data with encryption
             conn = sqlite3.connect(db_path)
             conn.execute(f"PRAGMA key = \"x'{key.hex()}'\"")
-            conn.execute("PRAGMA cipher_memory_security = ON")
+            conn.execute("PRAGMA cipher_memory_security = OFF")
             conn.execute("PRAGMA cipher_page_size = 4096")
             conn.execute("PRAGMA cipher_kdf_iter = 256000")
             conn.execute("CREATE TABLE encrypted_data (id INTEGER, value TEXT)")
@@ -193,7 +193,7 @@ def test_correct_key_can_decrypt():
             # Read data back with correct key
             conn_read = sqlite3.connect(db_path)
             conn_read.execute(f"PRAGMA key = \"x'{key.hex()}'\"")
-            conn_read.execute("PRAGMA cipher_memory_security = ON")
+            conn_read.execute("PRAGMA cipher_memory_security = OFF")
             conn_read.execute("PRAGMA cipher_page_size = 4096")
             conn_read.execute("PRAGMA cipher_kdf_iter = 256000")
 

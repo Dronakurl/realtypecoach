@@ -152,7 +152,7 @@ class ConnectionPool:
             )
 
         # Set encryption parameters
-        conn.execute("PRAGMA cipher_memory_security = ON")
+        conn.execute("PRAGMA cipher_memory_security = OFF")
         conn.execute("PRAGMA cipher_page_size = 4096")
         conn.execute("PRAGMA cipher_kdf_iter = 256000")
         # Set busy timeout to handle concurrent access (30 seconds)
@@ -2714,8 +2714,8 @@ Create a coherent text that includes as many of these words as possible in their
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, date, fastest_burst_wpm, burst_duration_sec, 
-                       burst_key_count, timestamp, burst_duration_ms 
+                SELECT id, date, fastest_burst_wpm, burst_duration_sec,
+                       burst_key_count, timestamp, burst_duration_ms
                 FROM high_scores ORDER BY id
             """
             )
@@ -2737,8 +2737,8 @@ Create a coherent text that includes as many of these words as possible in their
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT date, total_keystrokes, total_bursts, avg_wpm, 
-                       slowest_keycode, slowest_key_name, total_typing_sec, summary_sent 
+                SELECT date, total_keystrokes, total_bursts, avg_wpm,
+                       slowest_keycode, slowest_key_name, total_typing_sec, summary_sent
                 FROM daily_summaries ORDER BY date
             """
             )
@@ -2887,7 +2887,11 @@ Create a coherent text that includes as many of these words as possible in their
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT start_time, avg_wpm FROM bursts ORDER BY start_time")
-            return [BurstTimeSeries(timestamp_ms=row[0], avg_wpm=row[1]) for row in cursor.fetchall() if row[1] is not None]
+            return [
+                BurstTimeSeries(timestamp_ms=row[0], avg_wpm=row[1])
+                for row in cursor.fetchall()
+                if row[1] is not None
+            ]
 
     def get_burst_wpm_percentile(self, percentile: float) -> float | None:
         """Get WPM value at a given percentile across all bursts."""
@@ -3001,7 +3005,9 @@ Create a coherent text that includes as many of these words as possible in their
         for date_str, bucket in daily.items():
             total_duration_ms = int(bucket["total_duration_ms"])
             avg_wpm = (
-                float(bucket["weighted_wpm_sum"]) / total_duration_ms if total_duration_ms > 0 else 0.0
+                float(bucket["weighted_wpm_sum"]) / total_duration_ms
+                if total_duration_ms > 0
+                else 0.0
             )
             cursor.execute(
                 """
